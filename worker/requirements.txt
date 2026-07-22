@@ -5,7 +5,9 @@ ffmpeg-python==0.2.0
 # 2.31.0+ — earlier versions reject the modern `sb_secret_...` / `sb_publishable_...`
 # API keys at client construction: they regex-validate the key as a legacy JWT.
 supabase==2.31.0
-pydantic==2.10.4
+# >=2.11.7 required by realtime (a supabase 2.31.0 sub-dep); satisfies fastapi,
+# google-genai and postgrest too. Older pins (2.10.x) make the resolver fail.
+pydantic==2.11.7
 python-dotenv==1.0.1
 python-multipart==0.0.20
 # Only used by the real (non-stub) custom-domain verifier's CNAME lookup.
