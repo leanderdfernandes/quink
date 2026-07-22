@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+__pycache__/
+*.pyc
+.venv/
+venv/
+.supabase/
+supabase/.temp/
+.DS_Store
+
+# Screen recordings — this product ingests them; they can carry on-screen PII and
+# don't belong in the repo. (Demo clips, eval inputs, etc.)
+*.mp4
+*.mov
+
+# eval: keep the code, README and ground-truth notes; not the videos or run outputs
+eval/videos/
+eval/runs/
+eval/results.csv

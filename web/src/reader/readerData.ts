@@ -1,0 +1,83 @@
+import { supabase } from '../lib/supabase'
+import type { Article, ReaderArticleSummary, ReaderCategory, ReaderKb } from '../lib/types'
+
+// Fallback name for listed articles that were published before the folder gate (folder_id
+// null). New articles always have a folder — this only catches legacy rows.
+const UNFILED_CATEGORY = 'Help articles'
+
+// Group listed articles into category cards, preserving the RPC's order (folder position,
+// then creation order) — the first time a folder is seen fixes its position in the list.
+export function groupCategories(items: ReaderArticleSummary[]): ReaderCategory[] {
+  const byKey = new Map<string, ReaderCategory>()
+  const order: string[] = []
+  for (const a of items) {
+    const key = a.folder_id ?? '__unfiled__'
+    let cat = byKey.get(key)
+    if (!cat) {
+      cat = { id: key, name: a.folder_name ?? UNFILED_CATEGORY, articles: [] }
+      byKey.set(key, cat)
+      order.push(key)
+    }
+    cat.articles.push(a)
+  }
+  return order.map((k) => byKey.get(k)!)
+}
+
+// Anon reader-site reads. Every one goes through a SECURITY DEFINER RPC (migration 0006),
+// never a direct table select — base-table RLS is fully closed to anon, so drafts and other
+// KBs' data are unreachable. This module is the only door.
+
+// Resolve a host or dev slug to a KB's public theme. In prod pass the request host
+// (subdomain or verified custom domain); in dev pass the KB subdomain (?kb= / /kb/{slug}).
+export async function fetchReaderKb(key: string): Promise<ReaderKb | null> {
+  const { data, error } = await supabase.rpc('reader_kb', { p_key: key })
+  if (error || !data || data.length === 0) return null
+  return data[0] as ReaderKb
+}
+
+export async function fetchReaderArticles(
+  kbId: string,
+): Promise<ReaderArticleSummary[]> {
+  const { data, error } = await supabase.rpc('reader_articles', { p_kb_id: kbId })
+  if (error || !data) return []
+  return data as ReaderArticleSummary[]
+}
+
+export type ReaderArticle = {
+  id: string
+  slug: string
+  visibility: 'listed' | 'unlisted'
+  published_at: string
+  content: Article
+  folder_name: string | null
+}
+
+export async function fetchReaderArticle(
+  kbId: string,
+  slug: string,
+): Promise<ReaderArticle | null> {
+  const { data, error } = await supabase.rpc('reader_article', {
+    p_kb_id: kbId,
+    p_slug: slug,
+  })
+  if (error || !data || data.length === 0) return null
+  return data[0] as ReaderArticle
+}
+
+export type SearchHit = {
+  id: string
+  slug: string
+  title: string
+  snippet: string
+  rank: number
+}
+
+export async function searchReader(kbId: string, query: string): Promise<SearchHit[]> {
+  if (!query.trim()) return []
+  const { data, error } = await supabase.rpc('reader_search', {
+    p_kb_id: kbId,
+    p_query: query,
+  })
+  if (error || !data) return []
+  return data as SearchHit[]
+}
