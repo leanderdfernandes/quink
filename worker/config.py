@@ -41,8 +41,8 @@ BUCKET_VIDEOS = "videos"
 BUCKET_FRAMES = "frames"
 
 # --- Custom domain (build spec §4) ------------------------------------------
-# Every KB gets {subdomain}.quink.site free; a custom domain CNAMEs to it.
-READER_DOMAIN = "quink.site"
+# Every KB gets {subdomain}.quink.online free; a custom domain CNAMEs to it.
+READER_DOMAIN = "quink.online"
 
 # The verifier is behind an interface with two implementations (build spec §4):
 #   "stub" — driven manually in local dev via /api/domain/stub (no real DNS)

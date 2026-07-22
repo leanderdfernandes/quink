@@ -5,6 +5,7 @@ import {
   COLOR_PRESETS,
   DEFAULT_PRIMARY_COLOR,
   FONT_PAIRINGS,
+  helpCenterUrl,
 } from '../lib/config'
 import { isValidHex, normalizeHex } from '../reader/theme'
 import { ReaderChrome } from '../reader/ReaderSite'
@@ -169,7 +170,7 @@ export default function ThemeSettings({ kb, userId, onBack, onSaved }: Props) {
           {saved && <span className="save-state saved">Saved</span>}
           <a
             className="settings-viewlive"
-            href={`/kb/${kb.subdomain ?? ''}`}
+            href={helpCenterUrl(kb.subdomain ?? '')}
             target="_blank"
             rel="noreferrer"
           >

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FREE_ARTICLE_EXPIRY_DAYS } from '../lib/config'
+import { FREE_ARTICLE_EXPIRY_DAYS, helpCenterUrl, READER_DOMAIN } from '../lib/config'
 import type { Visibility } from '../lib/types'
 
 // Article sharing (build spec §2). Publish state IS link state — no separate share setting.
@@ -31,8 +31,8 @@ export default function ShareControls({
   onSetVisibility,
 }: Props) {
   const [toast, setToast] = useState<string | null>(null)
-  const readerUrl = `${window.location.origin}/kb/${subdomain ?? ''}/${slug ?? ''}`
-  const displayUrl = `${subdomain ?? '…'}/${slug ?? '…'}`
+  const readerUrl = helpCenterUrl(subdomain, slug ? `/${slug}` : '')
+  const displayUrl = `${subdomain ?? '…'}.${READER_DOMAIN}/${slug ?? '…'}`
 
   async function copyLink() {
     await navigator.clipboard.writeText(readerUrl)

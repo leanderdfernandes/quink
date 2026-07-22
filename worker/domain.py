@@ -252,7 +252,7 @@ def _selfcheck() -> None:
     assert cname_host("a.b.acme.com") == "a.b"
     assert cname_host("acme.com") == "@"  # apex: CNAME invalid, surfaced honestly
     r = cname_record("docs.acme.com", "acme")
-    assert r == {"type": "CNAME", "host": "docs", "value": "acme.quink.site", "ttl": 3600}, r
+    assert r == {"type": "CNAME", "host": "docs", "value": "acme.quink.online", "ttl": 3600}, r
     v = StubVerifier()
     assert not v.resolves("x.com", "t")
     v.set("x.com", True)

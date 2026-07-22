@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { FREE_ARTICLE_LIMIT } from '../lib/config'
+import { FREE_ARTICLE_LIMIT, helpCenterUrl } from '../lib/config'
 import { deleteArticle } from '../lib/articles'
 import { publicBrandingUrl } from '../lib/storage'
 import {
@@ -241,7 +241,7 @@ export default function KnowledgeBase({
           </button>
           <a
             className="rail-item link"
-            href={`/kb/${kb.subdomain}`}
+            href={helpCenterUrl(kb.subdomain)}
             target="_blank"
             rel="noreferrer"
           >

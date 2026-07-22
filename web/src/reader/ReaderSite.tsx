@@ -456,9 +456,13 @@ function CheckIcon() {
 
 // --- Live site: routing + fetch + search + SEO head ------------------------------------
 
-export default function ReaderSite() {
+export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
   const { kbSlug = '', articleSlug, folderId } = useParams()
   const navigate = useNavigate()
+  // On a help-center host the KB comes from the host and URLs are clean (base = '');
+  // on the app host it comes from the /kb/{slug} path (base = '/kb/{slug}').
+  const kbKey = hostKey ?? kbSlug
+  const base = hostKey != null ? '' : `/kb/${kbSlug}`
   const [kb, setKb] = useState<ReaderKb | null>(null)
   const [categories, setCategories] = useState<ReaderCategory[]>([])
   const [article, setArticle] = useState<Article | null>(null)
@@ -480,7 +484,7 @@ export default function ReaderSite() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const found = await fetchReaderKb(kbSlug)
+      const found = await fetchReaderKb(kbKey)
       if (cancelled) return
       if (!found) {
         setState('notfound')
@@ -492,7 +496,7 @@ export default function ReaderSite() {
     return () => {
       cancelled = true
     }
-  }, [kbSlug])
+  }, [kbKey])
 
   useEffect(() => {
     if (!kb) return
@@ -579,12 +583,12 @@ export default function ReaderSite() {
       articleCategory={articleMeta.category}
       articleCategoryId={articleMeta.categoryId}
       related={related}
-      hrefFor={(slug) => `/kb/${kbSlug}/${slug}`}
-      categoryHref={(id) => `/kb/${kbSlug}/category/${id}`}
-      homeHref={`/kb/${kbSlug}`}
-      onNavigate={(slug) => navigate(`/kb/${kbSlug}/${slug}`)}
-      onNavigateCategory={(id) => navigate(`/kb/${kbSlug}/category/${id}`)}
-      onHome={() => navigate(`/kb/${kbSlug}`)}
+      hrefFor={(slug) => `${base}/${slug}`}
+      categoryHref={(id) => `${base}/category/${id}`}
+      homeHref={base || '/'}
+      onNavigate={(slug) => navigate(`${base}/${slug}`)}
+      onNavigateCategory={(id) => navigate(`${base}/category/${id}`)}
+      onHome={() => navigate(base || '/')}
       query={query}
       onQuery={setQuery}
       searchResults={hits}

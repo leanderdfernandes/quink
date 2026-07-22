@@ -5,9 +5,43 @@
 // One constant so renaming is one line.
 export const PRODUCT_NAME = 'Quink'
 
-// The reader-site root domain: every KB gets {subdomain}.quink.site free from signup
+// The reader-site root domain: every KB gets {subdomain}.quink.online free from signup
 // (build spec §4). One constant so the rename is one line.
-export const READER_DOMAIN = 'quink.site'
+export const READER_DOMAIN = 'quink.online'
+
+// Subdomains that belong to the app/infra, never a customer help center. A user must
+// never be handed one of these as their KB subdomain, and a request to one must fall
+// through to the authoring app, not the reader.
+const RESERVED_SUBDOMAINS = new Set(['www', 'app', 'api', 'admin', 'dashboard', 'mail'])
+
+// If the current host is a customer help center — a {sub}.quink.online subdomain, or a
+// custom domain pointed at us — return the key the reader_kb RPC resolves it by (the
+// subdomain label, or the whole custom-domain host). Return null when this is the app
+// itself or local dev; there the reader is reachable only via the /kb/{slug} dev path.
+export function readerKeyFromHost(host: string): string | null {
+  const h = host.split(':')[0].toLowerCase()
+  if (h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local')) return null
+  if (h === READER_DOMAIN || h === `www.${READER_DOMAIN}`) return null
+  if (h.endsWith(`.${READER_DOMAIN}`)) {
+    const label = h.slice(0, -(READER_DOMAIN.length + 1))
+    // Only a single non-reserved label is a help center (acme.quink.online).
+    return label.includes('.') || RESERVED_SUBDOMAINS.has(label) ? null : label
+  }
+  return h // a different domain entirely → a customer custom domain (matched by reader_kb)
+}
+
+// The public URL of a help center, or of a path within it. In production each help center
+// lives on its own {subdomain}.quink.online; in local dev subdomains aren't wired, so we
+// fall back to the /kb/{slug} path on the current origin. `path` is '' (home) or a leading-
+// slash path like `/getting-started` or `/category/<id>`.
+export function helpCenterUrl(subdomain: string | null, path = ''): string {
+  const sub = subdomain ?? ''
+  const host = window.location.hostname
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return `${window.location.origin}/kb/${sub}${path}`
+  }
+  return `https://${sub}.${READER_DOMAIN}${path}`
+}
 
 // Storage bucket for logos + derived favicons (public). Frames + videos are in config
 // below; branding is separate so a logo never collides with a frame path.

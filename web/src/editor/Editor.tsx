@@ -5,6 +5,7 @@ import { useAutosave } from '../lib/useAutosave'
 import { slugify, uniqueArticleSlug } from '../lib/slug'
 import { deleteArticle } from '../lib/articles'
 import { createFolder, listFolders } from '../lib/folders'
+import { helpCenterUrl } from '../lib/config'
 import StepCard from './StepCard'
 import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
@@ -609,9 +610,7 @@ export default function Editor({ articleId, kb, onBack }: Props) {
           published={pubDone}
           onPublish={confirmPublish}
           onClose={() => setShowPublish(false)}
-          onViewSite={() =>
-            window.open(`${window.location.origin}/kb/${kb.subdomain ?? ''}`, '_blank')
-          }
+          onViewSite={() => window.open(helpCenterUrl(kb.subdomain), '_blank')}
         />
       )}
 
