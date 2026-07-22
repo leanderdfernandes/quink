@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import DOMPurify from 'dompurify'
 import { useNavigate, useParams } from 'react-router-dom'
 import { publicBrandingUrl, publicFrameUrl } from '../lib/storage'
 import Wordmark from '../components/Wordmark'
@@ -314,7 +315,14 @@ export function ReaderChrome({
                       <span className="rs2-step-num">{s.step_number}</span>
                       <h2 className="rs2-step-heading">{s.heading || 'Untitled step'}</h2>
                     </div>
-                    <div className="rs2-step-body" dangerouslySetInnerHTML={{ __html: s.body_text }} />
+                    <div
+                      className="rs2-step-body"
+                      // body_text is authored/model-generated HTML rendered on the PUBLIC
+                      // reader — sanitize so a stored <script>/onerror can't run in a
+                      // reader's browser. DOMPurify strips scripts and event handlers,
+                      // keeps normal rich text.
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(s.body_text) }}
+                    />
                     {shot && (
                       <div className="rs2-shot-wrap">
                         <img className="rs2-shot" src={shot} alt={`Step ${s.step_number}`} />

@@ -10,4 +10,17 @@ if (!url || !anonKey) {
   )
 }
 
-export const supabase = createClient(url, anonKey)
+// PKCE (authorization-code) flow, NOT the default implicit flow. Implicit returns the
+// access AND refresh token in the URL fragment (#access_token=…&refresh_token=…), so the
+// callback URL *is* the session — copy it anywhere and you're logged in, and it leaks via
+// history, referrers and server logs. PKCE returns only a single-use ?code= that's useless
+// without the code_verifier stored in this browser; supabase-js exchanges it automatically
+// (detectSessionInUrl) and no token ever appears in the URL.
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    flowType: 'pkce',
+    detectSessionInUrl: true,
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+})
