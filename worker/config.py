@@ -27,7 +27,14 @@ TEXT_MODEL = "gemini-3.1-flash-lite"
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173")
+# Comma-separated list of allowed SPA origins (CORS). An origin is scheme://host[:port]
+# with NO trailing slash or path — the browser sends exactly that, so a stray "/" makes
+# the match silently fail. We split and normalize so ".env" can be forgiving.
+ALLOWED_ORIGINS = [
+    o.strip().rstrip("/")
+    for o in os.environ.get("ALLOWED_ORIGIN", "http://localhost:5173").split(",")
+    if o.strip()
+]
 
 # --- Storage ----------------------------------------------------------------
 BUCKET_VIDEOS = "videos"
