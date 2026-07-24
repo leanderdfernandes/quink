@@ -12,3 +12,7 @@ python-dotenv==1.0.1
 python-multipart==0.0.20
 # Only used by the real (non-stub) custom-domain verifier's CNAME lookup.
 dnspython==2.7.0
+# NOT used by the worker. The eval judge (eval/run_eval.py) runs on OpenAI so it is a
+# different provider from the pipeline it scores, and eval/README.md tells you to run it
+# with this venv — so it is pinned here rather than in a second requirements file.
+openai==2.48.0

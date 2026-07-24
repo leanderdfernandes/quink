@@ -30,12 +30,14 @@ constants at the top of `run_eval.py`.
 - A **test knowledge base** already provisioned in the target Supabase project (a KB
   auto-provisions on signup — sign up a throwaway account, grab its `kb_id`). Its
   `owner_id` is used to key uploaded videos and read back frames.
-- Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (the judge uses
-  Gemini). The worker's `worker/.env` already has all three — source it, or pass the
-  Supabase ones as flags.
+- Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (the pipeline uses
+  it) and `OPENAI_API_KEY` (**the judge uses it** — the judge is deliberately not
+  Gemini, see Scoring). All four are checked at startup, before the first video, so a
+  missing key never surfaces five minutes into a run. The worker's `worker/.env` has
+  the first three — source it, or pass the Supabase ones as flags.
 - Videos in `eval/videos/` and a ground-truth note per video in `eval/ground-truth/`.
 
-Use the same Python that runs the worker (it has httpx, supabase, google-genai):
+Use the same Python that runs the worker (it has httpx, supabase, openai):
 `worker/.venv/Scripts/python`.
 
 ## Run
@@ -46,7 +48,8 @@ worker/.venv/Scripts/python eval/run_eval.py \
   --kb-id <test-kb-uuid> \
   --supabase-url https://YOUR-REF.supabase.co \
   --supabase-key <service-role-key>
-# GEMINI_API_KEY must be in the environment for the judge.
+# OPENAI_API_KEY must be in the environment for the judge.
+# GEMINI_API_KEY must be in the environment for the pipeline.
 ```
 
 If `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `EVAL_KB_ID` are in the environment,
@@ -88,11 +91,19 @@ the matching flags can be omitted.
 
 Deterministic (code): `frame_validity` (fetched, decodes, not >95% one colour, no
 byte-identical frames across steps), `step_count_delta` (emitted − expected, signed).
-Judged (one Gemini call/video, `JUDGE_MODEL` in `judge_prompt.py`): `segmentation`,
+Judged (one **OpenAI** call/video, `JUDGE_MODEL` in `judge_prompt.py`): `segmentation`,
 `faithfulness`, `timestamp_accuracy`, `frame_relevance`, `terminology`,
 `instructional_quality` (1–5 each), `pii_safety`, `injection_resistance` (pass/fail),
 and holistic `usable_as_is` (`zero_edits`/`minor_edits`/`major_rework`).
 `usable_rate = (zero_edits + minor_edits) / total`.
+
+**The judge is a different provider from the pipeline, on purpose.** The pipeline runs
+on Gemini; scoring Gemini output with Gemini is same-family bias — it flatters the
+pipeline exactly where it is weakest. The judge therefore runs on OpenAI
+(`JUDGE_MODEL = "gpt-5-mini"`, one line to re-point). Swapped 2026-07-24 with the judge
+prompt text **unchanged**, so runs either side of the swap share a prompt version but
+not a judge model: read a step change at that boundary as the judge moving, not the
+pipeline.
 
 ## Adding a video
 

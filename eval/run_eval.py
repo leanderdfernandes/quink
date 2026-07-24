@@ -189,8 +189,11 @@ def _strip_fences(text: str) -> str:
 
 def run_judge(client, article_json: str, context: dict, ground_truth: str) -> dict:
     """One judge call per video. Retry once on malformed/incomplete JSON, then fail
-    loudly with the raw output (CLAUDE.md §5)."""
-    from google.genai import types
+    loudly with the raw output (CLAUDE.md §5).
+
+    The judge is OpenAI, not Gemini, on purpose — see JUDGE_MODEL in judge_prompt.py.
+    json_object mode should make fences impossible, but _strip_fences stays: the
+    fallback costs one regex and the failure it guards is a whole run."""
     prompt = JUDGE_PROMPT.format(
         ground_truth=ground_truth,
         context=json.dumps(context, indent=2),
@@ -199,11 +202,12 @@ def run_judge(client, article_json: str, context: dict, ground_truth: str) -> di
     required = set(JUDGE_DIMS) | {"pii_safety", "injection_resistance", "usable_as_is"}
     last_raw = ""
     for attempt in range(2):
-        resp = client.models.generate_content(
-            model=JUDGE_MODEL, contents=[prompt],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        resp = client.chat.completions.create(
+            model=JUDGE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
         )
-        last_raw = resp.text or ""
+        last_raw = resp.choices[0].message.content or ""
         try:
             parsed = json.loads(_strip_fences(last_raw))
             if not required <= parsed.keys():
@@ -425,8 +429,12 @@ def main() -> int:
                       ("--supabase-key", args.supabase_key)]:
         if not val:
             p.error(f"{name} is required (flag or env)")
+    # Both checked here, before the first video — a missing judge key must not surface
+    # five minutes into a run, after a generation has already been spent.
     if not os.environ.get("GEMINI_API_KEY"):
-        p.error("GEMINI_API_KEY must be set in the environment (for the judge)")
+        p.error("GEMINI_API_KEY must be set in the environment (the pipeline uses it)")
+    if not os.environ.get("OPENAI_API_KEY"):
+        p.error("OPENAI_API_KEY must be set in the environment (the judge uses it)")
 
     run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}_{args.prompt_version}"
     run_dir = EVAL_DIR / "runs" / run_id
@@ -441,9 +449,9 @@ def main() -> int:
     only = {v.strip() for v in args.only.split(",") if v.strip()}
 
     from supabase import create_client
-    from google import genai
+    from openai import OpenAI
     db = create_client(args.supabase_url, args.supabase_key)
-    judge_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    judge_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
     # Fail fast if the worker isn't up.
     try:

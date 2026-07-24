@@ -8,10 +8,15 @@ computed in code, never here — see run_eval.py.
 
 # Named constant, never an inline model string (CLAUDE.md §10 convention, same
 # rule the worker follows for VIDEO_MODEL / TEXT_MODEL). This is the one line to
-# change to re-point the judge. gemini-2.5-flash: capable enough to judge prose
-# and known-callable — NOT gemini-2.5-flash-lite, which 404s for new keys while
-# still listing (LEARNINGS #1).
-JUDGE_MODEL = "gemini-2.5-flash"
+# change to re-point the judge.
+#
+# DELIBERATELY NOT GEMINI. The pipeline runs on Gemini; judging Gemini output with
+# Gemini is same-family scoring bias — it flatters the pipeline exactly where it is
+# weakest. The judge must be a different provider. Swapped from gemini-2.5-flash on
+# 2026-07-24; the prompt text below is UNCHANGED, so this is a provider swap only.
+# Scores across that boundary are still same-prompt but not same-model — read a
+# step change at the swap as the judge, not the pipeline.
+JUDGE_MODEL = "gpt-5-mini"
 
 # The judge returns exactly this shape, no markdown fences. run_eval.py validates
 # every key is present and retries once, then fails loudly with the raw output.
