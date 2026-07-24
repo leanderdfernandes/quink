@@ -64,7 +64,15 @@ def record_host(domain: str, apex: str | None = None) -> str:
 
 
 def _rec(type_: str, host: str, value: str) -> dict:
-    return {"type": type_, "host": host, "value": value, "ttl": config.DOMAIN_CNAME_TTL}
+    # Strip the trailing dot. Vercel returns CNAME targets in absolute form
+    # ("…vercel-dns-017.com."), which is correct DNS but is rejected outright by several
+    # registrar forms — and this value gets copy-pasted by hand into one.
+    return {
+        "type": type_,
+        "host": host,
+        "value": value.rstrip("."),
+        "ttl": config.DOMAIN_CNAME_TTL,
+    }
 
 
 # --- Hosting interface + implementations -----------------------------------------------
@@ -154,7 +162,12 @@ class VercelHosting:
         self._params = {"teamId": config.VERCEL_TEAM_ID} if config.VERCEL_TEAM_ID else {}
 
     def _req(self, method: str, path: str, **kw) -> httpx.Response:
-        return self._client.request(method, path, params=self._params, **kw)
+        # MERGE the caller's params with the account scope — never overwrite. Passing
+        # params= as a fixed keyword here while a caller also passed params= raised
+        # TypeError: multiple values for 'params', which took out config() and therefore
+        # every readiness check, silently, inside check_once's except.
+        params = {**self._params, **(kw.pop("params", None) or {})}
+        return self._client.request(method, path, params=params, **kw)
 
     @property
     def _project(self) -> str:
@@ -169,6 +182,18 @@ class VercelHosting:
         r = self._req(
             "POST", f"/v10/projects/{self._project}/domains", json={"name": domain}
         )
+        if r.status_code == 200:
+            return self.records(domain, r.json())
+
+        # Any non-200 might simply mean "already attached to THIS project" — the reconnect
+        # path, which must be idempotent. The docs say that case is a 400, but Vercel also
+        # answers 409 "already in use by one of your projects" for a domain on the very
+        # project we are asking about. Trusting the status code made reconnecting our own
+        # domain permanently impossible, so ask who holds it rather than infer it.
+        info = self._get(domain)
+        if info is not None:
+            return self.records(domain, info)
+
         if r.status_code == 409:
             # Held by another project/account — we genuinely cannot serve it, and no DNS
             # record the user adds will change that. Say so instead of parking them in a
@@ -187,16 +212,9 @@ class VercelHosting:
             )
         if r.status_code == 403:
             raise DomainError("That domain can't be used here.")
-        info = r.json() if r.status_code == 200 else None
-        if info is None:
-            # 400 also means "already on this project" — the reconnect path. Re-read before
-            # treating it as an error so reconnecting is idempotent.
-            info = self._get(domain)
-            if info is None:
-                detail = _detail(r)
-                log.error("vercel attach failed (%s): %s", r.status_code, detail)
-                raise DomainError(detail or "We couldn't set up that domain. Try again.")
-        return self.records(domain, info)
+        detail = _detail(r)
+        log.error("vercel attach failed (%s): %s", r.status_code, detail)
+        raise DomainError(detail or "We couldn't set up that domain. Try again.")
 
     def detach(self, domain: str) -> None:
         r = self._req("DELETE", f"/v9/projects/{self._project}/domains/{domain}")
@@ -240,7 +258,7 @@ class VercelHosting:
         r = self._req(
             "GET",
             f"/v6/domains/{domain}/config",
-            params={**self._params, "projectIdOrName": self._project},
+            params={"projectIdOrName": self._project},
         )
         return r.json() if r.status_code == 200 else {}
 
@@ -456,6 +474,94 @@ async def run_loop() -> None:
         await asyncio.sleep(config.DOMAIN_CHECK_INTERVAL_SECONDS)
 
 
+def _selfcheck_vercel_attach() -> None:
+    """attach() must be idempotent for a domain already on OUR project, and only fail for
+    one genuinely held elsewhere. Vercel answers 409 for BOTH (its docs promise 400 for the
+    first), so the status code alone cannot tell them apart — treating 409 as fatal made
+    reconnecting your own domain permanently impossible. Fake transport, no network."""
+
+    class _Resp:
+        def __init__(self, code: int, payload: dict | None = None):
+            self.status_code = code
+            self._payload = payload or {}
+
+        def json(self) -> dict:
+            return self._payload
+
+    ATTACHED = {"name": "docs.acme.com", "apexName": "acme.com", "verified": True}
+    CONFIG = {"recommendedCNAME": [{"rank": 1, "value": "cname.vercel-dns.com"}]}
+
+    def build(post: _Resp, on_project: bool):
+        token, project = config.VERCEL_TOKEN, config.VERCEL_PROJECT_ID
+        config.VERCEL_TOKEN, config.VERCEL_PROJECT_ID = "t", "p"
+        try:
+            v = VercelHosting()
+        finally:
+            config.VERCEL_TOKEN, config.VERCEL_PROJECT_ID = token, project
+
+        def _req(method: str, path: str, **kw):
+            if method == "POST" and path.endswith("/domains"):
+                return post
+            if method == "GET" and "/config" in path:
+                return _Resp(200, CONFIG)
+            if method == "GET":  # project-domain lookup
+                return _Resp(200, ATTACHED) if on_project else _Resp(404)
+            return _Resp(200, {})
+
+        v._req = _req  # type: ignore[method-assign]
+        return v
+
+    # _req must MERGE caller params with the account scope. The fakes below replace _req
+    # wholesale, so this is the one assertion that covers the real one — and it is exactly
+    # what broke: a caller passing params= collided with the fixed keyword and raised
+    # TypeError inside every readiness check, where check_once swallows it.
+    token, project, team = config.VERCEL_TOKEN, config.VERCEL_PROJECT_ID, config.VERCEL_TEAM_ID
+    config.VERCEL_TOKEN, config.VERCEL_PROJECT_ID, config.VERCEL_TEAM_ID = "t", "p", "team_1"
+    try:
+        v = VercelHosting()
+        seen: dict = {}
+        v._client = type(  # a stand-in that records what the real _req built
+            "C", (), {"request": lambda _s, m, p, **kw: seen.update(kw) or _Resp(200, {})}
+        )()
+        v._req("GET", "/x", params={"projectIdOrName": "p"})
+        assert seen["params"] == {"teamId": "team_1", "projectIdOrName": "p"}, seen
+        v._req("POST", "/x", json={"name": "d"})
+        assert seen["params"] == {"teamId": "team_1"}, seen
+    finally:
+        config.VERCEL_TOKEN, config.VERCEL_PROJECT_ID, config.VERCEL_TEAM_ID = token, project, team
+
+    # 200: freshly attached.
+    recs = build(_Resp(200, ATTACHED), on_project=False).attach("docs.acme.com")
+    assert recs == [
+        {"type": "CNAME", "host": "docs", "value": "cname.vercel-dns.com", "ttl": 3600}
+    ], recs
+
+    # Absolute-form targets are normalized for hand-entry at a registrar.
+    assert _rec("CNAME", "help", "x.vercel-dns-017.com.")["value"] == "x.vercel-dns-017.com"
+
+    # 409 / 400 but it IS on our project -> idempotent reconnect, never an error.
+    for code in (409, 400):
+        recs = build(_Resp(code), on_project=True).attach("docs.acme.com")
+        assert recs and recs[0]["value"] == "cname.vercel-dns.com", (code, recs)
+
+    # 409 and NOT on our project -> a real conflict, with the provider's reason kept.
+    try:
+        build(
+            _Resp(409, {"error": {"message": "in use by another project"}}),
+            on_project=False,
+        ).attach("docs.acme.com")
+        raise AssertionError("a domain held elsewhere must raise")
+    except DomainError as e:
+        assert "in use by another project" in str(e), e
+
+    # 403 -> not usable here.
+    try:
+        build(_Resp(403), on_project=False).attach("docs.acme.com")
+        raise AssertionError("403 must raise")
+    except DomainError:
+        pass
+
+
 def _selfcheck() -> None:
     """Runnable check for the pure logic (no DB, no network): `python domain.py`."""
     # Host is relative to the apex the provider reports — including multi-label suffixes,
@@ -505,6 +611,8 @@ def _selfcheck() -> None:
     assert not h.servable("x.com")
     assert h.attach("docs.acme.com")[0]["type"] == "CNAME"
     assert h.attach("acme.com")[0]["type"] == "A"  # apex can't CNAME
+
+    _selfcheck_vercel_attach()
 
     # backoff is monotonic non-decreasing and capped
     b = [_backoff_seconds(n) for n in range(0, 20)]
