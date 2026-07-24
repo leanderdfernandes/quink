@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import config
 import domain
 import pipeline
+import prompts
 from models import (
     DomainConnectRequest,
     DomainKbRequest,
@@ -99,11 +100,18 @@ def _require_owner(authorization: str | None, kb_id: str) -> str:
 
 @app.get("/health")
 def health() -> dict:
+    """Identity of the running pipeline, not just liveness — which is why the prompts ride
+    along with the model IDs. The eval runner reads them here and logs them into its
+    run.json, because its rule is that it never imports pipeline internals
+    (eval/README.md). Note this endpoint is unauthenticated: the prompt text is readable
+    by anyone who can reach the worker. Deliberate — /health already discloses the model
+    IDs, and a reproducible eval record was judged worth more than the secrecy."""
     return {
         "ok": True,
         "video_model": config.VIDEO_MODEL,
         "text_model": config.TEXT_MODEL,
         "domain_verifier": config.DOMAIN_VERIFIER,
+        "prompts": prompts.as_sent(),
     }
 
 

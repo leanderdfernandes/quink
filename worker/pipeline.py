@@ -112,14 +112,10 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         # --- Stage: detecting (Stage 1 — the model that saw the video drafts) ---
         set_stage(job_id, config.STAGE_DETECTING)
 
-        draft_prompt = prompts.DRAFT_PROMPT.format(
+        draft_prompt = prompts.build_draft_prompt(
             duration_mmss=format_mmss(duration),
             duration_seconds=int(duration),
             context_block=prompts.build_context_block(context),
-            grounding_rule=prompts.GROUNDING_RULE,
-            collapse_rule=prompts.COLLAPSE_RULE,
-            pii_rule=prompts.PII_RULE,
-            injection_rule=prompts.INJECTION_RULE,
         )
 
         blueprint = gemini.generate_json(
@@ -163,7 +159,7 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         polished = gemini.generate_json(
             model=config.TEXT_MODEL,
             contents=[
-                prompts.POLISH_PROMPT.format(
+                prompts.build_polish_prompt(
                     context_block=prompts.build_context_block(context),
                     article_json=blueprint.model_dump_json(indent=2),
                 )

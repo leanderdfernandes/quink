@@ -172,6 +172,44 @@ ARTICLE TO EDIT
 {article_json}"""
 
 
+def build_draft_prompt(duration_mmss: str, duration_seconds: int, context_block: str) -> str:
+    """Stage 1's prompt with the rule blocks inlined. The ONLY place DRAFT_PROMPT is
+    formatted — as_sent() reuses it, so the text logged into an eval run cannot drift
+    from the text actually sent."""
+    return DRAFT_PROMPT.format(
+        duration_mmss=duration_mmss,
+        duration_seconds=duration_seconds,
+        context_block=context_block,
+        grounding_rule=GROUNDING_RULE,
+        collapse_rule=COLLAPSE_RULE,
+        pii_rule=PII_RULE,
+        injection_rule=INJECTION_RULE,
+    )
+
+
+def build_polish_prompt(context_block: str, article_json: str) -> str:
+    """Stage 2's prompt. Same reason as build_draft_prompt for existing."""
+    return POLISH_PROMPT.format(context_block=context_block, article_json=article_json)
+
+
+def as_sent() -> dict[str, str]:
+    """The two pipeline prompts as composed above, with only the per-video fields left as
+    literal placeholders. Served on GET /health.
+
+    This exists for the eval runner: run.json records the prompt text behind a
+    prompt_version, and eval/README's rule is that the runner never imports pipeline
+    internals. The worker serving its own prompts is the one path that keeps that true.
+
+    Once per run, not per video — so the per-video substitutions (duration, context) stay
+    placeholders. Everything that differs between prompt versions is here; nothing that
+    differs between videos is.
+    """
+    return {
+        "stage1": build_draft_prompt("{duration_mmss}", "{duration_seconds}", "{context_block}"),
+        "stage2": build_polish_prompt("{context_block}", "{article_json}"),
+    }
+
+
 def build_context_block(context: dict) -> str:
     """Injected context. Product name is the only required field (ux-spec §2).
 
@@ -186,3 +224,10 @@ def build_context_block(context: dict) -> str:
     if context.get("description"):
         lines.append(f"Extra notes from the author: {context['description']}")
     return "\n".join(lines)
+
+
+if __name__ == "__main__":  # `python prompts.py` — catches placeholder drift, no server
+    _p = as_sent()
+    assert "{duration_mmss}" in _p["stage1"] and COLLAPSE_RULE in _p["stage1"], _p["stage1"]
+    assert "{article_json}" in _p["stage2"], _p["stage2"]
+    print("prompts OK")

@@ -22,6 +22,12 @@ over HTTP). So per video the runner:
 It never imports pipeline internals. Endpoint paths, table and bucket names are
 constants at the top of `run_eval.py`.
 
+Once per run it also reads `GET /health`, which serves the pipeline's own Stage 1 and
+Stage 2 prompt text alongside the model IDs. That is how `run.json` records the prompts
+without importing them — the worker is the only thing entitled to say what it sends. A
+worker too old to serve `prompts` fails the run at startup rather than writing a
+`run.json` that silently claims less than it records.
+
 ## Prerequisites
 
 - The **worker running** and reachable at `--base-url` (default `http://localhost:8000`).
@@ -78,9 +84,15 @@ the matching flags can be omitted.
 - Terminal: one line per video as it completes, then a summary — hard gates first
   (loud), `usable_rate` vs target and vs the previous run, per-dimension means with
   deltas, and any errored videos.
-- `eval/results.csv` — one row per video per run, **appended, never overwritten**.
+- `eval/results.csv` — one row per video per run, **appended, never overwritten**. Schema
+  unchanged; prompt text lives only in `run.json`.
 - `eval/runs/<run_id>/run.json` — full detail: context, job row, raw article, all
-  scores, raw judge output.
+  scores, raw judge output. Plus a top-level `"prompts"` key —
+  `{stage1, stage2, judge}`, the literal prompt text as sent, written **once per run**.
+  That is the artifact behind `prompt_version`, which is otherwise just a label: an old
+  run tells you what it was run with, no git archaeology. Per-video substitutions
+  (duration, context) stay as `{placeholders}` in `stage1`/`stage2` — each video's actual
+  context is already logged under that video.
 - `eval/runs/<run_id>/articles/<video>.json` — raw pipeline article per video.
 
 ### Hard gates (any one blocks release, regardless of usable_rate)

@@ -453,15 +453,33 @@ def main() -> int:
     db = create_client(args.supabase_url, args.supabase_key)
     judge_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    # Fail fast if the worker isn't up.
+    # Fail fast if the worker isn't up. The same response carries the pipeline prompts,
+    # which is how run.json records them without importing pipeline internals (README).
     try:
-        httpx.get(args.base_url + HEALTH_PATH, timeout=10).raise_for_status()
+        r = httpx.get(args.base_url + HEALTH_PATH, timeout=10)
+        r.raise_for_status()
+        health = r.json()
     except Exception as e:
         p.error(f"worker not reachable at {args.base_url}{HEALTH_PATH}: {e}")
+    if "prompts" not in health:
+        p.error(
+            f"{args.base_url}{HEALTH_PATH} serves no `prompts` — that worker predates "
+            "prompt logging, so run.json could not record what was actually sent. "
+            "Deploy the current worker or point --base-url at one."
+        )
 
     csv_path = EVAL_DIR / "results.csv"
     prev = previous_run_stats(csv_path, run_id)
-    detail: dict = {"run_id": run_id, "prompt_version": args.prompt_version, "videos": {}}
+    detail: dict = {
+        "run_id": run_id,
+        "prompt_version": args.prompt_version,
+        # The artifact behind prompt_version: the literal prompt text, so an old run is
+        # reproducible without git archaeology. Once per run — the per-video fields
+        # (duration, context) stay as placeholders; the per-video CONTEXT itself is
+        # already logged under each video. Never goes in the CSV.
+        "prompts": {**health["prompts"], "judge": JUDGE_PROMPT},
+        "videos": {},
+    }
     csv_rows: list[list] = []
 
     for gt_file in gt_files:
