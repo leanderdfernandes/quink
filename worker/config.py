@@ -41,20 +41,61 @@ BUCKET_VIDEOS = "videos"
 BUCKET_FRAMES = "frames"
 
 # --- Custom domain (build spec §4) ------------------------------------------
-# Every KB gets {subdomain}.quink.online free; a custom domain CNAMEs to it.
+# Every KB gets {subdomain}.quink.online free; a custom domain points at the same host.
 READER_DOMAIN = "quink.online"
 
-# The verifier is behind an interface with two implementations (build spec §4):
-#   "stub" — driven manually in local dev via /api/domain/stub (no real DNS)
-#   "dns"  — a real CNAME lookup (needs dnspython)
+# Custom domains are a PAID feature (pricing-spec §Free: "No custom domain"; §Starter:
+# "Custom domain mapping + auto-SSL") — the commitment wall (ux-spec §7). Enforced in the
+# worker, not just hidden in the UI, because the UI is not a security boundary.
+#
+# OFF until checkout ships: there is no way to upgrade yet, so enforcing it now would just
+# lock everyone (including us) out of the feature. Flip to True when payments land — that
+# is the whole change on the worker side. The SPA needs no flag: it surfaces the 402's
+# message in the form's error slot, and that's the moment to build the upgrade modal
+# (pricing-spec §7) properly.
+DOMAIN_REQUIRES_PAID_PLAN = False
+PAID_PLANS = ("starter", "growth")
+
+# Hosting/verification is behind one interface with two implementations (build spec §4):
+#   "stub"   — driven manually in local dev via /api/domain/stub (no Vercel, no DNS)
+#   "vercel" — the real thing: registers the host on the project and asks Vercel when it
+#              is servable. There is deliberately no "just check the CNAME" mode — DNS
+#              pointing at us does not mean we can serve the host or that a cert exists.
 # Default stub so the whole flow is testable with no external services.
 DOMAIN_VERIFIER = os.environ.get("DOMAIN_VERIFIER", "stub")
 
-# Background re-check cadence + give-up ceiling. Short interval for local dev; the
-# per-domain wait grows with attempts (backoff) inside domain.py.
-DOMAIN_CHECK_INTERVAL_SECONDS = int(os.environ.get("DOMAIN_CHECK_INTERVAL_SECONDS", "15"))
-DOMAIN_MAX_ATTEMPTS = 40  # ~ hours of backoff before -> failed
+# Vercel serves the SPA, so it is also what terminates TLS for customer domains. A host it
+# doesn't know 404s with no certificate — registering it is what makes a custom domain work
+# at all, so these are REQUIRED when DOMAIN_VERIFIER=vercel.
+# Token needs project domain scope; VERCEL_TEAM_ID only for team accounts.
+VERCEL_TOKEN = os.environ.get("VERCEL_TOKEN", "")
+VERCEL_PROJECT_ID = os.environ.get("VERCEL_PROJECT_ID", "")
+VERCEL_TEAM_ID = os.environ.get("VERCEL_TEAM_ID", "")
+VERCEL_TIMEOUT_SECONDS = 15
+
+# Only used if Vercel's config response omits a recommendation — their current published
+# targets. The API answer always wins so a change on their side can't strand users.
+VERCEL_CNAME_FALLBACK = "cname.vercel-dns.com"
+VERCEL_A_FALLBACK = "76.76.21.21"
+
+# What the stub shows in dev. Obvious placeholders — nobody should paste these anywhere.
+STUB_CNAME_VALUE = "cname.example-stub.invalid"
+STUB_A_VALUE = "203.0.113.1"
+
+# Background re-check cadence + give-up ceiling. The per-domain wait grows with attempts
+# (backoff) inside domain.py, so this is only the floor. Keep it ≥60s in production: every
+# tick is a Vercel API call per pending domain.
+DOMAIN_CHECK_INTERVAL_SECONDS = int(os.environ.get("DOMAIN_CHECK_INTERVAL_SECONDS", "60"))
+DOMAIN_MAX_BACKOFF_SECONDS = 3600
+DOMAIN_MAX_ATTEMPTS = 40  # ~ days of backoff before -> failed
 DOMAIN_CNAME_TTL = 3600
+
+# --- Email ------------------------------------------------------------------
+# DNS can take hours, so the "we'll email you the moment it's live" promise in the UI needs
+# a real sender. Unset -> the emails are logged instead (fine for dev; the promise is a lie
+# in production, so set it before launch).
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "Quink <hello@quink.online>")
 
 # --- Limits -----------------------------------------------------------------
 # Gemini's inline ceiling for Part.from_bytes. Above this the File API is required;

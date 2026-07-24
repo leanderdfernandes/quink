@@ -64,8 +64,10 @@ cp .env.example .env      # then fill it in
 - `SUPABASE_SERVICE_ROLE_KEY` — **service role** key (Project Settings → API). Server-side
   only; it bypasses RLS. Never put it in the SPA.
 - `ALLOWED_ORIGIN` — `http://localhost:5173`
-- `DOMAIN_VERIFIER` — `stub` (default) drives custom-domain checks manually in dev; `dns`
-  does a real CNAME lookup (needs `dnspython`).
+- `DOMAIN_VERIFIER` — `stub` (default) drives custom-domain checks manually in dev;
+  `vercel` is the real path and additionally needs `VERCEL_TOKEN` + `VERCEL_PROJECT_ID`
+  (see "Custom domain in production" below).
+- `RESEND_API_KEY` / `EMAIL_FROM` — optional; unset, the domain-live email is only logged.
 
 ### 3. SPA env
 
@@ -162,19 +164,50 @@ colour. Save is confirmation only. The favicon is derived from the logo automati
 the access level (and the 30-day expiry on free tier). Toggle **Listed / Unlisted** to
 control whether it appears in the help center.
 
-**Custom domain** (KB rail → **Domain**), with `DOMAIN_VERIFIER=stub`. To drive every state
-locally with no real DNS:
+**Custom domain** (KB rail → **Domain**), with `DOMAIN_VERIFIER=stub`. Custom domains are a
+**paid feature** (pricing-spec §Free: "No custom domain"), but the gate is **off** until
+checkout ships — flip `DOMAIN_REQUIRES_PAID_PLAN` in `worker/config.py` when payments land
+and free KBs start getting a 402 with the reason in the form's error slot. Any plan can
+connect a domain until then. To drive every state locally with no Vercel account and no real
+DNS:
 
-1. Enter a domain (e.g. `docs.acme.com`) → **Connect**. State → `pending`; the single CNAME
-   record appears (Type / Host / Value / TTL, each independently copyable).
+1. Enter a domain (e.g. `docs.acme.com`) → **Connect**. State → `pending`; the DNS records
+   appear (Type / Host / Value / TTL, each independently copyable). Reload the page — they
+   are re-fetched, not lost.
 2. Click **⚙ Simulate DNS (dev)** — this tells the stub the domain now resolves, then
    re-checks. State → `verifying` → `live`. (An email-on-live is logged by the worker.)
 3. **Check again** without simulating keeps it in `verifying`; after `DOMAIN_MAX_ATTEMPTS`
    it goes `failed`. **Remove domain** returns it to `none`.
 
-The free `{subdomain}.quink.site` stays live throughout — adding a custom domain never takes
-the KB offline. A background loop in the worker also re-checks `pending`/`verifying` domains
-on a backoff and emails on success, so leaving the page doesn't abandon the task.
+The free `{subdomain}.quink.online` stays live throughout — adding a custom domain never
+takes the KB offline. A background loop in the worker also re-checks `pending`/`verifying`
+domains on a backoff and emails on success, so leaving the page doesn't abandon the task.
+Once a domain is live the reader redirects the subdomain to it and emits a `canonical` link,
+so the two addresses don't compete in search.
+
+Checks: `python domain.py` (record/backoff logic) and `python test_domain_api.py` (the
+endpoint guard order — the reserved-host check and the paid wall must both run *before*
+anything is registered with the hosting provider; the test covers the wall in both
+positions, so flipping it on later is already verified).
+
+### Custom domain in production
+
+Pointing DNS at us is only half of it. Vercel serves the SPA, so it is also what routes the
+customer's hostname and issues its TLS certificate — **a host Vercel doesn't know about 404s
+with no certificate**, so a perfectly correct CNAME still gives the reader a browser security
+error. The worker therefore registers each connected domain on the Vercel project and then
+asks Vercel when it's servable (rather than doing its own CNAME lookup, which can say "yes"
+while the cert is still missing). To turn it on:
+
+1. Create a Vercel token with access to the SPA project → `VERCEL_TOKEN`.
+2. Project → Settings → General → Project ID → `VERCEL_PROJECT_ID` (plus `VERCEL_TEAM_ID`
+   on a team account).
+3. Set `DOMAIN_VERIFIER=vercel`. The worker fails at startup if the first two are missing,
+   rather than accepting domains that could never go live.
+
+`supabase/migrations/0012_domain_attempts.sql` is already applied to the linked project
+(the attempt counter moved out of worker memory; without the column every check errors) —
+re-run it on any other environment before deploying there.
 
 The worker serves `GET /reader/{subdomain}/sitemap.xml` (listed articles only; empty for
 free-tier KBs, which also render `noindex`).
@@ -198,12 +231,15 @@ free-tier KBs, which also render `noindex`).
 - **No delete-on-publish source-video cleanup.** Deleting an article removes its DB rows
   (steps cascade) and best-effort removes its frames + source video from Storage. Logos
   abandoned before Save on the Theme screen are still orphaned — minor.
-- **Custom-domain verification + email are stubbed** (`DOMAIN_VERIFIER=stub`, `LogEmailer`).
-  The state machine, backoff loop and CNAME record are real; the DNS lookup (`dns` verifier)
-  and a real email sender are the two swaps for production. The subdomain→custom-domain 301
-  is a source-of-truth flag on the KB; the actual redirect belongs at the edge/reader host.
-- **Attempt counter for domain backoff is in-memory** (resets on worker restart) — fine
-  locally; persist it if it must survive deploys.
+- **Custom domains default to the stub** (`DOMAIN_VERIFIER=stub`) so the flow is drivable
+  locally. Production is `vercel` + `RESEND_API_KEY` — see "Custom domain in production".
+  Remaining sharp edge: the subdomain→custom-domain redirect happens in the reader
+  (client-side `location.replace` + a `canonical` link), not as an edge 301. Fine for
+  readers and for search, but it costs one round trip on the old address.
+- **Ownership challenges are surfaced but untested against a live conflict.** If the apex is
+  already claimed on another Vercel account, Vercel returns a TXT challenge; we show it
+  alongside the routing record and re-verify on each check. The 409 ("already connected to
+  another site") path is the one that's exercised.
 - **Deferred (schema holds them, no UI): payments, quota enforcement, folders/categories,
   multiple KBs per account, per-KB analytics (`reader_views` column exists, not yet bumped).**
 

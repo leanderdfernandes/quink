@@ -558,6 +558,24 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
     setQuery('')
   }, [articleSlug, folderId])
 
+  // Once a custom domain is live it becomes the canonical home. The free subdomain never
+  // goes down (build spec §4) — old links, bookmarks and anything already indexed keep
+  // working — so we move readers over instead of breaking them, and tell crawlers which of
+  // the two addresses is the real one. `hostKey != null` scopes this to real reader hosts:
+  // the /kb/{slug} dev path must never bounce you to a live customer domain.
+  useEffect(() => {
+    if (!kb || hostKey == null) return
+    const canonicalHost =
+      kb.domain_status === 'live' && kb.custom_domain ? kb.custom_domain : window.location.host
+    if (canonicalHost !== window.location.host) {
+      window.location.replace(
+        `https://${canonicalHost}${window.location.pathname}${window.location.search}`,
+      )
+      return
+    }
+    setCanonical(`https://${canonicalHost}${window.location.pathname}`)
+  }, [kb, hostKey, articleSlug, folderId])
+
   useEffect(() => {
     if (!kb) return
     document.title = article?.title ? `${article.title} · ${kb.name}` : kb.name
@@ -625,6 +643,16 @@ function setMeta(name: string, content: string) {
     document.head.appendChild(el)
   }
   el.setAttribute('content', content)
+}
+
+function setCanonical(href: string) {
+  let el = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')
+  if (!el) {
+    el = document.createElement('link')
+    el.rel = 'canonical'
+    document.head.appendChild(el)
+  }
+  el.href = href
 }
 
 function setFavicon(href: string | null) {

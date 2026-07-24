@@ -10,8 +10,9 @@ supabase==2.31.0
 pydantic==2.11.7
 python-dotenv==1.0.1
 python-multipart==0.0.20
-# Only used by the real (non-stub) custom-domain verifier's CNAME lookup.
-dnspython==2.7.0
+# Custom-domain hosting registration (Vercel) + the domain-live email (Resend). Already
+# present transitively via supabase; pinned explicitly because we import it directly.
+httpx==0.28.1
 # NOT used by the worker. The eval judge (eval/run_eval.py) runs on OpenAI so it is a
 # different provider from the pipeline it scores, and eval/README.md tells you to run it
 # with this venv — so it is pinned here rather than in a second requirements file.

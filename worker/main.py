@@ -43,6 +43,9 @@ DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Build the hosting client up front: a deploy missing VERCEL_TOKEN should fail here,
+    # not silently accept domains that can never go live.
+    domain.hosting()
     task = asyncio.create_task(domain.run_loop())
     try:
         yield
@@ -146,16 +149,19 @@ def generate(
 
 
 # --- Custom domain (build spec §4) ------------------------------------------
+KB_DOMAIN_COLUMNS = "id, subdomain, custom_domain, domain_status, domain_attempts, plan"
+
+
 def _kb(kb_id: str) -> dict:
     res = (
         pipeline.db()
         .table("knowledge_bases")
-        .select("id, subdomain, custom_domain, domain_status")
+        .select(KB_DOMAIN_COLUMNS)
         .eq("id", kb_id)
-        .single()
+        .maybe_single()
         .execute()
     )
-    if not res.data:
+    if not res or not res.data:
         raise HTTPException(status_code=404, detail="KB not found")
     return res.data
 
@@ -165,30 +171,96 @@ def domain_connect(
     req: DomainConnectRequest, authorization: str | None = Header(default=None)
 ) -> dict:
     """Attach a custom domain and enter `pending`. Never touches the free subdomain, so the
-    KB stays online throughout (build spec §4). Returns the single CNAME record to add."""
+    KB stays online throughout (build spec §4). Returns the DNS records to add."""
     _require_owner(authorization, req.kb_id)
     d = req.domain.strip().lower().rstrip(".")
     if not DOMAIN_RE.match(d):
         raise HTTPException(status_code=400, detail="That doesn't look like a domain.")
+    # Our own hosts are not up for grabs: reader_kb resolves a request host to whichever KB
+    # claims it, so letting someone register app.quink.online would hand them the app's
+    # traffic. The free {subdomain}.quink.online is already theirs and needs no connecting.
+    if d == config.READER_DOMAIN or d.endswith(f".{config.READER_DOMAIN}"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{config.READER_DOMAIN} addresses are built in — use your own domain.",
+        )
+
     kb = _kb(req.kb_id)
-    pipeline.db().table("knowledge_bases").update(
-        {
-            "custom_domain": d,
-            "domain_status": "pending",
-            "domain_error": None,
-            "domain_last_checked_at": None,
-        }
-    ).eq("id", req.kb_id).execute()
-    domain._attempts.pop(req.kb_id, None)
-    return {"status": "pending", "record": domain.cname_record(d, kb["subdomain"])}
+    # Custom domains are the paid wall (pricing-spec §Free: "No custom domain"). Off until
+    # checkout exists — see DOMAIN_REQUIRES_PAID_PLAN.
+    if config.DOMAIN_REQUIRES_PAID_PLAN and kb.get("plan") not in config.PAID_PLANS:
+        raise HTTPException(
+            status_code=402, detail="Connecting your own domain is part of a paid plan."
+        )
+    # `custom_domain` is unique, so the DB is the real referee; check first only to answer
+    # with something a human can act on instead of a constraint violation.
+    taken = (
+        pipeline.db()
+        .table("knowledge_bases")
+        .select("id")
+        .eq("custom_domain", d)
+        .neq("id", req.kb_id)
+        .execute()
+    )
+    if taken.data:
+        raise HTTPException(status_code=409, detail="That domain is already connected.")
+
+    # Register with the host BEFORE touching the DB: if this fails the KB is untouched
+    # rather than parked in `pending` against a domain that can never go live.
+    previous = kb.get("custom_domain")
+    try:
+        records = domain.hosting().attach(d)
+    except domain.DomainError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+    try:
+        pipeline.db().table("knowledge_bases").update(
+            {
+                "custom_domain": d,
+                "domain_status": "pending",
+                "domain_error": None,
+                "domain_last_checked_at": None,
+                "domain_attempts": 0,
+            }
+        ).eq("id", req.kb_id).execute()
+    except Exception as e:
+        # Lost the race on the unique index between the check above and here.
+        domain.hosting().detach(d)
+        log.exception("could not save custom domain")
+        raise HTTPException(status_code=409, detail="That domain is already connected.") from e
+
+    # Swapping domains: release the old one, or it keeps serving this KB forever. Only once
+    # the row is committed — releasing it first would take a live domain down if the write
+    # then lost the race on the unique index.
+    if previous and previous != d:
+        domain.hosting().detach(previous)
+    return {"status": "pending", "records": records}
+
+
+@app.post("/api/domain/records")
+def domain_records(
+    req: DomainKbRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """The DNS records for the already-connected domain. Connect returns them once, but DNS
+    takes hours — the user will close the tab and come back, and the instructions have to
+    still be there. attach() is idempotent, so this is a re-read, not a re-registration."""
+    _require_owner(authorization, req.kb_id)
+    kb = _kb(req.kb_id)
+    d = kb.get("custom_domain")
+    if not d:
+        raise HTTPException(status_code=400, detail="No domain connected.")
+    try:
+        return {"status": kb.get("domain_status"), "records": domain.hosting().attach(d)}
+    except domain.DomainError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 @app.post("/api/domain/check")
 def domain_check(
     req: DomainKbRequest, authorization: str | None = Header(default=None)
 ) -> dict:
-    """Run the verifier once now (the "check again" button). The background loop does this
-    on a backoff anyway, but users want an immediate answer."""
+    """Run the readiness check once now (the "check again" button). The background loop does
+    this on a backoff anyway, but users want an immediate answer."""
     _require_owner(authorization, req.kb_id)
     kb = _kb(req.kb_id)
     if not kb.get("custom_domain"):
@@ -201,10 +273,19 @@ def domain_disconnect(
     req: DomainKbRequest, authorization: str | None = Header(default=None)
 ) -> dict:
     _require_owner(authorization, req.kb_id)
+    kb = _kb(req.kb_id)
+    if kb.get("custom_domain"):
+        # Release the host too — otherwise it stays bound to our project, keeps serving,
+        # and blocks the owner from connecting it anywhere else.
+        domain.hosting().detach(kb["custom_domain"])
     pipeline.db().table("knowledge_bases").update(
-        {"custom_domain": None, "domain_status": "none", "domain_error": None}
+        {
+            "custom_domain": None,
+            "domain_status": "none",
+            "domain_error": None,
+            "domain_attempts": 0,
+        }
     ).eq("id", req.kb_id).execute()
-    domain._attempts.pop(req.kb_id, None)
     return {"status": "none"}
 
 

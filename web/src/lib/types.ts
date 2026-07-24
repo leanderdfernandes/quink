@@ -89,6 +89,9 @@ export type KnowledgeBase = {
   domain_status: DomainStatus
   domain_last_checked_at: string | null
   domain_error: string | null
+  // Failed verification checks so far. Persisted (not in worker memory) so the backoff and
+  // the give-up ceiling survive a deploy — see migration 0012.
+  domain_attempts: number
   reader_views: number
   free_articles_used: number
   plan: string

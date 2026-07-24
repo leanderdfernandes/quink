@@ -3,9 +3,16 @@ import { supabase } from '../lib/supabase'
 import { READER_DOMAIN, WORKER_URL } from '../lib/config'
 import type { KnowledgeBase as KB } from '../lib/types'
 
-// Custom domain (build spec §4). The state machine is the real work; verification is
-// stubbed behind the worker. The free {subdomain}.quink.site is always live and never
-// goes down — adding a custom domain only layers on top.
+// Custom domain (build spec §4). The worker owns the state machine and registers the host
+// with the platform that serves us (that is what buys routing + the TLS cert). The free
+// {subdomain}.quink.online is always live and never goes down — a custom domain only
+// layers on top.
+//
+// Custom domains are a paid feature (pricing-spec §Free/§Starter), but the gate lives ONLY
+// in the worker (config.DOMAIN_REQUIRES_PAID_PLAN) — no plan list mirrored here to drift
+// out of sync. It's off until checkout ships; when it's on, connect() surfaces the 402's
+// message in the error slot below, which is the cue to build the real upgrade modal
+// (pricing-spec §7).
 
 type Props = {
   kb: KB
@@ -13,7 +20,7 @@ type Props = {
   onChange: (kb: KB) => void
 }
 
-type Record = { type: string; host: string; value: string; ttl: number }
+type DnsRecord = { type: string; host: string; value: string; ttl: number }
 
 async function post(path: string, body: unknown) {
   // The worker checks this token owns the kb_id — otherwise anyone could connect or
@@ -57,9 +64,23 @@ function CopyField({ label, value }: { label: string; value: string }) {
 export default function DomainSettings({ kb, onBack, onChange }: Props) {
   const [status, setStatus] = useState(kb.domain_status)
   const [domainInput, setDomainInput] = useState(kb.custom_domain ?? '')
-  const [record, setRecord] = useState<Record | null>(null)
+  const [records, setRecords] = useState<DnsRecord[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // DNS takes hours, so users leave and come back. Re-fetch the records they still have to
+  // add rather than showing a "waiting for DNS" card with nothing to act on.
+  useEffect(() => {
+    if (!kb.custom_domain || status === 'none' || status === 'live') return
+    let cancelled = false
+    post('/api/domain/records', { kb_id: kb.id })
+      .then((r) => !cancelled && setRecords(r.records ?? []))
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // Only on mount / when the connected domain changes — not on every status tick.
+  }, [kb.id, kb.custom_domain]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll the KB while mid-verification so the UI flips to live the moment the background
   // job resolves it — the user doesn't have to refresh.
@@ -89,7 +110,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
         kb_id: kb.id,
         domain: domainInput.trim(),
       })
-      setRecord(r.record)
+      setRecords(r.records ?? [])
       setStatus('pending')
       onChange({ ...kb, custom_domain: domainInput.trim(), domain_status: 'pending' })
     } catch (e) {
@@ -114,7 +135,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
     setBusy(true)
     await post('/api/domain/disconnect', { kb_id: kb.id }).catch(() => {})
     setStatus('none')
-    setRecord(null)
+    setRecords([])
     setDomainInput('')
     onChange({ ...kb, custom_domain: null, domain_status: 'none' })
     setBusy(false)
@@ -185,18 +206,21 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
               <span className="domain-pill pending">Waiting for DNS</span>
             </div>
             <p className="cap" style={{ marginBottom: 16 }}>
-              Add this one record at your DNS provider. Not seeing it yet is normal — DNS can
-              take a few hours. You can close this page; we’ll email you the moment it’s live.
+              {records.length > 1
+                ? 'Add these records at your DNS provider.'
+                : 'Add this one record at your DNS provider.'}{' '}
+              Not seeing it yet is normal — DNS can take a few hours. You can close this
+              page; we’ll email you the moment it’s live.
             </p>
 
-            {record && (
-              <div className="dns-record">
+            {records.map((record) => (
+              <div className="dns-record" key={`${record.type}-${record.host}`}>
                 <CopyField label="Type" value={record.type} />
                 <CopyField label="Host" value={record.host} />
                 <CopyField label="Value" value={record.value} />
                 <CopyField label="TTL" value={String(record.ttl)} />
               </div>
-            )}
+            ))}
 
             <div className="domain-actions">
               <button className="btn btn-ghost" onClick={checkNow} disabled={busy}>
@@ -240,6 +264,17 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
             <p className="err" style={{ marginBottom: 16 }}>
               {error || kb.domain_error || 'We couldn’t find the DNS record.'}
             </p>
+
+            {/* Show what they were meant to add — "it failed" with no record to compare
+                against leaves them nothing to do. */}
+            {records.map((record) => (
+              <div className="dns-record" key={`${record.type}-${record.host}`}>
+                <CopyField label="Type" value={record.type} />
+                <CopyField label="Host" value={record.host} />
+                <CopyField label="Value" value={record.value} />
+                <CopyField label="TTL" value={String(record.ttl)} />
+              </div>
+            ))}
             <div className="domain-actions">
               <button className="btn btn-ghost" onClick={checkNow} disabled={busy}>
                 Try again
