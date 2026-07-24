@@ -39,8 +39,10 @@ worker too old to serve `prompts` fails the run at startup rather than writing a
 - Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (the pipeline uses
   it) and `OPENAI_API_KEY` (**the judge uses it** — the judge is deliberately not
   Gemini, see Scoring). All four are checked at startup, before the first video, so a
-  missing key never surfaces five minutes into a run. The worker's `worker/.env` has
-  the first three — source it, or pass the Supabase ones as flags.
+  missing key never surfaces five minutes into a run. All four belong in `worker/.env`,
+  but **the runner does not read that file** — it reads `os.environ` directly, so the
+  values must be in the shell. In PowerShell: `$env:OPENAI_API_KEY = "sk-..."`. The
+  Supabase two can be passed as flags instead.
 - Videos in `eval/videos/` and a ground-truth note per video in `eval/ground-truth/`.
 
 Use the same Python that runs the worker (it has httpx, supabase, openai):
