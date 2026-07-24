@@ -22,6 +22,10 @@ from fastapi.testclient import TestClient
 import config
 
 config.DOMAIN_VERIFIER = "stub"
+# Stub mode refuses to issue records to a deployed origin (see _refuse_if_serving_real_users).
+# A developer's .env may well hold production origins, so pin localhost: this file tests the
+# connect guards, and domain.py's self-check covers the stub-in-production refusal itself.
+config.ALLOWED_ORIGINS = ["http://localhost:5173"]
 
 import domain  # noqa: E402
 import main  # noqa: E402

@@ -5,6 +5,7 @@ import {
   COLOR_PRESETS,
   DEFAULT_PRIMARY_COLOR,
   FONT_PAIRINGS,
+  READER_DOMAIN,
   helpCenterUrl,
 } from '../lib/config'
 import { isValidHex, normalizeHex } from '../reader/theme'
@@ -131,11 +132,19 @@ export default function ThemeSettings({ kb, userId, onBack, onSaved }: Props) {
       logo_path: logoPath,
       favicon_path: faviconPath,
     }
-    const { error } = await supabase.from('knowledge_bases').update(patch).eq('id', kb.id)
+    // Select the row back: renaming can move the help-center address (a DB trigger keeps
+    // the subdomain following the name until the KB is published), so patching local state
+    // with what we sent would leave the UI showing the old address until a reload.
+    const { data, error } = await supabase
+      .from('knowledge_bases')
+      .update(patch)
+      .eq('id', kb.id)
+      .select()
+      .single()
     setSaving(false)
     if (!error) {
       setSaved(true)
-      onSaved({ ...kb, ...patch })
+      onSaved((data as KB | null) ?? { ...kb, ...patch })
     }
   }
 
@@ -270,6 +279,22 @@ export default function ThemeSettings({ kb, userId, onBack, onSaved }: Props) {
                 setSaved(false)
               }}
             />
+            {/* Show the address as it IS, never a prediction of what it will become —
+                the DB resolves collisions and freezes it once published, so a guess here
+                would sometimes be wrong. It updates on save, which is the honest moment. */}
+            <p className="cap">
+              {kb.custom_domain && kb.domain_status === 'live' ? (
+                <>
+                  Your help center is at <code>{kb.custom_domain}</code>.
+                </>
+              ) : (
+                <>
+                  Your address: <code>{kb.subdomain}.{READER_DOMAIN}</code>. It follows this
+                  name until you publish your first article, then it stays put so existing
+                  links keep working.
+                </>
+              )}
+            </p>
           </div>
 
           <div className="field">

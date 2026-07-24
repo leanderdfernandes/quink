@@ -79,6 +79,29 @@ class Hosting(Protocol):
         """True once the host is verified AND its DNS is correct AND a cert can issue."""
 
 
+def _is_local_origin(origin: str) -> bool:
+    host = origin.split("://")[-1].split("/")[0].split(":")[0].lower()
+    return host in ("localhost", "127.0.0.1", "[::1]") or host.endswith(".local")
+
+
+def _refuse_if_serving_real_users() -> None:
+    """The stub hands out DNS records that don't exist. If this worker is serving a deployed
+    SPA rather than localhost, that means a customer pasting `cname.example-stub.invalid`
+    into their registrar and waiting forever for a domain that can never resolve.
+
+    DOMAIN_VERIFIER falls back to "stub" whenever it is unset — including when the env var
+    name is merely misspelled — so the misconfiguration is silent and looks like working
+    software. Fail with the reason instead of a plausible-looking record."""
+    remote = [o for o in config.ALLOWED_ORIGINS if not _is_local_origin(o)]
+    if remote:
+        raise DomainError(
+            f"This worker is in stub mode (DOMAIN_VERIFIER={config.DOMAIN_VERIFIER!r}) but "
+            f"is serving {remote[0]}. Set DOMAIN_VERIFIER=vercel — check the spelling of the "
+            "env var itself, an unrecognized name silently falls back to stub. "
+            "No DNS record was issued."
+        )
+
+
 class StubHosting:
     """Resolves only domains explicitly flipped on via /api/domain/stub. Lets us drive every
     transition manually in local dev with no Vercel account and no DNS."""
@@ -95,6 +118,7 @@ class StubHosting:
                 self._resolving.discard(domain.lower())
 
     def attach(self, domain: str) -> list[dict]:
+        _refuse_if_serving_real_users()
         host = record_host(domain)
         return [
             _rec("A", host, config.STUB_A_VALUE)
@@ -442,6 +466,28 @@ def _selfcheck() -> None:
     assert _first(["cname.vercel-dns.com"]) == "cname.vercel-dns.com"
     assert _first([]) is None and _first(None) is None
 
+    # Stub mode must refuse to issue records when the worker is serving a real origin —
+    # that combination is always a misconfigured DOMAIN_VERIFIER, and the symptom is a
+    # customer pasting an .invalid CNAME at their registrar.
+    origins = config.ALLOWED_ORIGINS
+    try:
+        config.ALLOWED_ORIGINS = ["https://quink.online"]
+        try:
+            StubHosting().attach("docs.acme.com")
+            raise AssertionError("stub must refuse to serve a deployed origin")
+        except DomainError as e:
+            assert "DOMAIN_VERIFIER" in str(e)
+        config.ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+        assert StubHosting().attach("docs.acme.com")  # local dev is fine
+    finally:
+        config.ALLOWED_ORIGINS = origins
+
+    assert _is_local_origin("http://localhost:5173")
+    assert _is_local_origin("http://127.0.0.1:8000")
+    assert not _is_local_origin("https://quink.online")
+    assert not _is_local_origin("https://localhost.evil.com")  # suffix trick, not local
+
+    config.ALLOWED_ORIGINS = ["http://localhost:5173"]
     h = StubHosting()
     assert not h.servable("x.com")
     h.set("x.com", True)
