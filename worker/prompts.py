@@ -23,30 +23,46 @@ Re-baseline (EVAL-PLAN §1) before reading any run against those numbers. Watch 
 faithfulness?) — more prompt is not free.
 """
 
-# Quoted verbatim from stage1-collapse-rule.md. Shipped, and it threaded the needle in
-# one iteration — the V3 canary held, so it taught compression rather than deletion.
-# Reword it and you are re-opening a change that already passed the ship rule.
-COLLAPSE_RULE = """SEGMENT BY WHAT A READER NEEDS TO LEARN, NOT BY EACH LITERAL ACTION.
+# Quoted verbatim from stage1-collapse-rule.md (v2 wording, 2026-07-24). v1 shipped and
+# threaded the needle in one iteration; v2 widens collapse from "same action over like
+# items" to "same KIND of action even when the content differs" — a deliberately stronger
+# push. MEASURED: run 20260724T160101Z_collapse-v2 vs baseline — usable_rate 71%->86%, hard
+# gates clear, every step_count_delta moved toward 0 and none went negative (compression,
+# not deletion). Caveat: the over-collapse guard is vacuous — no ground-truth note in the
+# eval set carries a "Must-stay-separate" pair, so the failure this wording most plausibly
+# causes is untested. Add one before treating v2 as durably safe.
+COLLAPSE_RULE = """SEGMENT BY WHAT A READER NEEDS TO LEARN, NOT BY EACH ACTION PERFORMED.
 
-Collapse repeated actions. When the user performs the SAME action across a SET of
-similar items — e.g. defining question 1, then question 2, then question 3; adding
-several rows the same way; filling several similar fields — emit it as a SINGLE step
-that names the repetition. Do not emit one step per item.
+Before writing steps, ask: what are the distinct things a reader must be TAUGHT?
+A reader who has been taught an action once does not need it taught again with
+different content.
 
-  Bad (over-segmented):
-    Step 4: Define question 1
-    Step 5: Define question 2
-    Step 6: Define question 3
-  Good (collapsed):
-    Step 4: Define each question (1–3) the same way — [the action], repeating for each.
+Collapse into a single step when the user performs the same KIND of action
+repeatedly, even when the specific content, options, or settings differ each
+time. Name the pattern and note the variation:
 
-For a collapsed step, set its timestamp to the FIRST occurrence of the repeated action.
+  Bad:
+    Step 3: Add a name question
+    Step 4: Add a multiple choice question
+    Step 5: Add a short answer question
+  Good:
+    Step 3: Add each question — click "Add question", type the question text,
+    then choose its type from the dropdown. Repeat for every question you need.
 
-DO NOT OVER-COLLAPSE. Only merge actions that are genuinely the same action over a set of
-like items. Two steps that happen to share a verb but occur in different contexts or on
-different screens are DISTINCT — keep them separate. When unsure whether two actions are
-"the same repeated" or "two distinct," keep them separate; a reader tolerates one extra
-step far better than a missing instruction."""
+  Bad:
+    Step 1: Enter your email
+    Step 2: Enter your name
+    Step 3: Select your class
+  Good:
+    Step 1: Answer each question in the form, entering text or selecting an
+    option as each one requires.
+
+Set a collapsed step's timestamp to the FIRST occurrence.
+
+DO NOT OVER-COLLAPSE. Actions are distinct when they are different KINDS of
+action, or occur in different contexts or on different screens — even if they
+share a verb. Saving a draft and publishing are distinct. Configuring a setting
+and answering a question are distinct. When genuinely unsure, keep them separate."""
 
 # LEARNINGS #5. The baseline prompt said "reproduce what they see", which is subtly
 # GENERATIVE — it invited the model to write a plausible tutorial, filling gaps with what

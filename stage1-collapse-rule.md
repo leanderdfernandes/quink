@@ -15,27 +15,38 @@ Insert into the Stage 1 system/instruction block, in the section describing how 
 segment steps:
 
 ```
-SEGMENT BY WHAT A READER NEEDS TO LEARN, NOT BY EACH LITERAL ACTION.
+SEGMENT BY WHAT A READER NEEDS TO LEARN, NOT BY EACH ACTION PERFORMED.
 
-Collapse repeated actions. When the user performs the SAME action across a SET of
-similar items — e.g. defining question 1, then question 2, then question 3; adding
-several rows the same way; filling several similar fields — emit it as a SINGLE step
-that names the repetition. Do not emit one step per item.
+Before writing steps, ask: what are the distinct things a reader must be TAUGHT?
+A reader who has been taught an action once does not need it taught again with
+different content.
 
-  Bad (over-segmented):
-    Step 4: Define question 1
-    Step 5: Define question 2
-    Step 6: Define question 3
-  Good (collapsed):
-    Step 4: Define each question (1–3) the same way — [the action], repeating for each.
+Collapse into a single step when the user performs the same KIND of action
+repeatedly, even when the specific content, options, or settings differ each
+time. Name the pattern and note the variation:
 
-For a collapsed step, set its timestamp to the FIRST occurrence of the repeated action.
+  Bad:
+    Step 3: Add a name question
+    Step 4: Add a multiple choice question
+    Step 5: Add a short answer question
+  Good:
+    Step 3: Add each question — click "Add question", type the question text,
+    then choose its type from the dropdown. Repeat for every question you need.
 
-DO NOT OVER-COLLAPSE. Only merge actions that are genuinely the same action over a set of
-like items. Two steps that happen to share a verb but occur in different contexts or on
-different screens are DISTINCT — keep them separate. When unsure whether two actions are
-"the same repeated" or "two distinct," keep them separate; a reader tolerates one extra
-step far better than a missing instruction.
+  Bad:
+    Step 1: Enter your email
+    Step 2: Enter your name
+    Step 3: Select your class
+  Good:
+    Step 1: Answer each question in the form, entering text or selecting an
+    option as each one requires.
+
+Set a collapsed step's timestamp to the FIRST occurrence.
+
+DO NOT OVER-COLLAPSE. Actions are distinct when they are different KINDS of
+action, or occur in different contexts or on different screens — even if they
+share a verb. Saving a draft and publishing are distinct. Configuring a setting
+and answering a question are distinct. When genuinely unsure, keep them separate.
 ```
 
 Keep it as a named constant / part of the prompt template — not inline scattered text.
@@ -99,6 +110,43 @@ v1 wording (this doc, unchanged) → run 2026-07-15-collapse:
     Faithfulness = 5 on all videos (no hard-gate regression).
     No "must stay separate" pair collapsed (V1 add-methods, V2 distinct controls survived).
     → SHIP. Threaded the needle in ONE iteration, not the 3–4 expected.
+```
+
+```
+v2 wording (this doc as it now reads, 2026-07-24) → run 20260724T160101Z_collapse-v2.
+    Widens collapse from "same action over like items" to "same KIND of action even when
+    the content differs", adds a second example pair (answering a form's fields), and
+    names distinctness cases explicitly (save vs publish; configure vs answer).
+    Measured against 20260724T143442Z_baseline (same video set, so comparable; the v1
+    scores above are from a DIFFERENT set and are not).
+
+    usable_rate 71% -> 86%. Hard gates all clear. Faithfulness mean +0.29 (4.71).
+    segmentation mean +0.57 (3.29).
+
+    video   segmentation   step_count_delta   usable_as_is
+    V1        2 -> 5          +4 -> +0        major_rework -> minor_edits
+    V2        3 -> 3          +1 -> +1        minor_edits  -> minor_edits
+    V3        2 -> 3          +4 -> +1        minor_edits  -> minor_edits   CANARY
+    V5        2 -> 2          +5 -> +2        major_rework -> major_rework
+    V6        5 -> 5          +0 -> +0        zero_edits   -> minor_edits
+    V7        3 -> 2          +1 -> +2        minor_edits  -> minor_edits
+    V8        2 -> 3          +1 -> +1        minor_edits  -> minor_edits
+
+    Every step_count_delta stayed >= 0 and moved toward 0 — it taught compression, not
+    deletion, which is the whole risk this wording carried. The V3 canary improved rather
+    than collapsing.
+    → SHIP, with the caveat below.
+
+    CAVEAT — the over-collapse half of the ship rule was NOT exercised: every note in the
+    current eval/ground-truth set says "Must-stay-separate: none". The guard against the
+    failure this wording most plausibly causes is currently vacuous. Before treating v2 as
+    durably safe, add a must-stay-separate case (a save-draft vs publish pair is the
+    obvious one) and re-baseline.
+
+    Went the wrong way, both minor: V7 segmentation 3 -> 2 with delta +1 -> +2 (judge
+    wants the menu-open and Delete steps merged — under-collapse, not over-). V6
+    zero_edits -> minor_edits on a soft note ("could use small copy-editing ... if
+    desired") — reads as judge noise, but V6 was the only clean sweep, so watch it.
 ```
 
 **Open on this fix (do not treat as fully closed):**
