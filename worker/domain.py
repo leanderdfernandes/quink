@@ -170,11 +170,20 @@ class VercelHosting:
             "POST", f"/v10/projects/{self._project}/domains", json={"name": domain}
         )
         if r.status_code == 409:
-            # Held by another Vercel project/account — we genuinely cannot serve it, and
-            # no DNS record the user adds will change that. Say so instead of parking them
-            # in a "waiting for DNS" state that can never end.
+            # Held by another project/account — we genuinely cannot serve it, and no DNS
+            # record the user adds will change that. Say so instead of parking them in a
+            # "waiting for DNS" state that can never end.
+            #
+            # 409 covers several distinct causes (assigned to another project, already on
+            # the owner's account verified or not, domain not allowed, project transferring)
+            # and they need different fixes — most often "it's on ANOTHER of your own
+            # projects", which the generic wording sends people to look in the wrong place.
+            # So pass the provider's reason through rather than flattening it.
+            detail = _detail(r)
+            log.warning("vercel 409 attaching %s: %s", domain, detail or "(no message)")
             raise DomainError(
-                "That domain is already connected to another site. Remove it there first."
+                "That domain is already connected to another site — remove it there first."
+                + (f" ({detail})" if detail else "")
             )
         if r.status_code == 403:
             raise DomainError("That domain can't be used here.")
