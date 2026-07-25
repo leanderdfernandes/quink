@@ -10,6 +10,7 @@ Do NOT add a model call anywhere else.
 
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from google.genai import types
@@ -40,16 +41,20 @@ def set_stage(job_id: str, stage: str) -> None:
 
 
 def fail(job_id: str, message: str) -> None:
-    db().table("jobs").update({"status": "error", "error": message[:2000]}).eq(
-        "id", job_id
-    ).execute()
+    """Record the failure. `counted_against_quota` is deliberately NOT touched: a failed
+    generation must never burn a run (mvp-dev-plan §3)."""
+    db().table("jobs").update(
+        {
+            "status": "error",
+            "error": message[:2000],
+            "failure_detail": message[:2000],
+            "finished_at": _now(),
+        }
+    ).eq("id", job_id).execute()
 
 
-def _owner_of(kb_id: str) -> str:
-    """Frames must be keyed by owner id — storage RLS reads ownership off the first
-    path segment, so a wrong prefix means the author cannot load their own screenshots."""
-    res = db().table("knowledge_bases").select("owner_id").eq("id", kb_id).single().execute()
-    return res.data["owner_id"]
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _upload_frame(local: Path, storage_path: str) -> str:
@@ -87,8 +92,6 @@ def run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
 
 
 def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
-    owner_id = _owner_of(kb_id)
-
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
 
@@ -108,6 +111,18 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         local_video.write_bytes(video_bytes)
 
         duration = frames_mod.probe_duration(local_video)
+
+        # Record the estimated spend NOW, not at the end. The circuit breaker sums today's
+        # est_cost_usd, so a run still in flight has to be visible to it — otherwise
+        # concurrent jobs all read the same stale total and pass the cap together.
+        db().table("jobs").update(
+            {
+                "video_duration_seconds": int(duration),
+                "est_cost_usd": round(
+                    (duration / 60.0) * config.EST_COST_USD_PER_VIDEO_MINUTE, 4
+                ),
+            }
+        ).eq("id", job_id).execute()
 
         # --- Stage: detecting (Stage 1 — the model that saw the video drafts) ---
         set_stage(job_id, config.STAGE_DETECTING)
@@ -146,12 +161,12 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
                 local_video, seconds, tmpdir / f"step-{step.step_number}.webp"
             )
             screenshots[step.step_number] = _upload_frame(
-                local, f"{owner_id}/{article_id}/step-{step.step_number}.webp"
+                local, f"{kb_id}/{article_id}/step-{step.step_number}.webp"
             )
 
         # The 1fps dense set backing the Tier-1 filmstrip (±3s candidates).
         for second, local in frames_mod.extract_dense_set(local_video, tmpdir / "dense"):
-            _upload_frame(local, f"{owner_id}/{article_id}/dense/{second:05d}.webp")
+            _upload_frame(local, f"{kb_id}/{article_id}/dense/{second:05d}.webp")
 
         # --- Stage: writing (Stage 2 — the cheap model polishes) ---------------
         set_stage(job_id, config.STAGE_WRITING)
@@ -177,10 +192,22 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         _write_steps(article_id, polished, screenshots, seconds_by_step)
 
         db().table("articles").update(
-            {"title": polished.title, "subtitle": polished.subtitle, "status": "ready"}
+            {
+                "title": polished.title,
+                "subtitle": polished.subtitle,
+                "status": "ready",
+                # Written once, here, and never updated. It is the only passive measure of
+                # how far a published article drifts from what we generated — uncapturable
+                # after the fact, which is why it ships ahead of the rest of the metrics.
+                "generated_snapshot": polished.model_dump(),
+            }
         ).eq("id", article_id).execute()
 
-        db().table("jobs").update({"status": "done"}).eq("id", job_id).execute()
+        # The run is charged HERE and nowhere else: on success only. Everything above this
+        # line can fail without costing the user a run.
+        db().table("jobs").update(
+            {"status": "done", "counted_against_quota": True, "finished_at": _now()}
+        ).eq("id", job_id).execute()
 
 
 def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:
@@ -201,13 +228,10 @@ def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:
         )
         .execute()
     )
-    article_id = res.data[0]["id"]
-
-    # A generation was spent. Not enforcement — nothing blocks at the limit this slice —
-    # it just keeps the KB's free-article counter truthful (see migration 0003).
-    db().rpc("increment_free_articles", {"p_kb_id": kb_id}).execute()
-
-    return article_id
+    # `source` is stamped by a DB trigger off source_video_path (migration 0014), not here:
+    # there is more than one article-creation call site and a trigger is the only version a
+    # future one cannot forget. The same trigger starts the KB's trial clock.
+    return res.data[0]["id"]
 
 
 def _write_steps(

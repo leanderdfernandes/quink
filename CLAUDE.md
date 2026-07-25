@@ -207,6 +207,36 @@ featured tier; Growth is a quiet line, not a card, at launch.
 - **Config, not literals:** model IDs, prompts, prices, limits, paths — named and centralized,
   changeable without hunting. Prices/limits ship as editable config, never hardcoded.
 
+## 10b. Entitlements (locked — migration 0014)
+
+Settled. Do not re-open, and do not quietly work around one; flag it instead.
+
+- **`plan` is OWNER-level.** It lives on `profiles`, never on a KB. `knowledge_bases.plan`
+  is dropped and must not come back. A KB-scoped plan carries the wrong entitlements
+  through the ownership-claim flow, breaks `internal` demo KBs, and goes ambiguous the
+  moment a tier allows more than one KB.
+- **Quota counts `jobs`, not `articles`, and the ledger is append-only.** The quota query is
+  `count(*)` over `jobs where counted_against_quota` — never a stored counter. `article_id`
+  is `on delete set null` so a ledger row outlives its article. **Deleting an article never
+  returns a run**; that FK is the entire anti-farming mechanism.
+- **`counted_against_quota` is set on SUCCESS ONLY.** A failed generation never burns a run.
+  Not generosity — failed-run support tickets are the largest support cost at this size.
+- **Free tier = 3 lifetime AI video RUNS + unlimited manual articles + 30-day expiry.** Not
+  "3 articles". Generation is the only variable cost; hosting typed articles is free.
+  **Manual article creation is never gated by anything.** Any copy saying "3 free articles"
+  is wrong.
+- **Limits live in code, prices live in the DB.** `PLANS` in `worker/config.py`, mirrored by
+  `web/src/lib/plans.ts` and — for the two flags the database itself must decide —
+  `public.plan_flags()`. Prices live in the `plans` table so they change without a deploy.
+  One price per plan for everyone; no per-customer price column.
+- **Enforcement happens once, in `POST /api/generate`, before the Gemini call.** Free is a
+  hard wall; paid run caps are SOFT (proceed + flag `over_cap`). The hard protection is the
+  global `DAILY_SPEND_CAP_USD` circuit breaker, which applies to `internal` too. The SPA
+  reads counters for display only, never for permission.
+- **Storage objects are keyed `{kb_id}/…`,** never by owner: a KB changes hands on claim,
+  and a purge must be able to delete exactly one KB's objects. Storage RLS resolves that
+  first path segment through `knowledge_bases`.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock

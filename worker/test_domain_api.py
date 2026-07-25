@@ -75,10 +75,13 @@ class _Query:
         return self
 
     def execute(self):
+        # Entitlements live on `profiles` now, not on the KB, so the fake has to route by
+        # table — the domain paid wall reads the OWNER's plan.
+        rows = self.db.profiles if self.table_name == "profiles" else self.db.rows
         if self._update is not None:
             self.db.updates.append(self._update)
-            self.db.rows[0].update(self._update)
-            return _Result([self.db.rows[0]])
+            rows[0].update(self._update)
+            return _Result([rows[0]])
         def keep(r):
             for c, v in self._filters.items():
                 if c.startswith("not."):
@@ -91,12 +94,12 @@ class _Query:
                     return False
             return True
 
-        matched = [r for r in self.db.rows if keep(r)]
+        matched = [r for r in rows if keep(r)]
         return _Result(matched[0] if "id" in self._filters and matched else matched)
 
 
 class _FakeDb:
-    def __init__(self, **kb):
+    def __init__(self, plan="free", **kb):
         row = {
             "id": KB_ID,
             "owner_id": OWNER,
@@ -104,10 +107,12 @@ class _FakeDb:
             "custom_domain": None,
             "domain_status": "none",
             "domain_attempts": 0,
-            "plan": "free",
         }
         row.update(kb)
         self.rows = [row]
+        # `plan` is owner-level (migration 0014). Passing it to _FakeDb still reads as
+        # "this KB's owner is on X" at the call sites, which is what the tests mean.
+        self.profiles = [{"id": OWNER, "plan": plan}]
         self.updates = []
 
     def table(self, name):

@@ -93,8 +93,23 @@ export type KnowledgeBase = {
   // the give-up ceiling survive a deploy — see migration 0012.
   domain_attempts: number
   reader_views: number
-  free_articles_used: number
+  // Trial lifecycle (mvp-dev-plan §5). Stamped once, by trigger, on the FIRST article
+  // created in this KB — never recalculated. The sweep that acts on these is a later slice.
+  trial_started_at: string | null
+  offline_at: string | null
+  purge_at: string | null
+  created_at: string
+}
+
+// Entitlements are OWNER-level and live here, not on a KB. `plan` on a KB would carry the
+// wrong tier through an ownership claim and go ambiguous once a plan allows several KBs.
+export type Profile = {
+  id: string
+  email: string
   plan: string
+  plan_since: string | null
+  is_admin: boolean
+  last_kb_id: string | null
   created_at: string
 }
 
@@ -113,7 +128,10 @@ export type ReaderKb = {
   subdomain: string | null
   custom_domain: string | null
   domain_status: DomainStatus
-  plan: string
+  // RENDERING flags, derived from the owner's plan at query time. The reader is anon and
+  // has no business knowing what tier its host pays for — or that tier names exist.
+  noindex: boolean
+  watermark: boolean
 }
 
 // Nav/sitemap row from reader_articles(). Carries the folder it's filed in so the home
@@ -136,10 +154,15 @@ export type ReaderCategory = {
   articles: ReaderArticleSummary[]
 }
 
+// A row in the run ledger (migration 0014). Append-only: it outlives the article it
+// produced, which is what makes `counted_against_quota` un-farmable.
 export type Job = {
   id: string
   kb_id: string
+  user_id: string
   article_id: string | null
+  // Set on SUCCESS only — a failed generation never burns a run.
+  counted_against_quota: boolean
   stage: 'analyzing' | 'detecting' | 'capturing' | 'writing'
   status: 'queued' | 'running' | 'done' | 'error'
   error: string | null

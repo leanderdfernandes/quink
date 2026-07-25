@@ -1,6 +1,8 @@
 // Named config. Per CLAUDE.md §10: limits, prices and paths are constants, never
 // scattered literals — changeable without hunting.
 
+import { PLANS } from './plans'
+
 // Brand direction is being revisited (CLAUDE.md §12); the wordmark is not locked.
 // One constant so renaming is one line.
 export const PRODUCT_NAME = 'Quink'
@@ -94,9 +96,10 @@ export const FONT_PAIRINGS: Record<
 // disclosure is REQUIRED, not a nicety: over-disclosure here keeps deletion fair.
 export const FREE_ARTICLE_EXPIRY_DAYS = 30
 
-// Free tier: 3 LIFETIME articles (CLAUDE.md §7, pricing-spec §2). Locked — older
-// specs saying "5 minutes" are superseded. NOT enforced this slice; display only.
-export const FREE_ARTICLE_LIMIT = 3
+// Free-tier limits live in lib/plans.ts (PLANS.free), mirroring the worker. They are NOT
+// repeated here: the unit is 3 lifetime AI video RUNS — articles typed by hand are
+// unlimited on every tier — and a stray "FREE_ARTICLE_LIMIT" constant is how that
+// distinction gets quietly lost again.
 
 // Neutral KB name for free-provider signups. Must match kb_name_from_email() in
 // the migration — if these drift, the inline rename field pre-fills wrong.
@@ -144,13 +147,13 @@ export const DEFAULT_TONE = 'Friendly'
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
 export const COPY = {
-  freeLimitDisclosure: `${FREE_ARTICLE_LIMIT} free articles, then top up.`,
+  freeLimitDisclosure: `${PLANS.free.lifetime_runs} free video guides, then top up. Writing by hand is unlimited.`,
   videoDeletion: 'We delete the source video once your article is published.',
   buildCta: 'Build my article',
   wallHeading: 'Create a free account to build your guide.',
   wallFilePill: '✓ your recording is ready',
   wallFootnote: 'Keeps the free tier free for everyone.',
-  wallNoCard: `Free accounts include ${FREE_ARTICLE_LIMIT} articles, no card needed.`,
+  wallNoCard: `Free accounts include ${PLANS.free.lifetime_runs} video guides, no card needed.`,
   generatingReassurance: "Hang tight — you can't lose this.",
   generatingTip:
     "You'll be able to swap any screenshot and edit every step before publishing.",

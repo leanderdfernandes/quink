@@ -17,6 +17,7 @@ import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,6 +102,58 @@ def _require_owner(authorization: str | None, kb_id: str) -> str:
     return uid
 
 
+# --- Entitlements (mvp-dev-plan §4) -----------------------------------------
+# One resolver, one config table. Plan is owner-level, so everything keys on the uid the
+# auth guard above already established — never on the KB.
+def _limits(user_id: str) -> dict:
+    res = (
+        pipeline.db().table("profiles").select("plan").eq("id", user_id).maybe_single().execute()
+    )
+    plan = (res.data or {}).get("plan") if res else None
+    # An unknown plan string falls back to the most restrictive tier rather than crashing
+    # or, worse, defaulting open.
+    return config.PLANS.get(plan or config.DEFAULT_PLAN, config.PLANS[config.DEFAULT_PLAN])
+
+
+def _spend_today_usd() -> float:
+    """Estimated Gemini spend across ALL users since midnight UTC.
+
+    Reads est_cost_usd, which the pipeline writes as soon as the video duration is known —
+    not at the end — so runs still in flight count against the cap. Without that, a burst of
+    concurrent jobs all read the same stale total and sail past it together.
+    """
+    midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    res = (
+        pipeline.db()
+        .table("jobs")
+        .select("est_cost_usd")
+        .gte("created_at", midnight.isoformat())
+        .execute()
+    )
+    # ponytail: sums today's rows client-side. Bounded by the cap itself (~250 rows/day at
+    # 2¢); move to a SQL aggregate if the cap is ever raised into the thousands.
+    return sum(float(r.get("est_cost_usd") or 0) for r in (res.data or []))
+
+
+def _runs_used(user_id: str, since: datetime | None = None) -> int:
+    """Count of runs charged to this user. The ONLY quota query in the codebase.
+
+    count(*) over an append-only ledger, never a decrementing counter: no drift, no repair
+    scripts, and deleting an article can't hand a run back (the FK is `set null`, so the
+    row survives its article).
+    """
+    q = (
+        pipeline.db()
+        .table("jobs")
+        .select("id", count="exact")
+        .eq("user_id", user_id)
+        .eq("counted_against_quota", True)
+    )
+    if since is not None:
+        q = q.gte("created_at", since.isoformat())
+    return q.execute().count or 0
+
+
 @app.get("/health")
 def health() -> dict:
     """Identity of the running pipeline, not just liveness — which is why the prompts ride
@@ -124,19 +177,80 @@ def generate(
     background: BackgroundTasks,
     authorization: str | None = Header(default=None),
 ) -> GenerateResponse:
-    """Create the job row, hand the work to the background, return the id immediately."""
+    """Create the job row, hand the work to the background, return the id immediately.
+
+    This is the ONLY path that costs money, so it is the only place entitlements are
+    enforced. The SPA reads the same counters for display, never for permission.
+    """
     uid = _require_owner(authorization, req.kb_id)
     # The worker downloads the video with the service role (bypassing Storage RLS), so
-    # a valid owner could otherwise point video_path at ANOTHER user's storage prefix and
-    # have their private recording processed into this KB. Videos are keyed "<uid>/..."
-    # (see App.tsx uploadVideo) — pin the path to the caller's own prefix.
-    if not req.video_path.startswith(f"{uid}/"):
+    # a valid owner could otherwise point video_path at ANOTHER KB's storage prefix and
+    # have someone else's private recording processed into this one. Objects are keyed
+    # "<kb_id>/..." (migration 0014) — pin the path to the KB we just proved they own.
+    if not req.video_path.startswith(f"{req.kb_id}/"):
         raise HTTPException(status_code=403, detail="That recording isn't yours.")
+
+    limits = _limits(uid)
+
+    # 1. Global circuit breaker, before any per-user rule and before any spend. Applies to
+    #    `internal` too: a runaway loop on an unlimited account is exactly how the bill we
+    #    are protecting against gets run up.
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        log.error("DAILY SPEND CAP hit (%s USD) — refusing generations", config.DAILY_SPEND_CAP_USD)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "spend_cap",
+                "message": "We've hit a temporary processing limit. Nothing's wrong with "
+                "your file — try again shortly.",
+            },
+        )
+
+    # 2. Free tier: a HARD wall. No relationship to protect yet, and the whole ceiling is
+    #    ~11 cents. Refused before the job row exists, so no cost is incurred and the
+    #    ledger stays a record of runs actually spent.
+    if limits["lifetime_runs"] is not None:
+        if _runs_used(uid) >= limits["lifetime_runs"]:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "quota_exceeded",
+                    "message": f"You've used all {limits['lifetime_runs']} free video "
+                    "guides. You can still write articles by hand, unlimited.",
+                },
+            )
+
+    # 3. Paid tiers: SOFT. Blocking a paying customer mid-fill in week one is the exact
+    #    failure pricing-spec §3 warns about — usage is front-loaded. The run proceeds and
+    #    is flagged; at this volume Lee is the overage system.
+    over_cap = False
+    if limits["monthly_runs"] is not None:
+        # ponytail: calendar month, not a per-customer billing anchor. Fine while overage
+        # is a conversation rather than an invoice line.
+        month_start = datetime.now(timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        if _runs_used(uid, since=month_start) >= limits["monthly_runs"]:
+            over_cap = True
+            log.warning(
+                "user %s is over their monthly run cap (%s) — allowing, flagged over_cap",
+                uid,
+                limits["monthly_runs"],
+            )
+
     try:
         res = (
             pipeline.db()
             .table("jobs")
-            .insert({"kb_id": req.kb_id, "status": "queued", "stage": config.STAGE_ANALYZING})
+            .insert(
+                {
+                    "kb_id": req.kb_id,
+                    "user_id": uid,
+                    "status": "queued",
+                    "stage": config.STAGE_ANALYZING,
+                    "over_cap": over_cap,
+                }
+            )
             .execute()
         )
     except Exception as e:
@@ -149,7 +263,7 @@ def generate(
 
 
 # --- Custom domain (build spec §4) ------------------------------------------
-KB_DOMAIN_COLUMNS = "id, subdomain, custom_domain, domain_status, domain_attempts, plan"
+KB_DOMAIN_COLUMNS = "id, owner_id, subdomain, custom_domain, domain_status, domain_attempts"
 
 
 def _kb(kb_id: str) -> dict:
@@ -172,7 +286,7 @@ def domain_connect(
 ) -> dict:
     """Attach a custom domain and enter `pending`. Never touches the free subdomain, so the
     KB stays online throughout (build spec §4). Returns the DNS records to add."""
-    _require_owner(authorization, req.kb_id)
+    uid = _require_owner(authorization, req.kb_id)
     d = req.domain.strip().lower().rstrip(".")
     if not DOMAIN_RE.match(d):
         raise HTTPException(status_code=400, detail="That doesn't look like a domain.")
@@ -187,8 +301,9 @@ def domain_connect(
 
     kb = _kb(req.kb_id)
     # Custom domains are the paid wall (pricing-spec §Free: "No custom domain"). Off until
-    # checkout exists — see DOMAIN_REQUIRES_PAID_PLAN.
-    if config.DOMAIN_REQUIRES_PAID_PLAN and kb.get("plan") not in config.PAID_PLANS:
+    # checkout exists — see DOMAIN_REQUIRES_PAID_PLAN. The entitlement is the owner's, read
+    # from the one PLANS table.
+    if config.DOMAIN_REQUIRES_PAID_PLAN and not _limits(uid)["custom_domain"]:
         raise HTTPException(
             status_code=402, detail="Connecting your own domain is part of a paid plan."
         )
@@ -303,12 +418,12 @@ def domain_stub(req: DomainStubRequest) -> dict:
 @app.get("/reader/{slug}/sitemap.xml")
 def sitemap(slug: str) -> Response:
     """Sitemap from LISTED articles only (build spec §3). Served by the worker because a
-    static SPA can't emit a per-KB dynamic sitemap. Free-tier KBs get an empty urlset (they
-    render noindex), so nothing free is advertised to crawlers."""
+    static SPA can't emit a per-KB dynamic sitemap. Noindexed KBs get an empty urlset, so
+    nothing free (or any internal demo) is advertised to crawlers."""
     kb = (
         pipeline.db()
         .table("knowledge_bases")
-        .select("id, subdomain, custom_domain, domain_status, plan")
+        .select("id, owner_id, subdomain, custom_domain, domain_status")
         .eq("subdomain", slug)
         .maybe_single()
         .execute()
@@ -322,7 +437,7 @@ def sitemap(slug: str) -> Response:
         else f"{k['subdomain']}.{config.READER_DOMAIN}"
     )
     urls: list[str] = []
-    if k.get("plan") != "free":
+    if not _limits(k["owner_id"])["noindex"]:
         arts = pipeline.db().rpc("reader_articles", {"p_kb_id": k["id"]}).execute()
         for a in arts.data or []:
             urls.append(f"  <url><loc>https://{base_host}/{a['slug']}</loc></url>")

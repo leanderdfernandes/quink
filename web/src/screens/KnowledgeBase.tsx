@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { FREE_ARTICLE_LIMIT, helpCenterUrl } from '../lib/config'
+import { helpCenterUrl } from '../lib/config'
 import { deleteArticle } from '../lib/articles'
+import { limitsFor, runsUsed } from '../lib/plans'
 import { publicBrandingUrl } from '../lib/storage'
 import {
   createFolder,
@@ -21,6 +22,8 @@ import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
 
 type Props = {
   kb: KB
+  // The owner's plan (profiles.plan). Entitlements are owner-level, never per-KB.
+  plan: string
   onNewArticle: () => void
   onWriteFromScratch: () => void
   onOpenArticle: (id: string) => void
@@ -52,6 +55,7 @@ function timeAgo(iso: string): string {
 
 export default function KnowledgeBase({
   kb,
+  plan,
   onNewArticle,
   onWriteFromScratch,
   onOpenArticle,
@@ -71,6 +75,9 @@ export default function KnowledgeBase({
   const [confirmFolderId, setConfirmFolderId] = useState<string | null>(null)
   const [confirmArticleId, setConfirmArticleId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // AI video runs spent, read from the append-only jobs ledger — never from a counter on
+  // the KB. Deleting an article does not give a run back, so this number only rises.
+  const [runs, setRuns] = useState(0)
   const renameInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -81,12 +88,14 @@ export default function KnowledgeBase({
         .eq('kb_id', kb.id)
         .order('created_at', { ascending: false }),
       listFolders(kb.id),
-    ]).then(([{ data }, fs]) => {
+      runsUsed(kb.owner_id),
+    ]).then(([{ data }, fs, used]) => {
       setArticles((data as ArticleRow[]) ?? [])
       setFolders(fs)
+      setRuns(used)
       setLoading(false)
     })
-  }, [kb.id])
+  }, [kb.id, kb.owner_id])
 
   const q = query.trim().toLowerCase()
   const matches = useMemo(
@@ -129,7 +138,7 @@ export default function KnowledgeBase({
   async function removeArticle(a: ArticleRow) {
     setDeletingId(a.id)
     try {
-      await deleteArticle(kb.owner_id, a)
+      await deleteArticle(a)
       setArticles((prev) => prev.filter((x) => x.id !== a.id))
     } finally {
       setDeletingId(null)
@@ -137,7 +146,10 @@ export default function KnowledgeBase({
     }
   }
 
-  const left = Math.max(FREE_ARTICLE_LIMIT - kb.free_articles_used, 0)
+  // Only tiers with a lifetime cap get a counter. The unit is video RUNS — writing an
+  // article by hand is unlimited on every tier, so the copy must not imply otherwise.
+  const runLimit = limitsFor(plan).lifetime_runs
+  const left = runLimit === null ? null : Math.max(runLimit - runs, 0)
   const initial = (kb.name.trim()[0] || 'Q').toUpperCase()
   const logo = publicBrandingUrl(kb.logo_path)
   const libEmpty = !loading && articles.length === 0
@@ -218,9 +230,11 @@ export default function KnowledgeBase({
           <span className="lib-kb-tag">Help Center</span>
         </div>
         <div className="lib-top-right">
-          <span className="counter">
-            {left} of {FREE_ARTICLE_LIMIT} free articles left
-          </span>
+          {left !== null && (
+            <span className="counter">
+              {left} of {runLimit} free video guides left
+            </span>
+          )}
           <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 13 }} onClick={onSignOut}>
             Sign out
           </button>

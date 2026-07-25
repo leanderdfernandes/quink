@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
 import { STORAGE_BUCKET_VIDEOS, WORKER_URL } from './lib/config'
+import { DEFAULT_PLAN, fetchPlan, type PlanId } from './lib/plans'
 import type { KnowledgeBase as KB, VideoContext } from './lib/types'
 import Home from './screens/Home'
 import Upload from './screens/Upload'
@@ -43,6 +44,10 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('loading')
   const [file, setFile] = useState<File | null>(null)
   const [kb, setKb] = useState<KB | null>(null)
+  // Entitlements are owner-level (profiles.plan), so they are held here beside the session
+  // rather than on the KB — a KB's tier would be the wrong thing to read the moment a KB
+  // can change hands.
+  const [plan, setPlan] = useState<PlanId>(DEFAULT_PLAN)
   const [jobId, setJobId] = useState<string | null>(null)
   const [openArticleId, setOpenArticleId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -81,9 +86,10 @@ export default function App() {
     let cancelled = false
 
     ;(async () => {
-      const found = await loadKb(userId)
+      const [found, ownerPlan] = await Promise.all([loadKb(userId), fetchPlan(userId)])
       if (cancelled) return
       setKb(found)
+      setPlan(ownerPlan)
 
       const pending = await loadPending().catch(() => undefined)
       if (cancelled) return
@@ -96,7 +102,7 @@ export default function App() {
       setFile(pending.file)
       setPhase('working')
       try {
-        const path = await uploadVideo(userId, pending.file)
+        const path = await uploadVideo(found.id, pending.file)
         const id = await startJob(found.id, path, pending.context as VideoContext)
         await clearPending()
         if (cancelled) return
@@ -114,10 +120,12 @@ export default function App() {
     }
   }, [userId, loadKb])
 
-  async function uploadVideo(userId: string, f: File) {
-    // Storage RLS reads ownership off the first path segment.
+  async function uploadVideo(kbId: string, f: File) {
+    // Objects are keyed by KB (migration 0014): storage RLS resolves the first path
+    // segment through knowledge_bases, and the worker pins uploads to the KB it just
+    // proved you own.
     const ext = f.name.toLowerCase().endsWith('.mov') ? 'mov' : 'mp4'
-    const path = `${userId}/${crypto.randomUUID()}.${ext}`
+    const path = `${kbId}/${crypto.randomUUID()}.${ext}`
     const { error } = await supabase.storage
       .from(STORAGE_BUCKET_VIDEOS)
       .upload(path, f, { contentType: f.type || 'video/mp4' })
@@ -141,12 +149,20 @@ export default function App() {
       },
       body: JSON.stringify({ kb_id: kbId, video_path: videoPath, ...context }),
     })
-    if (!res.ok) throw new Error(`Could not start the job (${res.status}).`)
+    if (!res.ok) {
+      // The worker refuses over-quota and over-spend BEFORE the Gemini call, and says why
+      // in a structured detail. Surface its message rather than a bare status — "you've
+      // used all 3 free video guides" is actionable; "(402)" is not.
+      const detail = await res.json().catch(() => null)
+      const message = detail?.detail?.message
+      throw new Error(message ?? `Could not start the job (${res.status}).`)
+    }
     return (await res.json()).job_id as string
   }
 
   const onGenerated = useCallback(async () => {
-    // Re-read the KB so the free-article counter reflects the run we just spent.
+    // Re-read the KB so anything derived from it is fresh. The run counter reads the jobs
+    // ledger directly (KnowledgeBase), so it needs no KB round-trip.
     if (session) setKb(await loadKb(session.user.id))
     setPhase('kb')
   }, [session, loadKb])
@@ -160,7 +176,7 @@ export default function App() {
     if (session && kb) {
       setPhase('working')
       try {
-        const path = await uploadVideo(session.user.id, f)
+        const path = await uploadVideo(kb.id, f)
         setJobId(await startJob(kb.id, path, context))
         setPhase('generating')
       } catch (e) {
@@ -243,6 +259,7 @@ export default function App() {
         )}
         <KnowledgeBaseScreen
           kb={kb}
+          plan={plan}
           onNewArticle={() => {
             setError(null)
             setPhase('upload')
@@ -268,6 +285,7 @@ export default function App() {
       <Editor
         articleId={openArticleId}
         kb={kb}
+        plan={plan}
         onBack={() => {
           setOpenArticleId(null)
           setPhase('kb')
@@ -280,7 +298,7 @@ export default function App() {
     return (
       <ThemeSettings
         kb={kb}
-        userId={session.user.id}
+        plan={plan}
         onBack={() => setPhase('kb')}
         onSaved={(updated) => setKb(updated)}
       />

@@ -18,7 +18,7 @@ type Props = {
   index: number
   isFirst: boolean
   screenshotUrl: string | null
-  userId: string
+  kbId: string
   articleId: string
   onHeading: (heading: string) => void
   onBody: (html: string) => void
@@ -38,7 +38,7 @@ export default function StepCard({
   index,
   isFirst,
   screenshotUrl,
-  userId,
+  kbId,
   articleId,
   onHeading,
   onBody,
@@ -157,7 +157,7 @@ export default function StepCard({
 
       {pickerOpen && (
         <FramePicker
-          userId={userId}
+          kbId={kbId}
           articleId={articleId}
           stepNumber={step.step_number}
           currentUrl={screenshotUrl}

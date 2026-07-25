@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { uploadBranding } from '../lib/storage'
+import { limitsFor } from '../lib/plans'
 import {
   COLOR_PRESETS,
   DEFAULT_PRIMARY_COLOR,
@@ -25,7 +26,9 @@ import type {
 
 type Props = {
   kb: KB
-  userId: string
+  // The owner's plan — the split-preview has to show the watermark exactly as the live
+  // reader will, and that is an owner-level entitlement.
+  plan: string
   onBack: () => void
   onSaved: (kb: KB) => void
 }
@@ -69,7 +72,7 @@ async function deriveFavicon(file: File): Promise<Blob | null> {
   }
 }
 
-export default function ThemeSettings({ kb, userId, onBack, onSaved }: Props) {
+export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
   const [name, setName] = useState(kb.name)
   const [about, setAbout] = useState(kb.about ?? '')
   const [headline, setHeadline] = useState(kb.headline ?? '')
@@ -110,11 +113,11 @@ export default function ThemeSettings({ kb, userId, onBack, onSaved }: Props) {
     setUploading(true)
     setSaved(false)
     const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
-    const lp = await uploadBranding(userId, 'logo', file, ext)
+    const lp = await uploadBranding(kb.id, 'logo', file, ext)
     if (lp) setLogoPath(lp)
     const fav = await deriveFavicon(file)
     if (fav) {
-      const fp = await uploadBranding(userId, 'favicon', fav, 'png')
+      const fp = await uploadBranding(kb.id, 'favicon', fav, 'png')
       if (fp) setFaviconPath(fp)
     }
     setUploading(false)
@@ -162,7 +165,8 @@ export default function ThemeSettings({ kb, userId, onBack, onSaved }: Props) {
     subdomain: kb.subdomain,
     custom_domain: kb.custom_domain,
     domain_status: kb.domain_status,
-    plan: kb.plan,
+    noindex: limitsFor(plan).noindex,
+    watermark: limitsFor(plan).watermark,
   }
 
   return (

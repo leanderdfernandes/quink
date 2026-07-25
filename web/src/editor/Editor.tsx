@@ -18,6 +18,8 @@ import type { ArticleRow, Folder, KnowledgeBase as KB, StepRow, Visibility } fro
 type Props = {
   articleId: string
   kb: KB
+  // The OWNER's plan (profiles.plan), not the KB's — entitlements are owner-level.
+  plan: string
   onBack: () => void
 }
 
@@ -54,11 +56,10 @@ function move<T>(arr: T[], from: number, to: number): T[] {
   return copy
 }
 
-export default function Editor({ articleId, kb, onBack }: Props) {
+export default function Editor({ articleId, kb, plan, onBack }: Props) {
   const [article, setArticle] = useState<ArticleRow | null>(null)
   const [steps, setSteps] = useState<StepRow[]>([])
   const [shotUrls, setShotUrls] = useState<Record<string, string | null>>({})
-  const [userId, setUserId] = useState<string | null>(null)
   // A per-step remount counter. TipTap owns its document after mount, so when a structural
   // op changes a step's body externally (merge/split) we bump its rev to force a fresh
   // editor with the new content. Plain typing never bumps it.
@@ -98,15 +99,15 @@ export default function Editor({ articleId, kb, onBack }: Props) {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const [{ data: a }, { data: s }, { data: u }] = await Promise.all([
+      // No getUser() round-trip any more: storage paths are keyed by KB, not by owner, so
+      // the editor never needs to know who is signed in to build one.
+      const [{ data: a }, { data: s }] = await Promise.all([
         supabase.from('articles').select('*').eq('id', articleId).single(),
         supabase.from('steps').select('*').eq('article_id', articleId).order('step_number'),
-        supabase.auth.getUser(),
       ])
       if (cancelled) return
       const art = a as ArticleRow
       setArticle(art)
-      setUserId(u.user?.id ?? null)
       const rows = (s as StepRow[]) ?? []
       setSteps(rows)
       setVisibility(art.visibility)
@@ -504,7 +505,7 @@ export default function Editor({ articleId, kb, onBack }: Props) {
     if (!article) return
     setDeleting(true)
     try {
-      await deleteArticle(kb.owner_id, article)
+      await deleteArticle(article)
       onBack()
     } catch {
       setOpError('Could not delete the article.')
@@ -590,7 +591,7 @@ export default function Editor({ articleId, kb, onBack }: Props) {
             dirty={dirty}
             publishing={publishing}
             subdomain={kb.subdomain}
-            plan={kb.plan}
+            plan={plan}
             onPublish={openPublish}
             onPublishChanges={() => doPublish(visibility === 'draft' ? 'listed' : visibility)}
             onSetVisibility={changeVisibility}
@@ -675,7 +676,7 @@ export default function Editor({ articleId, kb, onBack }: Props) {
               index={i}
               isFirst={i === 0}
               screenshotUrl={shotUrls[s.id] ?? null}
-              userId={userId ?? ''}
+              kbId={kb.id}
               articleId={articleId}
               hasVideo={!!article.source_video_path}
               onHeading={(heading) => saveStep(s.id, { heading })}

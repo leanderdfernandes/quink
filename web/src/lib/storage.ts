@@ -9,6 +9,11 @@ import {
 // `branding` buckets are public (migration 0007). Reads go through getPublicUrl — no
 // network round-trip, cacheable. The editor still uses signed URLs below; both work on a
 // public bucket, and switching working code buys nothing.
+//
+// Every object is keyed "{kb_id}/…", never by owner (migration 0014). A KB can change
+// hands through the ownership-claim flow, and a trial purge has to delete exactly one KB's
+// objects — an owner prefix can express neither. Storage RLS resolves that first segment
+// through knowledge_bases, so the path IS the permission.
 
 export function publicFrameUrl(path: string | null): string | null {
   if (!path) return null
@@ -20,14 +25,15 @@ export function publicBrandingUrl(path: string | null): string | null {
   return supabase.storage.from(STORAGE_BUCKET_BRANDING).getPublicUrl(path).data.publicUrl
 }
 
-// Logo + derived favicon (build spec §1). Path keyed by user id for storage RLS.
+// Logo + derived favicon (build spec §1). Branding belongs to the help center, not the
+// person who happened to upload it — so it moves with the KB.
 export async function uploadBranding(
-  userId: string,
+  kbId: string,
   kind: 'logo' | 'favicon',
   blob: Blob,
   ext: string,
 ): Promise<string | null> {
-  const path = `${userId}/${kind}-${crypto.randomUUID()}.${ext}`
+  const path = `${kbId}/${kind}-${crypto.randomUUID()}.${ext}`
   const { error } = await supabase.storage
     .from(STORAGE_BUCKET_BRANDING)
     .upload(path, blob, { contentType: blob.type || 'image/png' })
@@ -66,10 +72,10 @@ export async function signedVideoUrl(path: string | null): Promise<string | null
 // The 1fps dense set backing the Tier-1 filmstrip. Frames are named "{second}.webp"
 // zero-padded; the second is the number. Returns them sorted by second.
 export async function listDenseFrames(
-  userId: string,
+  kbId: string,
   articleId: string,
 ): Promise<{ second: number; path: string }[]> {
-  const prefix = `${userId}/${articleId}/dense`
+  const prefix = `${kbId}/${articleId}/dense`
   const { data, error } = await supabase.storage.from(STORAGE_BUCKET_FRAMES).list(prefix, {
     limit: 1000,
     sortBy: { column: 'name', order: 'asc' },
@@ -83,12 +89,12 @@ export async function listDenseFrames(
 // Upload a captured/chosen frame (Tier 2 canvas capture, Tier 3 upload) as a new
 // per-step WebP and return its storage path. is_edited is set by the caller.
 export async function uploadStepFrame(
-  userId: string,
+  kbId: string,
   articleId: string,
   stepNumber: number,
   blob: Blob,
 ): Promise<string | null> {
-  const path = `${userId}/${articleId}/step-${stepNumber}-${crypto.randomUUID()}.webp`
+  const path = `${kbId}/${articleId}/step-${stepNumber}-${crypto.randomUUID()}.webp`
   const { error } = await supabase.storage
     .from(STORAGE_BUCKET_FRAMES)
     .upload(path, blob, { contentType: 'image/webp' })

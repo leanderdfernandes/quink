@@ -12,7 +12,7 @@ import { listDenseFrames, signedFrameUrl, uploadStepFrame } from '../lib/storage
 // Any manual pick/upload marks the step is_edited (CLAUDE.md §8).
 
 type Props = {
-  userId: string
+  kbId: string
   articleId: string
   stepNumber: number
   currentUrl: string | null // signed URL of the step's current image, to highlight it
@@ -23,7 +23,7 @@ type Props = {
 }
 
 export default function FramePicker({
-  userId,
+  kbId,
   articleId,
   stepNumber,
   currentPath,
@@ -40,7 +40,7 @@ export default function FramePicker({
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const dense = await listDenseFrames(userId, articleId)
+      const dense = await listDenseFrames(kbId, articleId)
       const withUrls = await Promise.all(
         dense.map(async (f) => ({ path: f.path, url: (await signedFrameUrl(f.path)) ?? '' })),
       )
@@ -52,7 +52,7 @@ export default function FramePicker({
     return () => {
       cancelled = true
     }
-  }, [userId, articleId])
+  }, [kbId, articleId])
 
   // Start the strip on the frame that's currently in use.
   useEffect(() => {
@@ -64,7 +64,7 @@ export default function FramePicker({
     setBusy(true)
     try {
       const blob = await toWebp(file)
-      const path = await uploadStepFrame(userId, articleId, stepNumber, blob)
+      const path = await uploadStepFrame(kbId, articleId, stepNumber, blob)
       if (path) onPick(path)
     } finally {
       setBusy(false)

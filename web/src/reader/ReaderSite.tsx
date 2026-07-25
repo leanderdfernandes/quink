@@ -126,7 +126,7 @@ export function ReaderChrome({
   const [feedback, setFeedback] = useState<null | 'up' | 'down'>(null)
   const [activeStep, setActiveStep] = useState<number | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
-  const isFree = kb.plan === 'free'
+  const watermark = kb.watermark
   const initial = (kb.name.trim()[0] || 'Q').toUpperCase()
   const searching = !!query?.trim()
 
@@ -384,7 +384,7 @@ export function ReaderChrome({
               </aside>
             )}
           </div>
-          {isFree && <BrandFoot />}
+          {watermark && <BrandFoot />}
         </>
       ) : view === 'category' && category ? (
         // ---------------- CATEGORY ----------------
@@ -412,7 +412,7 @@ export function ReaderChrome({
               ))}
             </div>
           </div>
-          {isFree && <BrandFoot />}
+          {watermark && <BrandFoot />}
         </>
       ) : (
         // ---------------- HOME ----------------
@@ -439,7 +439,7 @@ export function ReaderChrome({
               </div>
             )}
           </main>
-          {isFree && <BrandFoot />}
+          {watermark && <BrandFoot />}
         </>
       )}
     </div>
@@ -579,7 +579,7 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
   useEffect(() => {
     if (!kb) return
     document.title = article?.title ? `${article.title} · ${kb.name}` : kb.name
-    setMeta('robots', kb.plan === 'free' ? 'noindex' : 'index,follow')
+    setMeta('robots', kb.noindex ? 'noindex' : 'index,follow')
     setMeta('description', article?.subtitle || kb.about || '')
     setFavicon(publicBrandingUrl(kb.favicon_path))
   }, [kb, article])
