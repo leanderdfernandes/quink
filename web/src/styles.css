@@ -3044,3 +3044,13 @@ textarea {
   padding: 10px;
   border-bottom: 1px solid var(--border);
 }
+.claim-toast {
+  background: var(--brand-50);
+  border: 1px solid var(--brand-200);
+  color: var(--brand-800);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  word-break: break-all;
+  margin: 0 0 16px;
+}

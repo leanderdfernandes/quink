@@ -262,6 +262,32 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   scoped to `last_kb_id` alone. Plan changes are a money operation and go through the
   service role or a SECURITY DEFINER rpc that checks `is_admin()`. Do not widen that grant.
 
+## 10d. Ownership transfer (locked — migration 0016)
+
+- **All owner-derived state resets in `claim_kb()`.** One function, one place. When you add
+  an owner-derived column, it must be added to that reset list — miss it there and you get
+  a visible bug; spread the resets across call sites and you get a silent entitlement leak
+  instead. Currently: `owner_id`, `trial_started_at`, `offline_at`, `purge_at`,
+  `reader_views`, `claim_token`, `claim_expires_at`, `is_demo`.
+- **Identity is never denormalised outside `jobs.user_id`.** Everything else resolves
+  through `knowledge_bases` — articles by `kb_id`, steps through their article, folders by
+  `kb_id`, storage by the `{kb_id}/…` path prefix. A table that stores its own copy of who
+  owns something breaks on transfer, silently.
+- **`jobs.user_id` stays with the original owner, deliberately.** We spent those runs; they
+  didn't. A claimer seeing a dozen articles and zero runs used is the generosity we want at
+  that moment. Do not let a cleanup "fix" it.
+- **The claim link is the only transfer path.** There is no admin force-transfer: a second
+  path is a second place the entitlement resets can be forgotten, and clicking the link is
+  the recipient's consent.
+- **The trial clock starts when they take it, not when we built it** — and
+  `stamp_article_origin` only starts a clock for plans that actually expire, so demo KBs on
+  `internal` never carry one.
+- **The KB switcher's visibility is driven by KB COUNT, not by `PLANS[plan].kbs`.** A
+  claimer can legitimately hold two KBs on a one-KB plan; gate on the plan and they lose
+  all access to the one they just claimed. The plan limit governs "New KB" only.
+- `supabase/test_transfer.sh` proves the whole handover end to end against the live project
+  with throwaway accounts. Run it after touching anything ownership-shaped.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock

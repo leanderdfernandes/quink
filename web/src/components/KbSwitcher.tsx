@@ -2,9 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { limitsFor } from '../lib/plans'
 import type { KnowledgeBase } from '../lib/types'
 
-// One component, two states, decided by the plan's KB allowance.
+// One component, two states.
 //
-// On a 1-KB plan this is a plain label: no dropdown, no chevron, no hint that multi-KB
+// Visibility is decided by how many KBs the account ACTUALLY holds, not by the plan's
+// allowance. Those differ in a case we create on purpose: a founder claims a demo KB and
+// keeps a second one that already had content, so they hold two KBs on a one-KB plan. Gate
+// on the plan and the switcher vanishes, stranding them with no way to reach the KB they
+// just claimed. The plan limit governs whether you can MAKE another one; the count governs
+// whether you can get to the ones you have.
+//
+// With a single KB this is a plain label: no dropdown, no chevron, no hint that multi-KB
 // exists. Teasing a locked feature in the main chrome is an ad in the one place the user
 // cannot dismiss it — and this is the Growth multi-KB feature built once, not an admin
 // hack to be thrown away later.
@@ -22,7 +29,8 @@ export default function KbSwitcher({ kb, plan, kbs, onSwitch, onCreate }: Props)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
-  const multi = limitsFor(plan).kbs > 1
+  const showSwitcher = kbs.length > 1
+  const canCreate = kbs.length < limitsFor(plan).kbs
 
   useEffect(() => {
     if (!open) return
@@ -38,7 +46,7 @@ export default function KbSwitcher({ kb, plan, kbs, onSwitch, onCreate }: Props)
     return q ? kbs.filter((k) => k.name.toLowerCase().includes(q)) : kbs
   }, [kbs, query])
 
-  if (!multi) return <span className="lib-kb-name">{kb.name}</span>
+  if (!showSwitcher) return <span className="lib-kb-name">{kb.name}</span>
 
   return (
     <div className="kbsw" ref={ref}>
@@ -85,7 +93,7 @@ export default function KbSwitcher({ kb, plan, kbs, onSwitch, onCreate }: Props)
             ))}
             {matches.length === 0 && <p className="kbsw-empty">No help centers match.</p>}
           </div>
-          {onCreate && (
+          {onCreate && canCreate && (
             <button
               className="kbsw-new"
               onClick={() => {

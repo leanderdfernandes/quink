@@ -24,6 +24,22 @@ export default function Admin() {
   const navigate = useNavigate()
   const [allowed, setAllowed] = useState<boolean | null>(null)
   const [kbs, setKbs] = useState<AdminKb[]>([])
+  const [toast, setToast] = useState<string | null>(null)
+
+  // Generating a link is the ONLY admin path to moving a KB — there is deliberately no
+  // force-transfer. One code path means one place the entitlement resets can be forgotten,
+  // and the recipient's consent is implicit in them clicking.
+  async function claimLink(kbId: string) {
+    const { data, error } = await supabase.rpc('issue_claim_token', { p_kb_id: kbId })
+    if (error || !data) {
+      setToast('Could not create a claim link.')
+      return
+    }
+    const url = `${window.location.origin}/claim/${data}`
+    await navigator.clipboard.writeText(url).catch(() => {})
+    setToast(`Claim link copied — valid 14 days. ${url}`)
+    setTimeout(() => setToast(null), 12000)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -96,6 +112,7 @@ export default function Admin() {
       </header>
 
       <div className="settings-body">
+        {toast && <p className="claim-toast">{toast}</p>}
         <h2>Help centers</h2>
         <p className="cap" style={{ marginBottom: 18 }}>
           {kbs.length} total. Opening one shows the viewing-as-admin bar until you exit.
@@ -116,13 +133,20 @@ export default function Admin() {
                 <td>{k.name}</td>
                 <td className="cap">{k.profiles?.email ?? '—'}</td>
                 <td className="cap">{k.subdomain ?? '—'}</td>
-                <td>
+                <td style={{ display: 'flex', gap: 6 }}>
                   <button
                     className="btn btn-ghost"
                     style={{ padding: '4px 10px', fontSize: 13 }}
                     onClick={() => navigate(`/app/${k.id}`)}
                   >
                     Open
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '4px 10px', fontSize: 13 }}
+                    onClick={() => claimLink(k.id)}
+                  >
+                    Claim link
                   </button>
                 </td>
               </tr>

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 import App from './App'
 import Admin from './screens/Admin'
+import Claim from './screens/Claim'
 import ReaderSite from './reader/ReaderSite'
 import { readerKeyFromHost } from './lib/config'
 import './styles.css'
@@ -49,6 +50,9 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/kb/:kbSlug/:articleSlug" element={<ReaderSite />} />
 
           <Route path="/admin" element={<Admin />} />
+          {/* The receiving end of a reverse demo. Above /app/ because an unauthenticated
+              visitor must land here, not be bounced through the signed-out landing page. */}
+          <Route path="/claim/:token" element={<Claim />} />
 
           {/* App renders both: it resolves the KB from :kbId when present, and otherwise
               runs the signed-out landing/upload flow at "/" and redirects once it knows
