@@ -3054,3 +3054,11 @@ textarea {
   word-break: break-all;
   margin: 0 0 16px;
 }
+/* Publish-time disclosure of the source-video deletion. Quiet, not a warning: the
+   deletion is a promise being kept, not a risk being flagged. */
+.pub-note {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}

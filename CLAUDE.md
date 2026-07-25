@@ -311,6 +311,28 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
    `free_email_providers` already blunts the cheap version, and building further against it
    is not worth it at this scale. Revisit only if abuse actually appears.
 
+## 10f. Source-video lifecycle (locked — migration 0019)
+
+- **The recording is deleted on FIRST publish, and the frame picker must keep working
+  without it.** These are one change and must never be separated. Today the picker runs
+  entirely off the 1fps dense frame set, which is separate objects that survive — so this
+  costs nothing. **If a client-side `<video>` scrubber is ever reintroduced, it must
+  degrade to the filmstrip in the same commit**, or publishing silently breaks editing on
+  every published article.
+- **Delete the object, then null `source_video_path` — in that order.** The reverse strands
+  the object with nothing naming it, invisible to both collection paths.
+- **Two collection paths, because publish cannot reach everything.** A successful article's
+  recording goes on first publish; a FAILED job never publishes, so `jobs.video_path` +
+  the 7-day sweep in `retention.py` collects those. `jobs.video_path` is recorded at job
+  creation because a job that dies before Stage 1 never creates an article to hang it on.
+- **Sweeps are state queries, never scheduled events.** "Failed, older than N days, not yet
+  purged" — so a tick missed to a deploy or an idle-instance recycle self-heals, and
+  running it twice is harmless. The day-30/37 trial sweep must follow the same shape.
+- **`articles.source`, not `source_video_path`, answers "was this generated?"** The video
+  is deleted on publish, so its absence stops meaning anything about the article's origin.
+- **`status` is the pipeline lifecycle only** (`generating` → `ready`). Publish state is
+  `visibility`. Writing `status='published'` violates the check constraint retired in 0015.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock

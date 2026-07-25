@@ -465,12 +465,24 @@ def sweep() -> None:
 
 
 async def run_loop() -> None:
-    """Background re-checker. Started from the app lifespan; ends on shutdown."""
+    """Background loop. Started from the app lifespan; ends on shutdown.
+
+    Also carries the failed-video retention sweep — same persistent task, no new infra.
+    Both sweeps are state queries, so a tick missed to a restart or an idle-instance
+    recycle costs nothing but a delay.
+    """
     import asyncio
+    import time
+
+    import retention
 
     log.info("domain re-check loop started (interval %ss)", config.DOMAIN_CHECK_INTERVAL_SECONDS)
+    last_purge = 0.0
     while True:
         await asyncio.to_thread(sweep)
+        if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
+            last_purge = time.monotonic()
+            await asyncio.to_thread(retention.sweep)
         await asyncio.sleep(config.DOMAIN_CHECK_INTERVAL_SECONDS)
 
 

@@ -39,7 +39,9 @@ export type ArticleRow = {
   kb_id: string
   title: string
   subtitle: string
-  status: 'generating' | 'ready' | 'published'
+  // PIPELINE lifecycle only. Publish state is `visibility`; 'published' was retired from
+  // the DB check constraint in migration 0015 and must never be written here again.
+  status: 'generating' | 'ready'
   // draft = 404 · unlisted = link-only · listed = in nav/search/sitemap.
   visibility: Visibility
   // URL slug: from the title, editable while draft, FROZEN once published. Null until set.
@@ -47,6 +49,11 @@ export type ArticleRow = {
   // Folder the article is filed in (build spec §7). Null = "Unfiled" — cannot be
   // published until filed. Doubles as the live-site category (migration 0009).
   folder_id: string | null
+  // 'generated' | 'manual', stamped by a DB trigger off source_video_path (0014). Use
+  // this — not the video's existence — for anything that describes the article's ORIGIN:
+  // the video is deleted on first publish, so source_video_path stops being an answer.
+  source: 'generated' | 'manual'
+  // Null once collected. Present only between generation and first publish.
   source_video_path: string | null
   // Frozen snapshot the reader renders (CLAUDE.md §7 publish). Null until first publish.
   published_content: Article | null

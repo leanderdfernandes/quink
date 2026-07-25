@@ -249,6 +249,11 @@ def generate(
                     "status": "queued",
                     "stage": config.STAGE_ANALYZING,
                     "over_cap": over_cap,
+                    # Recorded HERE, at creation, because a job that fails before Stage 1
+                    # never creates an article — and articles.source_video_path is the only
+                    # other place this path is kept. Without it a failed upload is stranded
+                    # in Storage with nothing in the database naming it.
+                    "video_path": req.video_path,
                 }
             )
             .execute()

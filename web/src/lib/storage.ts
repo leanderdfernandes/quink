@@ -1,9 +1,5 @@
 import { supabase } from './supabase'
-import {
-  STORAGE_BUCKET_BRANDING,
-  STORAGE_BUCKET_FRAMES,
-  STORAGE_BUCKET_VIDEOS,
-} from './config'
+import { STORAGE_BUCKET_BRANDING, STORAGE_BUCKET_FRAMES } from './config'
 
 // The public reader site can't sign URLs (it's anon and CDN-cached), so the `frames` and
 // `branding` buckets are public (migration 0007). Reads go through getPublicUrl — no
@@ -60,13 +56,12 @@ export async function signedFrameUrls(
   return Promise.all(paths.map(signedFrameUrl))
 }
 
-export async function signedVideoUrl(path: string | null): Promise<string | null> {
-  if (!path) return null
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET_VIDEOS)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
-  if (error) return null
-  return data.signedUrl
+// Remove branding objects a KB no longer points at. Called only AFTER the row update has
+// committed: delete first and a failed save leaves the KB referencing an object that is
+// already gone, which shows up as a broken logo on the live help center.
+export async function removeBranding(paths: string[]): Promise<void> {
+  const real = paths.filter(Boolean)
+  if (real.length) await supabase.storage.from(STORAGE_BUCKET_BRANDING).remove(real)
 }
 
 // The 1fps dense set backing the Tier-1 filmstrip. Frames are named "{second}.webp"

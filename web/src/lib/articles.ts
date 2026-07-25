@@ -23,6 +23,24 @@ async function removeFrames(kbId: string, articleId: string): Promise<void> {
   }
 }
 
+// Delete the source recording and forget it, in that order.
+//
+// The order is load-bearing: null the column first and a failed delete strands the object
+// in Storage with nothing in the database naming it — unfindable by the publish path and
+// by the failed-job sweep alike. Delete first and the worst case is a row still pointing
+// at a video that is already gone, which the next publish simply retries.
+//
+// One-way. Unpublishing does not bring the recording back — that is the point of the
+// promise on the upload screen, not a gap in it.
+export async function collectSourceVideo(
+  articleId: string,
+  videoPath: string,
+): Promise<void> {
+  const { error } = await supabase.storage.from(STORAGE_BUCKET_VIDEOS).remove([videoPath])
+  if (error) return
+  await supabase.from('articles').update({ source_video_path: null }).eq('id', articleId)
+}
+
 export async function deleteArticle(article: ArticleRow): Promise<void> {
   const { error } = await supabase.from('articles').delete().eq('id', article.id)
   if (error) throw error

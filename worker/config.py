@@ -140,6 +140,18 @@ DOMAIN_MAX_BACKOFF_SECONDS = 3600
 DOMAIN_MAX_ATTEMPTS = 40  # ~ days of backoff before -> failed
 DOMAIN_CNAME_TTL = 3600
 
+# --- Source-video retention (ux-spec §9) ------------------------------------
+# A successful article's recording is collected on first publish. A FAILED job never
+# reaches a publish event, so its upload would sit in Storage forever — this is the other
+# collection path. 7 days is deliberately longer than the retry-without-reupload window:
+# re-running a failed job from the stored recording has to still work.
+FAILED_VIDEO_RETENTION_DAYS = 7
+
+# How often the background loop looks for them. The sweep is a STATE query ("failed, older
+# than N days, not yet purged"), never a scheduled event, so a missed tick self-heals on
+# the next one and nothing needs to fire at an exact moment.
+VIDEO_PURGE_INTERVAL_SECONDS = int(os.environ.get("VIDEO_PURGE_INTERVAL_SECONDS", "3600"))
+
 # --- Email ------------------------------------------------------------------
 # DNS can take hours, so the "we'll email you the moment it's live" promise in the UI needs
 # a real sender. Unset -> the emails are logged instead (fine for dev; the promise is a lie

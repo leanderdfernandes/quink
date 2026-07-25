@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { signedFrameUrl, signedFrameUrls } from '../lib/storage'
 import { useAutosave } from '../lib/useAutosave'
 import { slugify, uniqueArticleSlug } from '../lib/slug'
-import { deleteArticle } from '../lib/articles'
+import { collectSourceVideo, deleteArticle } from '../lib/articles'
 import { createFolder, listFolders } from '../lib/folders'
 import { helpCenterUrl } from '../lib/config'
 import StepCard from './StepCard'
@@ -432,9 +432,12 @@ export default function Editor({ articleId, kb, plan, onBack }: Props) {
     const { error } = await supabase
       .from('articles')
       .update({
+        // `status` is the PIPELINE lifecycle (generating -> ready) and is deliberately not
+        // touched here: publish state lives in `visibility`, and migration 0015 retired the
+        // 'published' value from the status check constraint. Writing it made every publish
+        // fail with a 23514 check violation.
         published_content: snapshot,
         published_at: now,
-        status: 'published',
         visibility: nextVisibility,
         slug: finalSlug,
         ...folderPatch,
@@ -452,13 +455,22 @@ export default function Editor({ articleId, kb, plan, onBack }: Props) {
       a
         ? {
             ...a,
-            status: 'published',
             published_at: now,
             visibility: nextVisibility,
             ...folderPatch,
+            // Reflect the collection below so the UI doesn't keep claiming a video we just
+            // deleted (it drives the "⟳ Wrong frame?" affordance).
+            source_video_path: null,
           }
         : a,
     )
+
+    // Keep the promise made on the upload screen: "We delete the source video once your
+    // article is published." Only on the FIRST publish — re-publishing finds nothing left
+    // to delete and quietly does nothing, which is what makes this idempotent.
+    if (article.source_video_path) {
+      await collectSourceVideo(articleId, article.source_video_path)
+    }
     return true
   }
 
@@ -603,6 +615,7 @@ export default function Editor({ articleId, kb, plan, onBack }: Props) {
         <PublishModal
           articleTitle={article.title}
           subdomain={kb.subdomain}
+          hasSourceVideo={!!article.source_video_path}
           folders={folders}
           selectedFolderId={pubFolderId}
           onSelectFolder={setPubFolderId}
@@ -678,7 +691,7 @@ export default function Editor({ articleId, kb, plan, onBack }: Props) {
               screenshotUrl={shotUrls[s.id] ?? null}
               kbId={kb.id}
               articleId={articleId}
-              hasVideo={!!article.source_video_path}
+              hasVideo={article.source === 'generated'}
               onHeading={(heading) => saveStep(s.id, { heading })}
               onBody={(body_text) => saveStep(s.id, { body_text })}
               onMergeUp={() => mergeUp(i)}

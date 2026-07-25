@@ -10,6 +10,8 @@ import type { Folder } from '../lib/types'
 type Props = {
   articleTitle: string
   subdomain: string | null
+  // Whether this article still holds its source recording — publishing collects it.
+  hasSourceVideo: boolean
   folders: Folder[]
   selectedFolderId: string | null
   onSelectFolder: (id: string) => void
@@ -24,6 +26,7 @@ type Props = {
 export default function PublishModal({
   articleTitle,
   subdomain,
+  hasSourceVideo,
   folders,
   selectedFolderId,
   onSelectFolder,
@@ -141,6 +144,15 @@ export default function PublishModal({
             >
               {publishing ? 'Publishing…' : 'Publish now'}
             </button>
+            {hasSourceVideo && (
+              // The upload screen promises we delete the recording once the article is
+              // published. Saying so again at the moment it happens turns a silent
+              // background deletion into a visibly kept promise. Your screenshots stay —
+              // they are the article; the recording was only ever the raw material.
+              <p className="pub-note">
+                Your source recording is deleted when this goes live. The screenshots stay.
+              </p>
+            )}
             {!selectedFolderId && (
               <p className="pub-hint">Pick a category above to publish.</p>
             )}

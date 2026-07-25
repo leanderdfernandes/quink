@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { uploadBranding } from '../lib/storage'
+import { removeBranding, uploadBranding } from '../lib/storage'
 import { limitsFor } from '../lib/plans'
 import {
   COLOR_PRESETS,
@@ -85,6 +85,12 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // Branding objects this session has replaced, deleted once the save commits. A ref, not
+  // state: nothing renders from it and it must survive re-renders between upload and save.
+  // ponytail: an upload abandoned without saving still leaks one object — the row never
+  // referenced it, so it is an orphan of a cancelled edit, and sweeping those belongs with
+  // the storage reconciliation pass, not here.
+  const superseded = useRef<string[]>([])
 
   // Real published articles grouped into categories for the preview, so it looks like the
   // actual site. Falls back to the sample until something is published.
@@ -114,11 +120,19 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     setSaved(false)
     const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
     const lp = await uploadBranding(kb.id, 'logo', file, ext)
-    if (lp) setLogoPath(lp)
+    // Remember what this replaces — including a previous upload in this same unsaved
+    // session — so nothing is stranded once the save commits.
+    if (lp) {
+      if (logoPath) superseded.current.push(logoPath)
+      setLogoPath(lp)
+    }
     const fav = await deriveFavicon(file)
     if (fav) {
       const fp = await uploadBranding(kb.id, 'favicon', fav, 'png')
-      if (fp) setFaviconPath(fp)
+      if (fp) {
+        if (faviconPath) superseded.current.push(faviconPath)
+        setFaviconPath(fp)
+      }
     }
     setUploading(false)
   }
@@ -148,6 +162,12 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     if (!error) {
       setSaved(true)
       onSaved((data as KB | null) ?? { ...kb, ...patch })
+      // Upload new -> update the row -> delete old. Only this order survives a failure
+      // halfway: the worst case is an orphaned object, never a KB pointing at a missing
+      // one. Guard against deleting a path the row still references.
+      const live = new Set([patch.logo_path, patch.favicon_path])
+      await removeBranding(superseded.current.filter((p) => !live.has(p)))
+      superseded.current = []
     }
   }
 
