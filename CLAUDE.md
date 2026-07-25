@@ -288,6 +288,29 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
 - `supabase/test_transfer.sh` proves the whole handover end to end against the live project
   with throwaway accounts. Run it after touching anything ownership-shaped.
 
+## 10e. Security invariants (learned the hard way — do not relearn)
+
+1. **A `SECURITY DEFINER` function derives identity from `auth.uid()`, never from an
+   argument.** Taking the acting or destination account as a client-supplied parameter
+   hands the caller the exact thing the function exists to prove. This has been the root
+   cause of two escalation holes in two consecutive slices; treat a `p_user_id`-shaped
+   parameter on a definer function as a bug on sight.
+2. **Adding a privileged column to an existing table inherits that table's existing write
+   policy.** RLS is row-level and *cannot* express column scope, so `profiles.plan` and
+   `profiles.is_admin` were world-writable the moment they were added to a table with a
+   blanket `for update using (id = auth.uid())`. Any new privileged column requires a
+   column-GRANT review, not a policy read — and **verify with a real anon-key session, not
+   by reading the SQL.** The policy looked correct while the hole was live.
+3. **The `frames` bucket is public by design (migration 0007).** Anyone holding a frame URL
+   keeps it after a transfer, a plan downgrade, or an unpublish. That is a deliberate
+   reader-performance tradeoff, not a bug — but it means a future "private help center"
+   cannot gate articles alone: the images leak independently of the article. Know this
+   before promising privacy to a customer.
+4. **`jobs.user_id` is `on delete set null`,** so a deleted account's ledger rows stop
+   counting toward anyone. Delete-and-resignup is therefore a free-tier reset. Accepted:
+   `free_email_providers` already blunts the cheap version, and building further against it
+   is not worth it at this scale. Revisit only if abuse actually appears.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock
