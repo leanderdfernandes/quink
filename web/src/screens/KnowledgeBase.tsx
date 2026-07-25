@@ -12,6 +12,7 @@ import {
   renameFolder,
 } from '../lib/folders'
 import Wordmark from '../components/Wordmark'
+import KbSwitcher from '../components/KbSwitcher'
 import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
 
 // Screen 4 — the article library (ux-spec §2, redesigned to the "Quink Flow" mock).
@@ -24,6 +25,9 @@ type Props = {
   kb: KB
   // The owner's plan (profiles.plan). Entitlements are owner-level, never per-KB.
   plan: string
+  // Every KB this account can open. Unused on a 1-KB plan — the switcher renders a label.
+  kbs: KB[]
+  onSwitchKb: (kbId: string) => void
   onNewArticle: () => void
   onWriteFromScratch: () => void
   onOpenArticle: (id: string) => void
@@ -56,6 +60,8 @@ function timeAgo(iso: string): string {
 export default function KnowledgeBase({
   kb,
   plan,
+  kbs,
+  onSwitchKb,
   onNewArticle,
   onWriteFromScratch,
   onOpenArticle,
@@ -226,7 +232,7 @@ export default function KnowledgeBase({
               {initial}
             </span>
           )}
-          <span className="lib-kb-name">{kb.name}</span>
+          <KbSwitcher kb={kb} plan={plan} kbs={kbs} onSwitch={onSwitchKb} />
           <span className="lib-kb-tag">Help Center</span>
         </div>
         <div className="lib-top-right">

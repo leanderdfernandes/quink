@@ -237,6 +237,31 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   and a purge must be able to delete exactly one KB's objects. Storage RLS resolves that
   first path segment through `knowledge_bases`.
 
+## 10c. Routing & admin access (locked — migration 0015)
+
+- **Authoring is `/app/:kbId`, keyed on `kb.id` and NEVER on the subdomain.** The subdomain
+  is trigger-provisioned and follows the KB name on rename (0013), so an authoring URL
+  keyed on it dies the first time someone renames their help center. Authoring URLs are
+  internal: ugly and stable beats pretty and fragile. `/kb/:kbSlug` stays the reader
+  preview — do not put authoring there.
+- **Reader resolves by HOSTNAME, authoring resolves by PATH, and they never share a
+  resolver.** One "get current KB" helper that sometimes reads the host and sometimes the
+  path is how a customer eventually gets served someone else's help center.
+- **The wizard phases are deliberately not routes.** Upload → account wall → generating is
+  a linear job the user cannot re-enter; routing it hands them a browser back button in the
+  middle of a 90-second run. Only the KB shell and the article are routes.
+- **Never resolve a KB with `.single()` on `owner_id`.** It throws rather than degrades the
+  moment an account has a second KB, and `internal` is the multi-KB account.
+- **A KB id that doesn't resolve renders one state** — "not found, or no access". Never
+  distinguish the two, or the URL bar becomes a probe for which KBs exist.
+- **Admin access is `is_admin()` inside RLS**, not a route guard. A route guard alone is
+  theatre when the SPA talks to Supabase directly. Admin sessions can WRITE (open-as-owner
+  must be able to fix a screenshot, not just look at one), so **the viewing-as-admin banner
+  is a safety control and is never conditional or dismissible.**
+- **Clients cannot write `profiles.plan` or `profiles.is_admin`.** The UPDATE grant is
+  scoped to `last_kb_id` alone. Plan changes are a money operation and go through the
+  service role or a SECURITY DEFINER rpc that checks `is_admin()`. Do not widen that grant.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock

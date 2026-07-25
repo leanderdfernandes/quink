@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
 import { STORAGE_BUCKET_VIDEOS, WORKER_URL } from './lib/config'
 import { DEFAULT_PLAN, fetchPlan, type PlanId } from './lib/plans'
+import { fetchKb, listKbs, resolveDefaultKb, setLastKb } from './lib/kbs'
+import AdminBanner from './components/AdminBanner'
 import type { KnowledgeBase as KB, VideoContext } from './lib/types'
 import Home from './screens/Home'
 import Upload from './screens/Upload'
@@ -24,6 +27,9 @@ import Editor from './editor/Editor'
 // Value, then commitment, in that order. The Gemini pipeline never runs for an
 // unverified session.
 
+// The wizard is state, not routes (see main.tsx). 'editor' is gone from this list: which
+// article is open is now the URL's job, so it survives a refresh and can be pasted into
+// an email.
 type Phase =
   | 'loading'
   | 'home'
@@ -33,23 +39,28 @@ type Phase =
   | 'working'
   | 'generating'
   | 'kb'
-  | 'editor'
   | 'theme'
   | 'domain'
+  | 'noaccess'
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
 export default function App() {
+  const { kbId: routeKbId, articleId: routeArticleId } = useParams()
+  const navigate = useNavigate()
+
   const [session, setSession] = useState<Session | null>(null)
   const [phase, setPhase] = useState<Phase>('loading')
   const [file, setFile] = useState<File | null>(null)
   const [kb, setKb] = useState<KB | null>(null)
+  // Every KB this account can open — the switcher's list. Empty for a 1-KB plan, which
+  // renders a plain label and never reads it.
+  const [kbs, setKbs] = useState<KB[]>([])
   // Entitlements are owner-level (profiles.plan), so they are held here beside the session
   // rather than on the KB — a KB's tier would be the wrong thing to read the moment a KB
   // can change hands.
   const [plan, setPlan] = useState<PlanId>(DEFAULT_PLAN)
   const [jobId, setJobId] = useState<string | null>(null)
-  const [openArticleId, setOpenArticleId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // The stable identity across token refresh / focus / INITIAL_SESSION. The post-auth
@@ -65,15 +76,17 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
-  const loadKb = useCallback(async (userId: string) => {
-    // Auto-provisioned by the signup trigger — there is no "create a KB" step to run.
-    const { data } = await supabase
-      .from('knowledge_bases')
-      .select('*')
-      .eq('owner_id', userId)
-      .single()
-    return (data as KB) ?? null
-  }, [])
+  // Resolve which KB we are in: the URL wins, then the last one used, then whatever this
+  // account has. The old version was `.eq('owner_id', userId).single()`, which THREW rather
+  // than degraded the moment an account held a second KB — and `internal` (our own account,
+  // with help.quink.online plus the demo KBs) is the first to hit that.
+  //
+  // A route id that resolves to nothing is not an error to report; it is a state to render.
+  const loadKb = useCallback(
+    async (userId: string, wantedKbId?: string) =>
+      wantedKbId ? await fetchKb(wantedKbId) : await resolveDefaultKb(userId),
+    [],
+  )
 
   // Once authenticated: pick the held recording back up, upload it, start the pipeline.
   //
@@ -86,10 +99,32 @@ export default function App() {
     let cancelled = false
 
     ;(async () => {
-      const [found, ownerPlan] = await Promise.all([loadKb(userId), fetchPlan(userId)])
+      const [found, ownerPlan, mine] = await Promise.all([
+        loadKb(userId, routeKbId),
+        fetchPlan(userId),
+        listKbs(userId),
+      ])
       if (cancelled) return
-      setKb(found)
       setPlan(ownerPlan)
+      setKbs(mine)
+
+      // A :kbId that resolves to nothing is either gone or not ours — RLS answers both
+      // with zero rows, and so do we. Rendering different states for the two would turn
+      // the URL bar into a probe for which KBs exist.
+      if (routeKbId && !found) {
+        setPhase('noaccess')
+        return
+      }
+      setKb(found)
+
+      // The URL is the record of where you are. Put it there as soon as we know, so a
+      // refresh, a bookmark or a pasted link all land in the same place.
+      if (found && !routeKbId) {
+        navigate(`/app/${found.id}`, { replace: true })
+      }
+      // Only remember KBs we actually own. Without this an admin who opens a customer KB
+      // gets dropped straight back into it on their next login.
+      if (found && found.owner_id === userId) void setLastKb(userId, found.id)
 
       const pending = await loadPending().catch(() => undefined)
       if (cancelled) return
@@ -118,7 +153,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [userId, loadKb])
+  }, [userId, loadKb, routeKbId, navigate])
 
   async function uploadVideo(kbId: string, f: File) {
     // Objects are keyed by KB (migration 0014): storage RLS resolves the first path
@@ -163,9 +198,9 @@ export default function App() {
   const onGenerated = useCallback(async () => {
     // Re-read the KB so anything derived from it is fresh. The run counter reads the jobs
     // ledger directly (KnowledgeBase), so it needs no KB round-trip.
-    if (session) setKb(await loadKb(session.user.id))
+    if (kb) setKb(await fetchKb(kb.id))
     setPhase('kb')
-  }, [session, loadKb])
+  }, [kb])
 
   async function handleSubmit(f: File, context: VideoContext) {
     setFile(f)
@@ -208,9 +243,32 @@ export default function App() {
     await supabase
       .from('steps')
       .insert({ article_id: article.id, step_number: 1, heading: '', body_text: '' })
-    setOpenArticleId(article.id)
-    setPhase('editor')
+    openArticle(article.id)
   }
+
+  // Which article is open is a URL, not a state flag — so it survives a refresh and can be
+  // pasted to someone.
+  const openArticle = useCallback(
+    (articleId: string) => {
+      if (kb) navigate(`/app/${kb.id}/article/${articleId}`)
+    },
+    [kb, navigate],
+  )
+
+  const closeArticle = useCallback(() => {
+    if (kb) navigate(`/app/${kb.id}`)
+  }, [kb, navigate])
+
+  // Switching KBs is a navigation. The effect above re-resolves from the new :kbId and
+  // records it as the last one used.
+  const switchKb = useCallback(
+    (nextKbId: string) => {
+      setError(null)
+      setPhase('loading')
+      navigate(`/app/${nextKbId}`)
+    },
+    [navigate],
+  )
 
   async function signOut() {
     await clearPending().catch(() => {})
@@ -221,7 +279,36 @@ export default function App() {
     setPhase('home')
   }
 
+  // An admin inside someone else's KB. Rendered around every authenticated screen below,
+  // never conditionally hidden — see AdminBanner.
+  const adminBar =
+    kb && userId && kb.owner_id !== userId ? (
+      <AdminBanner kbName={kb.name} onExit={() => navigate('/admin')} />
+    ) : null
+
   if (phase === 'loading') return <div className="page" />
+
+  // Same answer whether the KB is gone or was never ours: the URL must not reveal which.
+  if (phase === 'noaccess') {
+    return (
+      <div className="page" style={{ justifyContent: 'center' }}>
+        <div className="card wall">
+          <h2>Help center not found</h2>
+          <p className="cap" style={{ marginTop: 8 }}>
+            This help center doesn't exist, or your account doesn't have access to it.
+          </p>
+          <button
+            className="btn btn-ghost"
+            style={{ marginTop: 18 }}
+            onClick={() => navigate('/')}
+          >
+            Back to your help center
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (phase === 'home')
     return (
       <Home onStart={() => setPhase('upload')} onLogin={() => setPhase('login')} />
@@ -249,9 +336,20 @@ export default function App() {
     return <Generating jobId={jobId} onDone={onGenerated} />
   }
 
+  // The article is a route, so it is checked before the KB shell and survives a refresh.
+  if (routeArticleId && kb) {
+    return (
+      <>
+        {adminBar}
+        <Editor articleId={routeArticleId} kb={kb} plan={plan} onBack={closeArticle} />
+      </>
+    )
+  }
+
   if (phase === 'kb' && kb) {
     return (
       <>
+        {adminBar}
         {error && (
           <p className="err" style={{ padding: '10px 20px', margin: 0 }}>
             {error}
@@ -260,6 +358,8 @@ export default function App() {
         <KnowledgeBaseScreen
           kb={kb}
           plan={plan}
+          kbs={kbs}
+          onSwitchKb={switchKb}
           onNewArticle={() => {
             setError(null)
             setPhase('upload')
@@ -268,10 +368,7 @@ export default function App() {
             setError(null)
             writeFromScratch()
           }}
-          onOpenArticle={(id) => {
-            setOpenArticleId(id)
-            setPhase('editor')
-          }}
+          onOpenArticle={openArticle}
           onOpenTheme={() => setPhase('theme')}
           onOpenDomain={() => setPhase('domain')}
           onSignOut={signOut}
@@ -280,38 +377,30 @@ export default function App() {
     )
   }
 
-  if (phase === 'editor' && openArticleId && kb) {
-    return (
-      <Editor
-        articleId={openArticleId}
-        kb={kb}
-        plan={plan}
-        onBack={() => {
-          setOpenArticleId(null)
-          setPhase('kb')
-        }}
-      />
-    )
-  }
-
   if (phase === 'theme' && kb && session) {
     return (
-      <ThemeSettings
-        kb={kb}
-        plan={plan}
-        onBack={() => setPhase('kb')}
-        onSaved={(updated) => setKb(updated)}
-      />
+      <>
+        {adminBar}
+        <ThemeSettings
+          kb={kb}
+          plan={plan}
+          onBack={() => setPhase('kb')}
+          onSaved={(updated) => setKb(updated)}
+        />
+      </>
     )
   }
 
   if (phase === 'domain' && kb) {
     return (
-      <DomainSettings
-        kb={kb}
-        onBack={() => setPhase('kb')}
-        onChange={(updated) => setKb(updated)}
-      />
+      <>
+        {adminBar}
+        <DomainSettings
+          kb={kb}
+          onBack={() => setPhase('kb')}
+          onChange={(updated) => setKb(updated)}
+        />
+      </>
     )
   }
 

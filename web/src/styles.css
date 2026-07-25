@@ -2873,3 +2873,174 @@ textarea {
   flex: none;
   color: var(--brand-600);
 }
+
+/* --- KB switcher (Growth-tier multi-KB, built once) ------------------------
+   On a 1-KB plan the component renders a bare .lib-kb-name and none of this is
+   reachable — there is deliberately no affordance hinting the feature exists. */
+.kbsw {
+  position: relative;
+}
+.kbsw-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  margin: -3px -4px;
+  border: none;
+  background: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.kbsw-trigger:hover {
+  background: var(--subtle);
+}
+.kbsw-chev {
+  font-size: 11px;
+  color: var(--muted);
+}
+.kbsw-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -4px;
+  z-index: 40;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 28px rgb(33 31 27 / 12%);
+  overflow: hidden;
+}
+.kbsw-search {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.kbsw-search:focus {
+  outline: none;
+  border-bottom-color: var(--brand-300);
+}
+.kbsw-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.kbsw-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.kbsw-item:hover {
+  background: var(--subtle);
+}
+.kbsw-item.on {
+  background: var(--brand-50);
+}
+.kbsw-item-name {
+  font-weight: 500;
+  color: var(--ink);
+}
+.kbsw-item-sub,
+.kbsw-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+.kbsw-empty {
+  padding: 12px;
+  margin: 0;
+}
+.kbsw-new {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: var(--brand-600);
+}
+.kbsw-new:hover {
+  background: var(--subtle);
+}
+
+/* --- Viewing-as-admin bar --------------------------------------------------
+   A safety control, not a notice: admin sessions can WRITE to any customer KB.
+   Sticky and undismissable on purpose — the failure it prevents is publishing or
+   deleting in the wrong account because you forgot where you were. */
+.admin-bar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  background: var(--warning);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+}
+.admin-bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  flex: none;
+}
+.admin-bar-text {
+  flex: 1;
+}
+.admin-bar-exit {
+  border: 1px solid rgb(255 255 255 / 55%);
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.admin-bar-exit:hover {
+  background: rgb(255 255 255 / 22%);
+}
+
+/* --- Admin shell ---------------------------------------------------------- */
+.settings-body {
+  flex: 1;
+  padding: 28px 24px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.admin-table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}

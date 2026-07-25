@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 import App from './App'
+import Admin from './screens/Admin'
 import ReaderSite from './reader/ReaderSite'
 import { readerKeyFromHost } from './lib/config'
 import './styles.css'
@@ -12,6 +13,16 @@ import './styles.css'
 //   quink.online / www / localhost        -> the authoring SPA, with the reader still
 //                                            reachable at the /kb/{slug} dev path.
 // `?kb={slug}` on the app host is a convenience override that redirects into that path.
+//
+// Authoring lives under /app/ and is keyed on kb.id, NOT on the subdomain: the subdomain is
+// trigger-provisioned and follows the KB name on rename (migration 0013), so a bookmarked
+// authoring URL keyed on it dies the first time someone renames their help center.
+// Authoring URLs are internal — ugly and stable beats pretty and fragile. The reader keeps
+// slugs, which is the surface where prettiness actually earns something.
+//
+// Only the KB shell and the article are routes. The upload -> account wall -> generating
+// wizard stays a state machine inside App on purpose: routing those steps hands the user a
+// browser back button in the middle of a 90-second job they cannot re-enter.
 function KbQueryRedirect() {
   const [params] = useSearchParams()
   const kb = params.get('kb')
@@ -32,9 +43,18 @@ createRoot(document.getElementById('root')!).render(
         </Routes>
       ) : (
         <Routes>
+          {/* Reader preview — unchanged, and the reason authoring is not on /kb/. */}
           <Route path="/kb/:kbSlug" element={<ReaderSite />} />
           <Route path="/kb/:kbSlug/category/:folderId" element={<ReaderSite />} />
           <Route path="/kb/:kbSlug/:articleSlug" element={<ReaderSite />} />
+
+          <Route path="/admin" element={<Admin />} />
+
+          {/* App renders both: it resolves the KB from :kbId when present, and otherwise
+              runs the signed-out landing/upload flow at "/" and redirects once it knows
+              which KB to open. */}
+          <Route path="/app/:kbId" element={<App />} />
+          <Route path="/app/:kbId/article/:articleId" element={<App />} />
           <Route path="*" element={<KbQueryRedirect />} />
         </Routes>
       )}
