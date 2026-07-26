@@ -279,6 +279,40 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
 - **The claim link is the only transfer path.** There is no admin force-transfer: a second
   path is a second place the entitlement resets can be forgotten, and clicking the link is
   the recipient's consent.
+- **The token is the capability — never bind a claim to an email address.** The founder
+  who receives the link forwards it to whoever actually runs their docs, and that person
+  is the real user. Locking it to the addressee breaks the common case.
+- **Show the goods before asking for anything.** `claim_preview()` is anon and renders
+  the KB name, listed-article count and a live link for a signed-out visitor. Bouncing
+  someone to a signup form asks them to create an account for a thing they haven't seen.
+  It returns those four fields and **never the kb id or owner** — handing an anonymous
+  caller the kb id turns a claim link into an internal-identifier lookup. The signed-in
+  owner re-clicking a spent link gets their kb id from `claim_kb()` instead, where
+  `auth.uid()` proves they may have it.
+- **`claimed_token` exists so a used link is not a dead end.** `claim_kb()` nulls
+  `claim_token`, so without it "already claimed" and "never existed" were the same row
+  state and no caller change could tell them apart. People re-click links from old emails
+  constantly.
+- **A demo renders watermarked (`f.watermark or kb.is_demo`).** A demo on `internal` used
+  to render clean and gain a badge the instant it was claimed — the thing they accept
+  looking visibly worse than the thing they were shown, seconds after saying yes. The
+  handover must change nothing visually.
+- **`claim_kb()` returning null is a STATE, not an error.** Expired, unknown, lost the
+  race, or spent by someone else — the caller re-reads the preview and renders which.
+  Never an error screen.
+- **`/claim/:token` must be in the Supabase redirect allowlist.** Verified live: with only
+  the Site URL allowed, Google OAuth lands on `https://www.quink.online/?code=…` and the
+  token is gone — the user has just signed up for a help center they were promised and is
+  looking at an empty app. `lib/claim.ts` stashes the token in localStorage as a backstop
+  and `App.tsx` resumes from it, but that only rescues a **same-origin** fallback. Fix the
+  setting; the backstop is a net, not a substitute.
+- **Never consume a one-shot flag in a render path or a mount effect.** React StrictMode
+  mounts, unmounts and remounts in dev, so the throwaway first mount eats it and the
+  instance that renders sees nothing — this silently swallowed the post-claim greeting
+  twice. Read purely; clear on an explicit user action.
+- `supabase/test_claim.py` proves the handover end to end against the live project: link
+  generation, the anonymous preview and what it withholds, all four states, the race, the
+  re-click, and that the reader renders identically before and after.
 - **The trial clock starts when they take it, not when we built it** — and
   `stamp_article_origin` only starts a clock for plans that actually expire, so demo KBs on
   `internal` never carry one.

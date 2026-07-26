@@ -469,6 +469,22 @@ textarea {
   padding: 6px 14px;
   font-size: 13px;
 }
+/* Handover greeting. Brand-coloured rather than amber — this is the good news banner, and
+   it must not read like the expiry warning that uses the same slot. */
+.claim-welcome {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 20px;
+  background: var(--brand-50);
+  border-bottom: 1px solid var(--brand-200);
+  color: var(--brand-700);
+  font-size: 13.5px;
+}
+.claim-welcome span {
+  flex: 1;
+}
+
 .trial-banner-x {
   background: none;
   border: 0;

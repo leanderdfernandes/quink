@@ -30,14 +30,19 @@ export default function Admin() {
   // force-transfer. One code path means one place the entitlement resets can be forgotten,
   // and the recipient's consent is implicit in them clicking.
   async function claimLink(kbId: string) {
-    const { data, error } = await supabase.rpc('issue_claim_token', { p_kb_id: kbId })
+    // create_claim_link returns the ASSEMBLED url, so there is no second place that knows
+    // how a claim link is spelled. p_base follows the current origin so a link generated
+    // in local dev is actually clickable there.
+    const { data, error } = await supabase.rpc('create_claim_link', {
+      p_kb_id: kbId,
+      p_base: window.location.origin,
+    })
     if (error || !data) {
       setToast('Could not create a claim link.')
       return
     }
-    const url = `${window.location.origin}/claim/${data}`
-    await navigator.clipboard.writeText(url).catch(() => {})
-    setToast(`Claim link copied — valid 14 days. ${url}`)
+    await navigator.clipboard.writeText(data as string).catch(() => {})
+    setToast(`Claim link copied — valid 30 days. ${data}`)
     setTimeout(() => setToast(null), 12000)
   }
 

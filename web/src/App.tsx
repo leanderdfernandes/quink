@@ -7,6 +7,7 @@ import { STORAGE_BUCKET_VIDEOS, WORKER_URL } from './lib/config'
 import { DEFAULT_PLAN, fetchPlan, limitsFor, runsUsed, type PlanId } from './lib/plans'
 import { fetchKb, listKbs, resolveDefaultKb, setLastKb } from './lib/kbs'
 import { QUOTA_EXCEEDED } from './lib/failures'
+import { clearJustClaimed, isJustClaimed, takeClaimToken } from './lib/claim'
 import { trialFor } from './lib/trial'
 import AdminBanner from './components/AdminBanner'
 import FailureScreen from './components/FailureScreen'
@@ -57,6 +58,10 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 export default function App() {
   const { kbId: routeKbId, articleId: routeArticleId } = useParams()
   const navigate = useNavigate()
+  // Handed over by the claim flow. One dismissible line, never a modal — the articles are
+  // the demo and nothing should stand in front of them. Read-and-clear on mount, so it
+  // greets exactly once no matter how many times this component mounts on the way here.
+  const [justClaimed, setJustClaimed] = useState(isJustClaimed)
 
   const [session, setSession] = useState<Session | null>(null)
   const [phase, setPhase] = useState<Phase>('loading')
@@ -98,6 +103,19 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => sub.subscription.unsubscribe()
   }, [])
+
+  // Rescue a claim that lost its path across the sign-in redirect.
+  //
+  // Claim.tsx sends the provider back to /claim/:token, but that only works if the exact
+  // path is in Supabase's redirect allowlist; when it isn't, the provider quietly falls
+  // back to the Site URL and lands here instead. Without this, the user has just signed up
+  // for a help center they were promised and is looking at an empty app — the single worst
+  // moment this funnel has. takeClaimToken() is read-and-clear, so it fires at most once.
+  useEffect(() => {
+    if (!userId) return
+    const pendingClaim = takeClaimToken()
+    if (pendingClaim) navigate(`/claim/${pendingClaim}`, { replace: true })
+  }, [userId, navigate])
 
   // Resolve which KB we are in: the URL wins, then the last one used, then whatever this
   // account has. The old version was `.eq('owner_id', userId).single()`, which THREW rather
@@ -515,6 +533,11 @@ export default function App() {
           onOpenDomain={() => setPhase('domain')}
           onSignOut={signOut}
           onUpgrade={() => setShowUpgrade(true)}
+          justClaimed={justClaimed}
+          onDismissWelcome={() => {
+            clearJustClaimed()
+            setJustClaimed(false)
+          }}
         />
         {/* The proactive path (pricing-spec §6): they tapped the countdown rather than
             hitting a wall. Same modal either way — one place decides what upgrading looks

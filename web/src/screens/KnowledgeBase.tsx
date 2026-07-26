@@ -38,6 +38,11 @@ type Props = {
   // Opens the upgrade path. The countdown pill and the day-7 banner are both clickable at
   // any point (pricing-spec §6) — a warning you can't act on is just anxiety.
   onUpgrade: () => void
+  // They arrived here from a claim link seconds ago. One line, dismissible, above the
+  // articles — never a modal. The articles ARE the demo; putting anything in front of them
+  // is putting a tour in front of the thing the tour is about.
+  justClaimed?: boolean
+  onDismissWelcome?: () => void
 }
 
 type StatusPill = { label: string; cls: 'gen' | 'draft' | 'unlisted' | 'listed' }
@@ -73,6 +78,8 @@ export default function KnowledgeBase({
   onOpenDomain,
   onSignOut,
   onUpgrade,
+  justClaimed,
+  onDismissWelcome,
 }: Props) {
   const [articles, setArticles] = useState<ArticleRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -268,6 +275,23 @@ export default function KnowledgeBase({
           </button>
         </div>
       </header>
+
+      {/* Handover greeting. Two sentences, above the articles, gone on click. */}
+      {justClaimed && (
+        <div className="claim-welcome">
+          <span>
+            <b>{kb.name} is yours.</b> Every article is editable — open one and change
+            anything. Add more from a recording or write one by hand.
+          </span>
+          <button
+            className="trial-banner-x"
+            onClick={onDismissWelcome}
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Days 7–0: a persistent banner, not a pill (pricing-spec §7). It names the article
           count because "your 12 articles" is the sentence that lands where "your content"

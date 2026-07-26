@@ -197,7 +197,7 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped }: Props) 
               <input
                 id="product"
                 type="text"
-                placeholder="Acme"
+                placeholder="Name of the product / feature"
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
                 required
