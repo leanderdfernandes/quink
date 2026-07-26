@@ -7,8 +7,10 @@ import { STORAGE_BUCKET_VIDEOS, WORKER_URL } from './lib/config'
 import { DEFAULT_PLAN, fetchPlan, limitsFor, runsUsed, type PlanId } from './lib/plans'
 import { fetchKb, listKbs, resolveDefaultKb, setLastKb } from './lib/kbs'
 import { QUOTA_EXCEEDED } from './lib/failures'
+import { trialFor } from './lib/trial'
 import AdminBanner from './components/AdminBanner'
 import FailureScreen from './components/FailureScreen'
+import RestoreScreen from './components/RestoreScreen'
 import UpgradeModal from './components/UpgradeModal'
 import type { KnowledgeBase as KB, VideoContext } from './lib/types'
 import Home from './screens/Home'
@@ -76,6 +78,13 @@ export default function App() {
   // polling screen can't see, so App renders it.
   const [failureCode, setFailureCode] = useState<string | null>(null)
   const [showUpgrade, setShowUpgrade] = useState(false)
+  // The offline interstitial is shown once per visit, then stepped past. Offline hides the
+  // KB from READERS, not from its owner — blocking authoring would punish exactly the
+  // person we're trying to convert (pricing-spec §7).
+  const [restoreSeen, setRestoreSeen] = useState(false)
+  // Article count, for the restore screen's "your N articles are safe" line. Fetched only
+  // when a KB is actually offline, so the normal path pays nothing for it.
+  const [offlineArticles, setOfflineArticles] = useState(0)
 
   // The stable identity across token refresh / focus / INITIAL_SESSION. The post-auth
   // effect keys on this, not the session object, so a refresh doesn't kick the user out.
@@ -331,6 +340,20 @@ export default function App() {
   const runLimit = limitsFor(plan).lifetime_runs
   const runsLeft = runLimit === null || runs === null ? null : Math.max(runLimit - runs, 0)
 
+  // The free-trial clock. Computed here so the wizard and the KB shell read the same
+  // number on the same day — the countdown is only defensible if it never disagrees with
+  // itself or with the email (pricing-spec §2).
+  const trial = kb ? trialFor(kb, plan) : null
+
+  useEffect(() => {
+    if (!kb || trial?.stage !== 'offline') return
+    supabase
+      .from('articles')
+      .select('id', { count: 'exact', head: true })
+      .eq('kb_id', kb.id)
+      .then(({ count }) => setOfflineArticles(count ?? 0))
+  }, [kb, trial?.stage])
+
   // Back to the dropzone from a failure. Clears the dead job so a stale id can't resurrect
   // the old failure screen behind the new upload.
   function startOver() {
@@ -448,6 +471,23 @@ export default function App() {
     )
   }
 
+  // Expired: the reader is dark and the grace clock is running. Shown on arrival because
+  // it is the highest-intent screen in the free funnel (pricing-spec §7) — and shown ONCE,
+  // because their articles are all still there and editable.
+  if (phase === 'kb' && kb && trial?.stage === 'offline' && !restoreSeen) {
+    return (
+      <>
+        {adminBar}
+        <RestoreScreen
+          kbName={kb.name}
+          trial={trial}
+          articleCount={offlineArticles}
+          onContinue={() => setRestoreSeen(true)}
+        />
+      </>
+    )
+  }
+
   if (phase === 'kb' && kb) {
     return (
       <>
@@ -474,7 +514,20 @@ export default function App() {
           onOpenTheme={() => setPhase('theme')}
           onOpenDomain={() => setPhase('domain')}
           onSignOut={signOut}
+          onUpgrade={() => setShowUpgrade(true)}
         />
+        {/* The proactive path (pricing-spec §6): they tapped the countdown rather than
+            hitting a wall. Same modal either way — one place decides what upgrading looks
+            like, so the two paths cannot drift apart. */}
+        {showUpgrade && (
+          <UpgradeModal
+            onWriteManually={() => {
+              setShowUpgrade(false)
+              writeFromScratch()
+            }}
+            onClose={() => setShowUpgrade(false)}
+          />
+        )}
       </>
     )
   }

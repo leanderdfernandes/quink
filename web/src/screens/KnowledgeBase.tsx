@@ -11,6 +11,7 @@ import {
   moveArticle,
   renameFolder,
 } from '../lib/folders'
+import { trialBannerLabel, trialFor, trialPillLabel } from '../lib/trial'
 import Wordmark from '../components/Wordmark'
 import KbSwitcher from '../components/KbSwitcher'
 import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
@@ -34,6 +35,9 @@ type Props = {
   onOpenTheme: () => void
   onOpenDomain: () => void
   onSignOut: () => void
+  // Opens the upgrade path. The countdown pill and the day-7 banner are both clickable at
+  // any point (pricing-spec §6) — a warning you can't act on is just anxiety.
+  onUpgrade: () => void
 }
 
 type StatusPill = { label: string; cls: 'gen' | 'draft' | 'unlisted' | 'listed' }
@@ -68,6 +72,7 @@ export default function KnowledgeBase({
   onOpenTheme,
   onOpenDomain,
   onSignOut,
+  onUpgrade,
 }: Props) {
   const [articles, setArticles] = useState<ArticleRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -84,6 +89,9 @@ export default function KnowledgeBase({
   // AI video runs spent, read from the append-only jobs ledger — never from a counter on
   // the KB. Deleting an article does not give a run back, so this number only rises.
   const [runs, setRuns] = useState(0)
+  // The day-7 banner is dismissible PER SESSION only (pricing-spec §7) — never permanently.
+  // Someone who dismisses it on day 7 still has to see it on day 6.
+  const [bannerHidden, setBannerHidden] = useState(false)
   const renameInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -156,6 +164,17 @@ export default function KnowledgeBase({
   // article by hand is unlimited on every tier, so the copy must not imply otherwise.
   const runLimit = limitsFor(plan).lifetime_runs
   const left = runLimit === null ? null : Math.max(runLimit - runs, 0)
+
+  // Runs and days both drain. ONE pill, escalating with the clock (pricing-spec §6) — two
+  // competing meters is noise. Past day 7 the pill gives way to a persistent banner,
+  // because a countdown that fits in the header no longer matches the stakes.
+  const trial = trialFor(kb, plan)
+  const pill = trialPillLabel(trial, left)
+  // Held back until the article count is real. The banner names it ("your 12 articles"),
+  // and rendering "your 0 articles" for a frame in the last week before deletion is exactly
+  // the kind of wrong number that makes a user stop believing the countdown.
+  const showBanner = trial.stage === 'urgent' && !bannerHidden && !loading
+
   const initial = (kb.name.trim()[0] || 'Q').toUpperCase()
   const logo = publicBrandingUrl(kb.logo_path)
   const libEmpty = !loading && articles.length === 0
@@ -236,16 +255,38 @@ export default function KnowledgeBase({
           <span className="lib-kb-tag">Help Center</span>
         </div>
         <div className="lib-top-right">
-          {left !== null && (
-            <span className="counter">
-              {left} of {runLimit} free video guides left
-            </span>
+          {pill && (
+            <button
+              className={`counter counter-btn${trial.stage === 'warning' ? ' amber' : ''}`}
+              onClick={onUpgrade}
+            >
+              {pill}
+            </button>
           )}
           <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 13 }} onClick={onSignOut}>
             Sign out
           </button>
         </div>
       </header>
+
+      {/* Days 7–0: a persistent banner, not a pill (pricing-spec §7). It names the article
+          count because "your 12 articles" is the sentence that lands where "your content"
+          does not — and this is the last warning before the site goes dark. */}
+      {showBanner && (
+        <div className="trial-banner">
+          <span>{trialBannerLabel(trial, articles.length)}</span>
+          <button className="btn" onClick={onUpgrade}>
+            Keep my help center
+          </button>
+          <button
+            className="trial-banner-x"
+            onClick={() => setBannerHidden(true)}
+            aria-label="Dismiss until next visit"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="lib-body">
         <nav className="rail">

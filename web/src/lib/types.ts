@@ -100,11 +100,20 @@ export type KnowledgeBase = {
   // the give-up ceiling survive a deploy — see migration 0012.
   domain_attempts: number
   reader_views: number
-  // Trial lifecycle (mvp-dev-plan §5). Stamped once, by trigger, on the FIRST article
-  // created in this KB — never recalculated. The sweep that acts on these is a later slice.
+  // Trial lifecycle (pricing-spec §7, migration 0022). trial_started_at is stamped once, by
+  // trigger, on the FIRST article created in this KB. offline_at is the READER GATE — the
+  // reader RPCs return nothing while it is set, and article `visibility` is never mutated
+  // for a lifecycle reason, so restoring is the same single write in reverse.
   trial_started_at: string | null
   offline_at: string | null
   purge_at: string | null
+  // Nudge markers, written by the worker's sweep. Present on the row (so `select('*')`
+  // returns them) and read by nothing in the SPA — the app derives its countdown from the
+  // dates above, never from whether an email went out.
+  trial_day14_email_sent_at: string | null
+  trial_day7_email_sent_at: string | null
+  trial_offline_email_sent_at: string | null
+  trial_purged_email_sent_at: string | null
   created_at: string
 }
 

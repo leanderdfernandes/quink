@@ -405,13 +405,62 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   off while `ALLOWED_ORIGINS` contains a non-local origin. The domain-live promise sat
   undelivered precisely because the fallback was quiet — a silent safe default is how a
   user-facing promise goes unnoticed.
-- **A KB's `domain_live_email_sent_at` is deliberately NOT reset by `claim_kb()`** — the
-  one documented exception to §10d. It records that we sent a message, not owner state;
-  a claimed KB's domain is already live and does not go live again, so resetting it can
-  only produce a stale notification. The reason lives on the column comment in the DB.
+- **A marker resets when the CYCLE IT BELONGS TO resets.** This supersedes the coarser
+  "delivery records never reset" wording. `domain_live_email_sent_at` does not reset in
+  `claim_kb()` because a domain goes live once, historically — there is no cycle. The
+  four `trial_*_email_sent_at` markers DO reset there, because `claim_kb()` restarts
+  `trial_started_at`, and a marker outliving its cycle means the new owner's help center
+  is deleted with every warning already stamped as delivered. Same rule in
+  `admin_set_plan`. When you add a marker, ask what cycle it belongs to — not whether
+  it is "owner-derived".
 - **Auth mail (magic links, confirmations) is Supabase SMTP, configured by hand** in
   Project Settings → Auth, pointed at Resend. Not in code, and the built-in sender is
   rate-limited and not for production.
+
+## 10i. Trial lifecycle (locked — migration 0022)
+
+- **Offline is a READER-SIDE GATE on `kb.offline_at`. Article `visibility` is NEVER
+  mutated for a lifecycle reason.** The earlier plan flipped every article to `draft` on
+  expiry; that destroys the listed/unlisted distinction, so restoring would have to guess
+  which articles were link-only. Offline and restore are now the same single column write
+  in opposite directions, and the four reader RPCs carry the condition.
+- **All four reader RPCs are gated, not just the resolver.** `reader_kb` takes a hostname;
+  the other three take a `kb_id`, and a kb_id is not a secret — it is in the owner's URL
+  bar and travels in claim links. Gating only the resolver leaves an offline help center
+  readable by anyone who has ever seen its id.
+- **The deletion is defensible only because it is over-disclosed and soft.** Free includes
+  unlimited manual articles, so someone can hand-build forty and lose them —
+  `pricing-spec.md` §2 names this as our own dark-pattern risk. Four warnings, a 7-day
+  grace window where nothing is deleted, and copy taken from §7 verbatim. **If you find
+  yourself trimming a warning, trim something else.**
+- **One message per tick, most urgent only; skipped thresholds are marked as sent.** A
+  worker down for a week must not deliver day-14 and day-7 ninety seconds apart — that
+  reads as a bug and buries the message that matters.
+- **The sweep filters on `plan = 'free'` in the query AND re-checks in Python.** A single
+  mis-stamped `trial_started_at` on `internal` would delete a live reverse demo, and
+  reverse demos are the acquisition channel. Belt and braces is the right amount here.
+- **`jobs.kb_id` is `on delete set null` (was `cascade`).** The day-37 purge is the first
+  code path that deletes a KB, and under the old FK it deleted that owner's whole run
+  ledger — handing back every free run they ever spent. Same fix and same reasoning as
+  0017 did for `user_id`: the run happened; the ledger stops naming the KB rather than
+  forgetting the run.
+- **A downgrade is never a deletion.** `admin_set_plan` moving someone TO free restarts
+  `trial_started_at` from now. Without it, a customer downgraded after two months carries
+  a two-month-old clock and goes offline on the next tick.
+- **`admin_set_plan(p_target, p_plan)` is not a §10e.1 violation.** `p_target` is the
+  SUBJECT; the ACTOR is `is_admin()`, which reads `auth.uid()` and cannot be supplied by
+  the caller. A `p_user_id` parameter is a bug when it stands in for proof of who is
+  calling. Note this means the **service role cannot call it** — restore needs a real
+  signed-in admin session.
+- **While offline, authoring still works.** The KB is invisible to readers, not to its
+  owner. Blocking editing punishes exactly the person we are trying to convert, so the
+  restore screen is an interstitial with a way through, not a wall.
+- **The restore CTA is a `mailto:`, on purpose** — same call as `UpgradeModal`. There is
+  no checkout; a dead button on the highest-intent screen in the funnel teaches users the
+  product is broken rather than paid. Swap both when Lemon Squeezy lands.
+- `supabase/test_trial.py` proves the whole lifecycle end to end against the live project
+  with a throwaway account, by moving `trial_started_at` backwards. Run it after touching
+  the sweep, the reader gate, `claim_kb`, `admin_set_plan`, or the `jobs` FKs.
 
 ## 11. Working with me
 

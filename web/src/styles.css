@@ -432,6 +432,56 @@ textarea {
   font-weight: 500;
 }
 
+/* The countdown pill is clickable at every stage (pricing-spec §6) — a warning you can't
+   act on is just anxiety. It stays visually quiet until the clock is the scarce resource. */
+.counter-btn {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.counter-btn:hover {
+  border-color: var(--line);
+}
+/* Days 14–8: amber, and it names the consequence rather than counting down neutrally. */
+.counter.amber,
+.pill.amber {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+/* Days 7–0: a persistent banner, not a pill. It spans the app because the pill no longer
+   matches the stakes — this is the last week before the reader goes dark. Dismissible per
+   session only; it comes back tomorrow, and tomorrow is worse. */
+.trial-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 20px;
+  background: #fef3c7;
+  border-bottom: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.trial-banner .btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.trial-banner-x {
+  background: none;
+  border: 0;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+}
+.trial-banner-x:hover {
+  opacity: 1;
+}
+
 .err {
   color: var(--danger);
   font-size: 13px;

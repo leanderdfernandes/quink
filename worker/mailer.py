@@ -62,6 +62,68 @@ def domain_live(domain: str) -> tuple[str, str]:
     )
 
 
+# --- Trial lifecycle (pricing-spec §7) -------------------------------------------------
+# The wording below is §7 VERBATIM. It was written against the disclosure argument in §2 —
+# free tier includes unlimited manual articles, so someone can hand-build forty of them and
+# lose the lot — and reviewed on that basis. Do not reword it to sound softer; the whole
+# defence of this deletion is that it was over-disclosed.
+#
+# Each email says the same number the app is showing at that moment. A user who reads "11
+# days" on screen and "9 days" in their inbox stops believing either.
+#
+# `articles` is the count, `days` the number in the message.
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _sign_off(cta: str) -> str:
+    return f"\n\n{cta}\n\nReply to this email and we'll sort it out — it reaches a person.\n\n— Quink"
+
+
+def trial_day14(days: int, articles: int, url: str) -> tuple[str, str]:
+    return (
+        f"Your help center is removed in {days} days",
+        f"Free help centers are removed 30 days after your first article. Choose a plan "
+        f"to keep {_plural(articles, 'article')} live — nothing changes except the "
+        f"countdown stops.\n\nYour help center: {url}"
+        + _sign_off("To keep it, reply and we'll get you on a plan."),
+    )
+
+
+def trial_day7(days: int, articles: int, url: str) -> tuple[str, str]:
+    return (
+        f"{days} days left — your {_plural(articles, 'article')} and help center will be removed",
+        f"{days} days left — your {_plural(articles, 'article')} and help center will be "
+        f"removed.\n\nNothing is deleted the moment the countdown ends: your articles stay "
+        f"recoverable for a further 7 days.\n\nYour help center: {url}"
+        + _sign_off("To keep it, reply and we'll get you on a plan."),
+    )
+
+
+def trial_offline(articles: int, grace_days: int, url: str) -> tuple[str, str]:
+    return (
+        "Your help center is offline",
+        f"Your {_plural(articles, 'article')} are safe for {grace_days} more days. Choose "
+        f"a plan to bring them back — nothing was lost.\n\nYour readers see nothing at "
+        f"{url} until it's restored. You can still sign in and edit everything."
+        + _sign_off("Reply with \"restore\" and we'll put it back."),
+    )
+
+
+def trial_purged(kb_name: str) -> tuple[str, str]:
+    # Not in §7 — §7 stops at the restore screen. Kept deliberately plain and factual: this
+    # arrives after four warnings, and anything persuasive at this point reads as a taunt.
+    return (
+        "Your help center has been removed",
+        f"The 7-day recovery window for {kb_name} has passed, so it and its articles have "
+        f"now been deleted. We don't keep a copy.\n\nYou can start a new help center any "
+        f"time — writing articles by hand is free and unlimited."
+        + _sign_off("If this is a mistake, reply today and we'll see what we can do."),
+    )
+
+
 # --- The one send path ----------------------------------------------------------------
 def send_once(
     to: str,

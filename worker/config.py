@@ -152,6 +152,21 @@ FAILED_VIDEO_RETENTION_DAYS = 7
 # the next one and nothing needs to fire at an exact moment.
 VIDEO_PURGE_INTERVAL_SECONDS = int(os.environ.get("VIDEO_PURGE_INTERVAL_SECONDS", "3600"))
 
+# --- Trial lifecycle (pricing-spec §7, ux-spec §6) --------------------------
+# How long a free help center stays live is PLANS[plan]["expiry_days"] — one entitlement
+# table, no second copy. What lives here is the shape of the wind-down around it.
+#
+# The grace window is the reason this deletion is defensible at all: expiry takes the site
+# offline, it does not delete anything. Seven days later the data goes. pricing-spec §7
+# calls the offline screen the highest-intent moment in the free funnel, and it only exists
+# because nothing was destroyed to reach it.
+TRIAL_GRACE_DAYS = 7
+
+# Days-remaining thresholds that get an email, most urgent LAST (the sweep walks this in
+# reverse). Mirrored by TRIAL_WARN_DAYS in web/src/lib/trial.ts, which decides when the pill
+# turns amber — if the two drift, the app and the inbox disagree about the same day.
+TRIAL_WARN_DAYS = (14, 7)
+
 # --- Email ------------------------------------------------------------------
 # DNS can take hours, so the "we'll email you the moment it's live" promise in the UI needs
 # a real sender. All sending goes through mailer.py — see the module docstring for why it

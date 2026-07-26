@@ -161,7 +161,11 @@ export const DEFAULT_TONE = 'Friendly'
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
 export const COPY = {
-  freeLimitDisclosure: `${PLANS.free.lifetime_runs} free video guides, then top up. Writing by hand is unlimited.`,
+  // BOTH free limits, stated at the dropzone before the file is committed (pricing-spec §6,
+  // ux-spec §1). The days half is not optional politeness: free tier includes unlimited
+  // manual articles, so someone can hand-build forty of them, and a 30-day expiry
+  // discovered afterwards is the exact dark pattern pricing-spec §2 says we must not ship.
+  freeLimitDisclosure: `${PLANS.free.lifetime_runs} free video guides from video · articles kept ${PLANS.free.expiry_days} days. Writing by hand is unlimited.`,
   videoDeletion: 'We delete the source video once your article is published.',
   buildCta: 'Build my article',
   wallHeading: 'Create a free account to build your guide.',

@@ -447,17 +447,21 @@ def sweep() -> None:
 async def run_loop() -> None:
     """Background loop. Started from the app lifespan; ends on shutdown.
 
-    Also carries the failed-video retention sweep and the stuck-job timeout sweep — same
-    persistent task, no new infra. All three are state queries, so a tick missed to a
-    restart or an idle-instance recycle costs nothing but a delay.
+    Also carries the failed-video retention sweep, the stuck-job timeout sweep and the
+    free-trial lifecycle sweep — same persistent task, no new infra. All of them are state
+    queries, so a tick missed to a restart or an idle-instance recycle costs nothing but a
+    delay.
 
     The timeout sweep runs every tick rather than on the purge cadence: it is one indexed
     query, and a user staring at a dead progress bar should not wait an hour to be told.
+    The trial sweep rides the slow cadence instead — its thresholds are whole days, so
+    checking hourly is already ~24x finer than the thing it measures.
     """
     import asyncio
     import time
 
     import retention
+    import trial
 
     log.info("domain re-check loop started (interval %ss)", config.DOMAIN_CHECK_INTERVAL_SECONDS)
     last_purge = 0.0
@@ -467,6 +471,7 @@ async def run_loop() -> None:
         if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
             last_purge = time.monotonic()
             await asyncio.to_thread(retention.sweep)
+            await asyncio.to_thread(trial.sweep)
         await asyncio.sleep(config.DOMAIN_CHECK_INTERVAL_SECONDS)
 
 
