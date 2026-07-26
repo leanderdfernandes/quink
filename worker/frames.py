@@ -10,27 +10,45 @@ from pathlib import Path
 import ffmpeg
 
 import config
+import failures
 
 
 def probe_duration(video_path: Path) -> float:
     """Total duration in seconds. Passed into the Stage 1 prompt for grounding —
-    without it the model emits timestamps in a unit it invented (LEARNINGS #2)."""
+    without it the model emits timestamps in a unit it invented (LEARNINGS #2).
+
+    This is also the read that decides whether the file is usable at all: ffprobe failing
+    is the ONE failure in the taxonomy we can honestly attribute to the user's recording
+    (`video_unreadable` — corrupted, or a truncated upload).
+    """
     try:
         info = ffmpeg.probe(str(video_path))
     except ffmpeg.Error as e:
-        raise RuntimeError(f"ffprobe failed: {e.stderr.decode(errors='replace')}") from e
+        raise failures.Failed(
+            failures.VIDEO_UNREADABLE, f"ffprobe failed: {e.stderr.decode(errors='replace')}"
+        ) from e
 
     duration = info.get("format", {}).get("duration")
     if duration is None:
-        raise RuntimeError("ffprobe returned no duration for this recording.")
+        raise failures.Failed(
+            failures.VIDEO_UNREADABLE, "ffprobe returned no duration for this recording."
+        )
     return float(duration)
 
 
 def _run(args: list[str], what: str) -> None:
-    """Never cut error handling on FFmpeg calls (CLAUDE.md §10)."""
+    """Never cut error handling on FFmpeg calls (CLAUDE.md §10).
+
+    Classified `frame_extraction_failed`, but note the caller decides whether that is
+    fatal: ONE step failing to render is a text-only step the user can fix, and only a
+    total wipeout is a real failure (see pipeline.py).
+    """
     proc = subprocess.run(args, capture_output=True)
     if proc.returncode != 0:
-        raise RuntimeError(f"{what} failed: {proc.stderr.decode(errors='replace')[-800:]}")
+        raise failures.Failed(
+            failures.FRAME_EXTRACTION_FAILED,
+            f"{what} failed: {proc.stderr.decode(errors='replace')[-800:]}",
+        )
 
 
 def extract_frame(video_path: Path, seconds: float, out_path: Path) -> Path:
@@ -53,7 +71,9 @@ def extract_frame(video_path: Path, seconds: float, out_path: Path) -> Path:
         f"frame extraction at {seconds:.2f}s",
     )
     if not out_path.exists():
-        raise RuntimeError(f"ffmpeg produced no frame at {seconds:.2f}s")
+        raise failures.Failed(
+            failures.FRAME_EXTRACTION_FAILED, f"ffmpeg produced no frame at {seconds:.2f}s"
+        )
     return out_path
 
 
@@ -82,5 +102,7 @@ def extract_dense_set(video_path: Path, out_dir: Path) -> list[tuple[int, Path]]
     for path in sorted(out_dir.glob("*.webp")):
         out.append((int(path.stem) - 1, path))
     if not out:
-        raise RuntimeError("dense frame extraction produced no frames")
+        raise failures.Failed(
+            failures.FRAME_EXTRACTION_FAILED, "dense frame extraction produced no frames"
+        )
     return out

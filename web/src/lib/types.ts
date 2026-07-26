@@ -168,11 +168,23 @@ export type Job = {
   kb_id: string
   user_id: string
   article_id: string | null
-  // Set on SUCCESS only — a failed generation never burns a run.
+  // Set on SUCCESS only — a failed generation never burns a run. A DEGRADED run is a
+  // success and does count: the user got an editable article.
   counted_against_quota: boolean
   stage: 'analyzing' | 'detecting' | 'capturing' | 'writing'
   status: 'queued' | 'running' | 'done' | 'error'
-  error: string | null
+  // The taxonomy entry, and the ONLY thing that chooses failure copy (lib/failures.ts).
+  // Its sibling `failure_detail` is revoked from the client in migration 0020 — it is a
+  // log line, and there is deliberately no field for it here.
+  failure_code: string | null
+  // Non-null when the article shipped with something missing: 'stage2_failed' (unpolished
+  // prose) and/or 'frames_partial' (steps with no screenshot). Never a failure.
+  degraded: string | null
+  // Set once the retention sweep has collected the recording — after which retry is
+  // impossible and the only path is uploading it again.
+  video_purged_at: string | null
+  // The failed job this one re-attempts, if any. Each attempt is its own ledger row.
+  retry_of: string | null
 }
 
 // The context form (ux-spec §2). Product name is the only required field; it is

@@ -4,9 +4,12 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
 import { STORAGE_BUCKET_VIDEOS, WORKER_URL } from './lib/config'
-import { DEFAULT_PLAN, fetchPlan, type PlanId } from './lib/plans'
+import { DEFAULT_PLAN, fetchPlan, limitsFor, runsUsed, type PlanId } from './lib/plans'
 import { fetchKb, listKbs, resolveDefaultKb, setLastKb } from './lib/kbs'
+import { QUOTA_EXCEEDED } from './lib/failures'
 import AdminBanner from './components/AdminBanner'
+import FailureScreen from './components/FailureScreen'
+import UpgradeModal from './components/UpgradeModal'
 import type { KnowledgeBase as KB, VideoContext } from './lib/types'
 import Home from './screens/Home'
 import Upload from './screens/Upload'
@@ -38,6 +41,10 @@ type Phase =
   | 'wall'
   | 'working'
   | 'generating'
+  // A generation that failed before a job row existed (the spend-cap breaker, an upload
+  // that died). Once a job row exists, Generating owns the failure screen instead — it
+  // is already polling the row that carries the code.
+  | 'failed'
   | 'kb'
   | 'theme'
   | 'domain'
@@ -62,6 +69,13 @@ export default function App() {
   const [plan, setPlan] = useState<PlanId>(DEFAULT_PLAN)
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Runs spent, off the append-only jobs ledger. Held here so the dropzone can refuse a
+  // capped user at file selection instead of after a 90-second upload.
+  const [runs, setRuns] = useState<number | null>(null)
+  // Set when a generation is refused before any job row exists — the only failure the
+  // polling screen can't see, so App renders it.
+  const [failureCode, setFailureCode] = useState<string | null>(null)
+  const [showUpgrade, setShowUpgrade] = useState(false)
 
   // The stable identity across token refresh / focus / INITIAL_SESSION. The post-auth
   // effect keys on this, not the session object, so a refresh doesn't kick the user out.
@@ -99,14 +113,16 @@ export default function App() {
     let cancelled = false
 
     ;(async () => {
-      const [found, ownerPlan, mine] = await Promise.all([
+      const [found, ownerPlan, mine, used] = await Promise.all([
         loadKb(userId, routeKbId),
         fetchPlan(userId),
         listKbs(userId),
+        runsUsed(userId),
       ])
       if (cancelled) return
       setPlan(ownerPlan)
       setKbs(mine)
+      setRuns(used)
 
       // A :kbId that resolves to nothing is either gone or not ours — RLS answers both
       // with zero rows, and so do we. Rendering different states for the two would turn
@@ -145,8 +161,7 @@ export default function App() {
         setPhase('generating')
       } catch (e) {
         if (cancelled) return
-        setError(e instanceof Error ? e.message : 'Something went wrong.')
-        setPhase('kb')
+        handleStartFailure(e)
       }
     })()
 
@@ -168,6 +183,18 @@ export default function App() {
     return path
   }
 
+  // Carries the worker's structured `code` so the caller can tell the three outcomes
+  // apart: quota_exceeded is the upgrade modal, a taxonomy code is a failure screen, and
+  // anything else is a plain message.
+  class StartJobError extends Error {
+    constructor(
+      readonly code: string | null,
+      message: string,
+    ) {
+      super(message)
+    }
+  }
+
   async function startJob(kbId: string, videoPath: string, context: VideoContext) {
     // Returns a job_id immediately; we poll the Postgres jobs row from here on, so the
     // worker needs no poll endpoint (LEARNINGS #3).
@@ -186,21 +213,40 @@ export default function App() {
     })
     if (!res.ok) {
       // The worker refuses over-quota and over-spend BEFORE the Gemini call, and says why
-      // in a structured detail. Surface its message rather than a bare status — "you've
-      // used all 3 free video guides" is actionable; "(402)" is not.
+      // in a structured detail. Keep the CODE, not just the message: quota_exceeded has to
+      // become the upgrade modal, and spend_cap has to become a failure screen that says
+      // the fault is ours.
       const detail = await res.json().catch(() => null)
-      const message = detail?.detail?.message
-      throw new Error(message ?? `Could not start the job (${res.status}).`)
+      throw new StartJobError(
+        detail?.detail?.code ?? null,
+        detail?.detail?.message ?? `Could not start the job (${res.status}).`,
+      )
     }
     return (await res.json()).job_id as string
   }
 
+  // One place decides what a failed start looks like, so the upload-on-signin path and the
+  // already-signed-in path can never disagree about it.
+  function handleStartFailure(e: unknown) {
+    if (e instanceof StartJobError && e.code === QUOTA_EXCEEDED) {
+      // Never a failure screen — nothing went wrong (pricing-spec §7).
+      setShowUpgrade(true)
+      setPhase('kb')
+      return
+    }
+    // Anything else — the spend-cap breaker, a dead upload — is a real failure with no job
+    // row behind it, so App renders the screen instead of the polling screen.
+    setFailureCode(e instanceof StartJobError ? e.code : null)
+    setPhase('failed')
+  }
+
   const onGenerated = useCallback(async () => {
-    // Re-read the KB so anything derived from it is fresh. The run counter reads the jobs
-    // ledger directly (KnowledgeBase), so it needs no KB round-trip.
+    // Re-read the KB so anything derived from it is fresh, and the run count with it: the
+    // run just charged is what decides whether the NEXT file selection hits the cap.
     if (kb) setKb(await fetchKb(kb.id))
+    if (userId) setRuns(await runsUsed(userId))
     setPhase('kb')
-  }, [kb])
+  }, [kb, userId])
 
   async function handleSubmit(f: File, context: VideoContext) {
     setFile(f)
@@ -215,8 +261,7 @@ export default function App() {
         setJobId(await startJob(kb.id, path, context))
         setPhase('generating')
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Something went wrong.')
-        setPhase('kb')
+        handleStartFailure(e)
       }
       return
     }
@@ -281,6 +326,20 @@ export default function App() {
 
   // An admin inside someone else's KB. Rendered around every authenticated screen below,
   // never conditionally hidden — see AdminBanner.
+  // Video runs left, or null when there is no cap (paid) or no account yet (a visitor,
+  // who gets the full free allowance the moment they sign up).
+  const runLimit = limitsFor(plan).lifetime_runs
+  const runsLeft = runLimit === null || runs === null ? null : Math.max(runLimit - runs, 0)
+
+  // Back to the dropzone from a failure. Clears the dead job so a stale id can't resurrect
+  // the old failure screen behind the new upload.
+  function startOver() {
+    setJobId(null)
+    setFailureCode(null)
+    setError(null)
+    setPhase('upload')
+  }
+
   const adminBar =
     kb && userId && kb.owner_id !== userId ? (
       <AdminBanner kbName={kb.name} onExit={() => navigate('/admin')} />
@@ -314,7 +373,27 @@ export default function App() {
       <Home onStart={() => setPhase('upload')} onLogin={() => setPhase('login')} />
     )
   if (phase === 'upload')
-    return <Upload onSubmit={handleSubmit} onHome={() => setPhase('home')} />
+    return (
+      <>
+        <Upload
+          onSubmit={handleSubmit}
+          onHome={() => setPhase('home')}
+          runsLeft={runsLeft}
+          onCapped={() => setShowUpgrade(true)}
+        />
+        {/* A capped user is stopped at the dropzone and can still leave with an article —
+            blocking generation is not blocking the product. */}
+        {showUpgrade && (
+          <UpgradeModal
+            onWriteManually={() => {
+              setShowUpgrade(false)
+              writeFromScratch()
+            }}
+            onClose={() => setShowUpgrade(false)}
+          />
+        )}
+      </>
+    )
   if (phase === 'login') return <Login onBack={() => setPhase('home')} />
   if (phase === 'wall' && file)
     return <AccountWall fileName={file.name} fileSize={mb(file.size)} />
@@ -333,7 +412,30 @@ export default function App() {
   }
 
   if (phase === 'generating' && jobId) {
-    return <Generating jobId={jobId} onDone={onGenerated} />
+    return (
+      <Generating
+        jobId={jobId}
+        onDone={onGenerated}
+        // A retry is a new job row; point the progress bar at the attempt actually running.
+        onRetryStarted={setJobId}
+        onReupload={startOver}
+      />
+    )
+  }
+
+  // Refused before a job row existed, so there is nothing to poll and nothing to retry.
+  if (phase === 'failed') {
+    return (
+      <FailureScreen
+        code={failureCode}
+        jobId={null}
+        onRetryStarted={(id) => {
+          setJobId(id)
+          setPhase('generating')
+        }}
+        onReupload={startOver}
+      />
+    )
   }
 
   // The article is a route, so it is checked before the KB shell and survives a refresh.

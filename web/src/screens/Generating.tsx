@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { COPY, PIPELINE_STAGES } from '../lib/config'
+import FailureScreen from '../components/FailureScreen'
 import type { Job } from '../lib/types'
 
 // Screen 3 — Generating (ux-spec §2).
@@ -9,35 +10,55 @@ import type { Job } from '../lib/types'
 // polling the jobs row — never a timer-driven lie (LEARNINGS #3). The four labels are
 // load-bearing for the wait-bounce problem, so they must stay honest: if the pipeline
 // stalls in "Detecting each action", the UI stalls there too.
+//
+// Honest also means this screen must be able to LEAVE. Every terminal state the worker can
+// reach is reachable from here: done -> the article, error -> a classified failure screen.
+// The one state it must never sit in is a spinner over a job nobody is working on, which
+// is why the worker's timeout sweep exists — it turns an abandoned row into `timeout`, and
+// this poll picks that up like any other failure.
 
 const POLL_MS = 2000
+
+// The columns the client is GRANTED (migration 0020). failure_detail is not among them and
+// asking for it would 401 the whole query — which is the point.
+const JOB_COLUMNS = 'id,kb_id,article_id,stage,status,failure_code,degraded,video_purged_at'
 
 type Props = {
   jobId: string
   onDone: () => void
+  // A retry starts a NEW job; the parent re-points this screen at it so the progress
+  // bar tracks the attempt actually running.
+  onRetryStarted: (jobId: string) => void
+  onReupload: () => void
 }
 
-export default function Generating({ jobId, onDone }: Props) {
+export default function Generating({ jobId, onDone, onRetryStarted, onReupload }: Props) {
   const [job, setJob] = useState<Job | null>(null)
 
   useEffect(() => {
     let stop = false
+    // A retry swaps jobId under us. Clear first, or the new run renders the old run's
+    // failure for one poll interval — a failure screen that flashes over a working job.
+    setJob(null)
 
     async function poll() {
       const { data } = await supabase
         .from('jobs')
-        .select('id,kb_id,article_id,stage,status,error')
+        .select(JOB_COLUMNS)
         .eq('id', jobId)
-        .single()
+        .maybeSingle()
 
-      if (stop || !data) return
-      setJob(data as Job)
-
-      if (data.status === 'done') {
-        onDone()
-        return
+      if (stop) return
+      if (data) {
+        setJob(data as Job)
+        if (data.status === 'done') {
+          onDone()
+          return
+        }
+        if (data.status === 'error') return
       }
-      if (data.status !== 'error') setTimeout(poll, POLL_MS)
+      // No row yet (the insert is still landing) or still in flight — keep asking.
+      setTimeout(poll, POLL_MS)
     }
 
     poll()
@@ -50,21 +71,13 @@ export default function Generating({ jobId, onDone }: Props) {
 
   if (job?.status === 'error') {
     return (
-      <div className="page" style={{ justifyContent: 'center' }}>
-        <div className="card generating">
-          <h2>That didn’t work</h2>
-          <p className="cap" style={{ marginTop: 10 }}>
-            {job.error ?? 'The pipeline failed.'}
-          </p>
-          <button
-            className="btn btn-ghost"
-            style={{ marginTop: 20 }}
-            onClick={() => window.location.reload()}
-          >
-            Start over
-          </button>
-        </div>
-      </div>
+      <FailureScreen
+        code={job.failure_code}
+        jobId={job.id}
+        videoPurged={!!job.video_purged_at}
+        onRetryStarted={onRetryStarted}
+        onReupload={onReupload}
+      />
     )
   }
 

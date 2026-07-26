@@ -323,34 +323,6 @@ def stub() -> StubHosting:
     return h
 
 
-# --- Email on success ------------------------------------------------------------------
-# DNS can take hours; users won't sit on the page, so we email when it resolves (build
-# spec §4).
-class Emailer(Protocol):
-    def send(self, to: str, subject: str, body: str) -> None: ...
-
-
-class LogEmailer:
-    def send(self, to: str, subject: str, body: str) -> None:
-        log.info("EMAIL -> %s | %s | %s", to, subject, body)
-
-
-class ResendEmailer:
-    def send(self, to: str, subject: str, body: str) -> None:
-        r = httpx.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
-            json={"from": config.EMAIL_FROM, "to": [to], "subject": subject, "text": body},
-            timeout=config.VERCEL_TIMEOUT_SECONDS,
-        )
-        if r.status_code >= 300:
-            log.error("resend failed (%s): %s", r.status_code, r.text[:300])
-
-
-def emailer() -> Emailer:
-    return ResendEmailer() if config.RESEND_API_KEY else LogEmailer()
-
-
 # --- State transitions -----------------------------------------------------------------
 def _backoff_seconds(attempts: int) -> float:
     return min(config.DOMAIN_CHECK_INTERVAL_SECONDS * (2**attempts), config.DOMAIN_MAX_BACKOFF_SECONDS)
@@ -413,6 +385,13 @@ def check_once(kb: dict) -> str:
 
 
 def _notify_live(kb_id: str, domain: str) -> None:
+    """DNS can take hours; users won't sit on the page, so we email when it resolves
+    (build spec §4).
+
+    Called AFTER the `live` write, and wrapped: a domain that went live went live even if
+    Resend is down. Once-only-ness is mailer's job, not ours — check_once runs from the
+    "Check again" button too, and that path has no status guard."""
+    import mailer
     import pipeline
 
     try:
@@ -424,13 +403,14 @@ def _notify_live(kb_id: str, domain: str) -> None:
             .single()
             .execute()
         )
-        email = (row.data or {}).get("profiles", {}).get("email")
+        email = ((row.data or {}).get("profiles") or {}).get("email")
         if email:
-            emailer().send(
+            mailer.send_once(
                 email,
-                "Your custom domain is live",
-                f"{domain} is now serving your help center. Links to your old address "
-                f"redirect automatically.",
+                *mailer.domain_live(domain),
+                table="knowledge_bases",
+                row_id=kb_id,
+                marker="domain_live_email_sent_at",
             )
     except Exception:
         log.exception("could not send domain-live email")
@@ -467,9 +447,12 @@ def sweep() -> None:
 async def run_loop() -> None:
     """Background loop. Started from the app lifespan; ends on shutdown.
 
-    Also carries the failed-video retention sweep — same persistent task, no new infra.
-    Both sweeps are state queries, so a tick missed to a restart or an idle-instance
-    recycle costs nothing but a delay.
+    Also carries the failed-video retention sweep and the stuck-job timeout sweep — same
+    persistent task, no new infra. All three are state queries, so a tick missed to a
+    restart or an idle-instance recycle costs nothing but a delay.
+
+    The timeout sweep runs every tick rather than on the purge cadence: it is one indexed
+    query, and a user staring at a dead progress bar should not wait an hour to be told.
     """
     import asyncio
     import time
@@ -480,6 +463,7 @@ async def run_loop() -> None:
     last_purge = 0.0
     while True:
         await asyncio.to_thread(sweep)
+        await asyncio.to_thread(retention.sweep_timeouts)
         if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
             last_purge = time.monotonic()
             await asyncio.to_thread(retention.sweep)

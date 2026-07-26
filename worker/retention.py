@@ -15,8 +15,59 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import config
+import failures
 
 log = logging.getLogger("quink.retention")
+
+
+def sweep_timeouts() -> int:
+    """Fail jobs that have been in flight far too long. Returns how many were closed.
+
+    The pipeline checks its own deadline at every stage boundary, so under normal
+    operation this never fires. It exists for the case that check cannot cover: the worker
+    process died — a deploy, an idle-instance recycle, an OOM — leaving the row at
+    'running' with nobody left to write to it. That row is the stuck spinner: the SPA
+    polls it forever and the user watches a progress bar that will never finish.
+
+    Same shape as the video sweep: a STATE query ("in flight, older than the ceiling"),
+    never a scheduled event, so a missed tick self-heals and running it twice is harmless.
+    `counted_against_quota` is untouched — a timeout never burns a run.
+    """
+    import pipeline
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN
+    )
+    try:
+        res = (
+            pipeline.db()
+            .table("jobs")
+            .select("id")
+            .in_("status", ["queued", "running"])
+            .lt("created_at", cutoff.isoformat())
+            .limit(200)
+            .execute()
+        )
+    except Exception:
+        log.exception("job timeout sweep query failed")
+        return 0
+
+    closed = 0
+    for job in res.data or []:
+        try:
+            pipeline.fail(
+                job["id"],
+                failures.TIMEOUT,
+                f"no worker progress for {config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN} "
+                "min - swept (the worker process most likely died mid-run)",
+            )
+            closed += 1
+        except Exception:
+            log.exception("could not close timed-out job %s", job["id"])
+
+    if closed:
+        log.warning("closed %s stuck job(s) as timeout", closed)
+    return closed
 
 
 def sweep() -> int:
@@ -95,6 +146,11 @@ def demo() -> None:
             calls.append(("is", k, v))
             return self
 
+        def in_(self, k, v):
+            self.f["in." + k] = v
+            calls.append(("in", k, tuple(v)))
+            return self
+
         @property
         def not_(self):
             calls.append(("not",))
@@ -154,6 +210,33 @@ def demo() -> None:
         i for i, c in enumerate(calls) if c[0] == "update"
     ][0], "must delete the object BEFORE marking it purged"
     assert purged == 1
+
+    # --- the timeout sweep: the stuck-spinner guard --------------------------
+    # Its correctness is entirely in which rows it picks. Too broad and it kills healthy
+    # in-flight runs; too narrow and the abandoned row nobody is working on stays at
+    # 'running' forever, which is the single worst state the product can be in.
+    calls.clear()
+    closed = sweep_timeouts()
+
+    status = [c for c in calls if c[0] == "in" and c[1] == "status"]
+    assert status and set(status[0][2]) == {"queued", "running"}, (
+        f"must only consider IN-FLIGHT jobs, got {status}"
+    )
+    lt = [c for c in calls if c[0] == "lt" and c[1] == "created_at"]
+    assert lt, "must filter on age, not fire on a schedule"
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(lt[0][2])).total_seconds() / 60
+    ceiling = config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN
+    assert abs(age - ceiling) < 1, f"cutoff should be ~{ceiling}min ago, got {age:.1f}min"
+    assert age > config.JOB_TIMEOUT_MIN, (
+        "the sweep must wait LONGER than the pipeline's own deadline check, or it races the "
+        "worker and fails a run that was about to classify its own timeout"
+    )
+
+    written = [c[1] for c in calls if c[0] == "update"]
+    assert written and written[0]["failure_code"] == failures.TIMEOUT, written
+    assert all("counted_against_quota" not in w for w in written), "a timeout never burns a run"
+    assert closed == 1
+
     print("retention self-check OK")
 
 

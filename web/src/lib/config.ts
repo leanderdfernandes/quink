@@ -112,6 +112,20 @@ export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/quicktime'] as const
 export const ACCEPTED_VIDEO_EXTENSIONS = ['.mp4', '.mov'] as const
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024
 
+// Duration ceiling, enforced by the worker after ffprobe (MAX_VIDEO_MINUTES in
+// worker/config.py — if the two drift the failure copy quotes the wrong number). The SPA
+// only renders it: the browser can't be trusted to measure a file it also chose.
+export const MAX_VIDEO_MINUTES = 6
+
+// Where a stuck user writes to us. A real, monitored, forwarding mailbox on the verified
+// domain — replies reach a human, so the failure screens can invite one.
+//
+// This one constant arms every failure screen: FailureScreen switches on it alone to turn
+// the job id it already renders into a prefilled mailto. Empty it and they all fall back
+// to "quote reference <id>" — which is what to do if the mailbox ever stops being read,
+// because a mailto that silently goes nowhere is worse than no link at all.
+export const SUPPORT_EMAIL = 'support@quink.online'
+
 export const STORAGE_BUCKET_VIDEOS = 'videos'
 export const STORAGE_BUCKET_FRAMES = 'frames'
 

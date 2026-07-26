@@ -24,6 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 import domain
+import failures
+import mailer
 import pipeline
 import prompts
 from models import (
@@ -32,6 +34,7 @@ from models import (
     DomainStubRequest,
     GenerateRequest,
     GenerateResponse,
+    RetryRequest,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -47,6 +50,21 @@ async def lifespan(_: FastAPI):
     # Build the hosting client up front: a deploy missing VERCEL_TOKEN should fail here,
     # not silently accept domains that can never go live.
     domain.hosting()
+
+    # Same failure shape, one layer over: with sending off, mailer logs the payload and
+    # returns — which is right in dev and is a broken promise in production ("we'll email
+    # you the moment it's live"). It went unnoticed precisely because nothing said so. If
+    # we're serving anything but localhost, say which setting is missing, loudly.
+    if not mailer.sending_enabled() and any(
+        not domain._is_local_origin(o) for o in config.ALLOWED_ORIGINS
+    ):
+        log.warning(
+            "EMAIL IS NOT BEING SENT (%s) while serving %s — the domain-live email is "
+            "only logged. Set both on this deploy.",
+            "EMAIL_ENABLED unset" if not config.EMAIL_ENABLED else "RESEND_API_KEY unset",
+            ", ".join(config.ALLOWED_ORIGINS),
+        )
+
     task = asyncio.create_task(domain.run_loop())
     try:
         yield
@@ -171,23 +189,24 @@ def health() -> dict:
     }
 
 
-@app.post("/api/generate", response_model=GenerateResponse)
-def generate(
-    req: GenerateRequest,
-    background: BackgroundTasks,
-    authorization: str | None = Header(default=None),
-) -> GenerateResponse:
-    """Create the job row, hand the work to the background, return the id immediately.
+def _start_run(
+    uid: str,
+    kb_id: str,
+    video_path: str,
+    context: dict,
+    retry_of: str | None = None,
+) -> str:
+    """Enforce entitlements, create the job row, return its id.
 
-    This is the ONLY path that costs money, so it is the only place entitlements are
-    enforced. The SPA reads the same counters for display, never for permission.
+    Shared by /api/generate and /api/retry so there is exactly ONE gate in front of the
+    only path that costs money. A retry that skipped this would be a free run for anyone
+    willing to make a job fail first.
     """
-    uid = _require_owner(authorization, req.kb_id)
     # The worker downloads the video with the service role (bypassing Storage RLS), so
     # a valid owner could otherwise point video_path at ANOTHER KB's storage prefix and
     # have someone else's private recording processed into this one. Objects are keyed
     # "<kb_id>/..." (migration 0014) — pin the path to the KB we just proved they own.
-    if not req.video_path.startswith(f"{req.kb_id}/"):
+    if not video_path.startswith(f"{kb_id}/"):
         raise HTTPException(status_code=403, detail="That recording isn't yours.")
 
     limits = _limits(uid)
@@ -200,7 +219,7 @@ def generate(
         raise HTTPException(
             status_code=503,
             detail={
-                "code": "spend_cap",
+                "code": failures.SPEND_CAP,
                 "message": "We've hit a temporary processing limit. Nothing's wrong with "
                 "your file — try again shortly.",
             },
@@ -211,10 +230,13 @@ def generate(
     #    ledger stays a record of runs actually spent.
     if limits["lifetime_runs"] is not None:
         if _runs_used(uid) >= limits["lifetime_runs"]:
+            # NOT a failure — the SPA turns this into the upgrade modal (pricing-spec §7),
+            # never a failure screen. The dropzone checks the same counter before the
+            # upload even starts, so reaching here should be rare.
             raise HTTPException(
                 status_code=402,
                 detail={
-                    "code": "quota_exceeded",
+                    "code": failures.QUOTA_EXCEEDED,
                     "message": f"You've used all {limits['lifetime_runs']} free video "
                     "guides. You can still write articles by hand, unlimited.",
                 },
@@ -244,7 +266,7 @@ def generate(
             .table("jobs")
             .insert(
                 {
-                    "kb_id": req.kb_id,
+                    "kb_id": kb_id,
                     "user_id": uid,
                     "status": "queued",
                     "stage": config.STAGE_ANALYZING,
@@ -253,7 +275,12 @@ def generate(
                     # never creates an article — and articles.source_video_path is the only
                     # other place this path is kept. Without it a failed upload is stranded
                     # in Storage with nothing in the database naming it.
-                    "video_path": req.video_path,
+                    "video_path": video_path,
+                    # Persisted so a retry can re-run Stage 1 with the SAME grounding the
+                    # user typed. Without it a retry would silently produce a different
+                    # article from the same recording.
+                    "context": context,
+                    "retry_of": retry_of,
                 }
             )
             .execute()
@@ -262,8 +289,92 @@ def generate(
         log.exception("could not create job row")
         raise HTTPException(status_code=500, detail=f"Could not start the job: {e}") from e
 
-    job_id = res.data[0]["id"]
-    background.add_task(pipeline.run, job_id, req.kb_id, req.video_path, req.context())
+    return res.data[0]["id"]
+
+
+@app.post("/api/generate", response_model=GenerateResponse)
+def generate(
+    req: GenerateRequest,
+    background: BackgroundTasks,
+    authorization: str | None = Header(default=None),
+) -> GenerateResponse:
+    """Create the job row, hand the work to the background, return the id immediately.
+
+    This is the ONLY path that costs money, so it is the only place entitlements are
+    enforced. The SPA reads the same counters for display, never for permission.
+    """
+    uid = _require_owner(authorization, req.kb_id)
+    context = req.context()
+    job_id = _start_run(uid, req.kb_id, req.video_path, context)
+    background.add_task(pipeline.run, job_id, req.kb_id, req.video_path, context)
+    return GenerateResponse(job_id=job_id)
+
+
+def _video_exists(path: str) -> bool:
+    """Is the recording still in Storage? CHECKED, never assumed.
+
+    The 7-day sweep may have collected it, or a purge may have taken it early. Asking
+    Storage is the only answer that is true right now — and a retry that assumes and then
+    dies produces a signed-URL error in the user's face instead of "upload it again"."""
+    folder, _, name = path.rpartition("/")
+    try:
+        objects = pipeline.db().storage.from_(config.BUCKET_VIDEOS).list(folder, {"search": name})
+    except Exception:
+        log.exception("could not list %s while checking for a retry source", folder)
+        return False
+    return any((o or {}).get("name") == name for o in objects or [])
+
+
+@app.post("/api/retry", response_model=GenerateResponse)
+def retry(
+    req: RetryRequest,
+    background: BackgroundTasks,
+    authorization: str | None = Header(default=None),
+) -> GenerateResponse:
+    """Re-run a failed job from the recording already in Storage.
+
+    No re-upload, no new video object, no second file prompt. Entitlements go through
+    _start_run like any other run, so a retry is charged exactly like a first attempt —
+    which is to say, only if it succeeds.
+
+    The new attempt is its OWN ledger row (`retry_of` points back). That is what keeps
+    "one article, one run" true: the failed row never had counted_against_quota set and
+    never will, so only the row that actually produces an article can carry the charge.
+    """
+    job = (
+        pipeline.db()
+        .table("jobs")
+        .select("id, kb_id, status, video_path, video_purged_at, context")
+        .eq("id", req.job_id)
+        .maybe_single()
+        .execute()
+    )
+    if not job or not job.data:
+        # Same answer whether it never existed or isn't ours — a job id must not be a probe.
+        raise HTTPException(status_code=404, detail="No such job.")
+    j = job.data
+
+    # Ownership is checked against the KB, not jobs.user_id: after an ownership claim the
+    # ledger row deliberately stays with the original owner (CLAUDE.md §10d), but the
+    # article this produces lands in the CLAIMER's KB and is charged to them.
+    uid = _require_owner(authorization, j["kb_id"])
+
+    if j["status"] != "error":
+        raise HTTPException(status_code=409, detail="That job didn't fail.")
+
+    if not j["video_path"] or j["video_purged_at"] or not _video_exists(j["video_path"]):
+        # Past the retention window. Not an error — a clean state with one clear action.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": failures.VIDEO_PURGED,
+                "message": "This recording is no longer stored — please upload it again.",
+            },
+        )
+
+    context = j.get("context") or {}
+    job_id = _start_run(uid, j["kb_id"], j["video_path"], context, retry_of=j["id"])
+    background.add_task(pipeline.run, job_id, j["kb_id"], j["video_path"], context)
     return GenerateResponse(job_id=job_id)
 
 

@@ -43,6 +43,7 @@ STEPS_TABLE = "steps"
 KB_TABLE = "knowledge_bases"
 BUCKET_VIDEOS = "videos"
 BUCKET_FRAMES = "frames"
+EVAL_VIDEO_PREFIX = "eval"  # stable folder under the owner: videos are reused across runs
 SIGNED_URL_TTL = 600  # seconds; long enough to fetch every frame in one run
 
 # --- Scoring config ---------------------------------------------------------
@@ -243,6 +244,48 @@ def fetch_frame(db, path: str | None) -> bytes | None:
         return None
 
 
+def owner_session(url: str, key: str, kb_id: str) -> tuple[str, str]:
+    """(owner_id, access_token) for the KB's owner.
+
+    /api/generate requires a real user JWT — the service-role key is NOT one
+    (worker/main.py `_auth_uid` validates it against the Auth server). Mint one with
+    the admin API: magic link -> verify_otp. No password, no extra config.
+    Deliberately on its OWN client: verify_otp sets the session on the client that
+    makes the call, which would silently downgrade the service-role `db` to a
+    user-scoped one and put RLS in the middle of every later read."""
+    from supabase import create_client
+    auth = create_client(url, key)
+    owner_id = auth.table(KB_TABLE).select("owner_id").eq(
+        "id", kb_id).single().execute().data["owner_id"]
+    email = auth.auth.admin.get_user_by_id(owner_id).user.email
+    link = auth.auth.admin.generate_link({"type": "magiclink", "email": email})
+    res = auth.auth.verify_otp({"token_hash": link.properties.hashed_token, "type": "email"})
+    return owner_id, res.session.access_token
+
+
+def upload_video(db, local: Path, storage_path: str) -> bool:
+    """Upload the video unless that exact object is already there at the same size.
+    Returns True if it uploaded.
+
+    The eval set is frozen and the videos never change between runs, but nothing ever
+    deletes them (worker/pipeline.py only downloads; delete-on-publish is unwired —
+    CLAUDE.md §8), so re-uploading every run bought nothing and cost ~4min of a ~24min
+    run. Size, not mere existence, is the check: swap a recording for a new take and it
+    re-uploads, so a run can never silently score the previous one."""
+    folder, _, name = storage_path.rpartition("/")
+    try:
+        for obj in db.storage.from_(BUCKET_VIDEOS).list(folder):
+            if obj["name"] == name and (obj.get("metadata") or {}).get("size") == local.stat().st_size:
+                return False
+    except Exception:
+        pass  # can't list (perms, new folder) — just upload
+    db.storage.from_(BUCKET_VIDEOS).upload(
+        storage_path, local.read_bytes(),
+        {"content-type": "video/mp4", "upsert": "true"},
+    )
+    return True
+
+
 def poll_job(db, job_id: str, timeout: int) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -262,16 +305,15 @@ def process_video(args, db, judge_client, gt: dict, run_dir: Path) -> dict:
     if not video_path_local.exists():
         raise FileNotFoundError(f"video not found: {video_path_local}")
 
-    owner_id = db.table(KB_TABLE).select("owner_id").eq("id", args.kb_id).single().execute().data["owner_id"]
-    storage_path = f"{owner_id}/eval-{run_dir.name}/{gt['video_file']}"
-    db.storage.from_(BUCKET_VIDEOS).upload(
-        storage_path, video_path_local.read_bytes(),
-        {"content-type": "video/mp4", "upsert": "true"},
-    )
+    # Stable path, NOT per-run: the same frozen video re-uploaded each run is ~4min of
+    # dead time. Shared across runs on purpose — see upload_video.
+    storage_path = f"{args.owner_id}/{EVAL_VIDEO_PREFIX}/{gt['video_file']}"
+    upload_video(db, video_path_local, storage_path)
 
     ctx = gt["context"]
     payload = {"kb_id": args.kb_id, "video_path": storage_path, **ctx}
-    r = httpx.post(args.base_url + GENERATE_PATH, json=payload, timeout=60)
+    r = httpx.post(args.base_url + GENERATE_PATH, json=payload, timeout=60,
+                   headers={"Authorization": f"Bearer {args.access_token}"})
     r.raise_for_status()
     job_id = r.json()["job_id"]
 
@@ -405,6 +447,11 @@ def print_summary(rows: list[dict], prev: dict | None) -> None:
 
 # --- Main -------------------------------------------------------------------
 def main() -> int:
+    # Windows consoles default to cp1252; the summary prints a Δ, and judge text is
+    # arbitrary. Without this a finished, judged video is recorded as FAILED because
+    # the *print* raised — the run is spent and the result thrown away.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     p = argparse.ArgumentParser(description="Video-to-article pipeline eval harness.")
     p.add_argument("--prompt-version", help="labels the run; part of run_id (required unless --selftest)")
     p.add_argument("--kb-id", help="test KB uuid to generate under (or env EVAL_KB_ID)")
@@ -452,6 +499,11 @@ def main() -> int:
     from openai import OpenAI
     db = create_client(args.supabase_url, args.supabase_key)
     judge_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    try:
+        args.owner_id, args.access_token = owner_session(
+            args.supabase_url, args.supabase_key, args.kb_id)
+    except Exception as e:
+        p.error(f"could not mint a session for kb {args.kb_id}'s owner: {e}")
 
     # Fail fast if the worker isn't up. The same response carries the pipeline prompts,
     # which is how run.json records them without importing pipeline internals (README).

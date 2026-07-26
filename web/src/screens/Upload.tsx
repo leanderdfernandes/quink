@@ -40,9 +40,15 @@ function validateVideo(file: File): string | null {
 type Props = {
   onSubmit: (file: File, context: VideoContext) => void
   onHome: () => void
+  // Video runs left on this account, or null when there is no cap (a paid plan) or no
+  // account yet (a visitor, who gets the full free allowance on signup).
+  runsLeft: number | null
+  // Fired the moment a capped user picks a file — BEFORE the upload starts. Watching a
+  // 90-second progress bar that was doomed from the start is the worst version of this.
+  onCapped: () => void
 }
 
-export default function Upload({ onSubmit, onHome }: Props) {
+export default function Upload({ onSubmit, onHome, runsLeft, onCapped }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
@@ -54,6 +60,13 @@ export default function Upload({ onSubmit, onHome }: Props) {
 
   function accept(next: File | undefined) {
     if (!next) return
+    // The quota check happens HERE — at file selection, before a byte is uploaded. Doing
+    // it at POST /api/generate (where it is also enforced, because the UI is not a
+    // security boundary) would mean a full upload and a spinner before the refusal.
+    if (runsLeft !== null && runsLeft <= 0) {
+      onCapped()
+      return
+    }
     const problem = validateVideo(next)
     if (problem) {
       setError(problem)

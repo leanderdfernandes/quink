@@ -184,19 +184,21 @@ Injection attempts on screen: none
 
 ## Known behaviour
 
-- Eval videos are uploaded to the `videos` bucket and not cleaned up (there is no
-  delete flow yet — CLAUDE.md §8; source videos persist by design). Each run keys
-  them under `eval-<run_id>/` so they don't collide.
+- Eval videos live at a **stable** `<owner_id>/eval/<file>` in the `videos` bucket and are
+  **reused across runs** — a run re-uploads one only if it is absent or its size differs
+  from the local file. The set is frozen and nothing deletes these (no delete flow yet —
+  CLAUDE.md §8; source videos persist by design), so re-uploading ~28MB every run was ~4
+  minutes of a ~24 minute run for identical bytes. Replace a recording in `eval/videos/`
+  and the size change re-uploads it; keep the same bytes and it is skipped.
 - `frame_validity`'s blank-frame check is an exact-colour histogram at 480px width; a
   nearly empty (mostly-white) real page can trip the 95% threshold — it's a
   deterministic heuristic, spot-check `frame_validity_detail` in `run.json` if a
   frame Fails and the page was just sparse.
 
-## Note: V1.md was not in the repo
+## Auth
 
-The task referenced `eval/ground-truth/V1.md` as already written, but it was not
-present in this checkout. The parser above was built to the field spec, not to your
-file. Drop your `V1.md` into `eval/ground-truth/` and reconcile it against the
-"Ground-truth format" section — run `--selftest` and a single `--only V1` run to
-confirm it parses before trusting a full run.
-```
+`/api/generate` requires a real Supabase user JWT (`worker/main.py` `_require_owner`);
+the service-role key is not one. The runner mints a session for the KB owner once per
+run via the admin API (magic link → `verify_otp`), on its own client so the
+service-role `db` never gets downgraded to a user session. Nothing to configure — it
+falls out of `--kb-id` plus the service-role key.

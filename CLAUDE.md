@@ -333,6 +333,86 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
 - **`status` is the pipeline lifecycle only** (`generating` → `ready`). Publish state is
   `visibility`. Writing `status='published'` violates the check constraint retired in 0015.
 
+## 10g. Failures degrade before they fail (locked — migration 0020)
+
+- **Stage 2 failure and partial frame failure both SHIP an editable article.** Stage 2
+  only polishes prose, so its death means rougher text over correct steps and correct
+  screenshots — and editing text is the product. A step whose frame won't render is a
+  text-only step with the "+ Add image" affordance the editor already has. **Only Stage 1
+  failure and TOTAL ffmpeg failure are real failures**, because only they leave nothing
+  to give the user. A recoverable article beats a failure screen every time.
+- **A degraded run is a SUCCESS and DOES count against quota** — they got an article.
+  Recorded on `jobs.degraded` (`stage2_failed` / `frames_partial`) so the rate is one
+  query. Only paths that reach `fail()` are free.
+- **Classification happens at the source**, never by pattern-matching an exception string
+  afterwards. `failures.Failed(code, detail)` is raised where the cause is known
+  (frames.py, gemini.py, pipeline.py). A reworded upstream error must not be able to
+  silently reclassify itself into a screen that blames the user's file.
+- **Never blame the user's file when it's ours.** Only `video_unreadable` and
+  `video_too_long` are about their recording. A user who believes their file is bad
+  re-records it, fails again, and leaves.
+- **`failure_detail` is log-only and the database enforces it.** 0020 revokes table SELECT
+  on `jobs` from anon/authenticated and grants back a column list that excludes it — RLS
+  is row-level and cannot express column scope (§10e.2). **Adding a column to `jobs` no
+  longer exposes it to clients;** anything the SPA needs must be added to that grant
+  deliberately. The `error` column is dropped and must not come back.
+- **Retry re-runs from `jobs.video_path`** — no re-upload, no second video object. It goes
+  through the same `_start_run` gate as a first attempt, and each attempt is its own ledger
+  row (`retry_of`), so only the row that actually succeeds can carry
+  `counted_against_quota`. `jobs.context` exists so the retry rebuilds from the same
+  grounding rather than silently producing a different article.
+- **Past the 7-day sweep the recording is gone: check Storage, never assume.** That state
+  is "upload it again", not an error — a signed-URL failure must never reach a user.
+- **`quota_exceeded` is not a failure and must never render as one.** It is the upgrade
+  modal (pricing-spec §7), and it fires **at the dropzone on file selection**, before the
+  upload — nobody watches a 90-second bar that was doomed from the start. It always says
+  manual writing still works, because it does.
+- **A job must be able to end.** The pipeline checks `JOB_TIMEOUT_MIN` at every stage
+  boundary so it stops itself; `retention.sweep_timeouts()` (a state query, longer cutoff,
+  so it never races the pipeline) catches rows abandoned by a dead worker. Without it a
+  killed process leaves a spinner running forever — the worst state the product can be in.
+- `worker/test_failures.py` forces every code and both degrade paths, and fails if the
+  worker's codes drift from the copy in `web/src/lib/failures.ts`.
+- **`SUPPORT_EMAIL` in `web/src/lib/config.ts` is now set** (`support@quink.online`, MX
+  live). That one constant arms every failure screen: the job id it already rendered
+  becomes a prefilled mailto subject. Empty it again if the mailbox ever stops being read
+  — the screens fall back to "quote reference {id}", and a mailto that goes nowhere is a
+  worse promise than none.
+
+## 10h. Email (locked — migration 0021)
+
+- **Email is NEVER part of a transaction.** A send failure must not fail the operation
+  that triggered it. A domain that went live went live; the email is a notification
+  about work that already succeeded. Send after the state write, catch everything,
+  return a bool — `mailer.send_once` cannot raise into its caller.
+- **Every email that fires from a loop or a sweep needs a persisted `*_email_sent_at`
+  marker on the row it concerns.** The worker restarts on every deploy, so an in-memory
+  "already sent" set is not protection. The marker is **claimed before the send** (a
+  conditional update that only wins if the column is still null) and released only if
+  the provider itself fails — the reverse order duplicates under concurrency, which is
+  the failure a paying customer actually notices.
+- **`send_once` is the only public send, and `marker=` is a required keyword.** Making
+  the marker impossible to forget beats remembering it at each call site. Add a template
+  to `mailer.py`; do not add a second send path.
+- **It is `worker/mailer.py`, never `email.py`** — the worker's own directory is first on
+  `sys.path`, so that filename shadows the stdlib `email` package that httpx, supabase
+  and google-genai all import.
+- **Sending needs `EMAIL_ENABLED` AND `RESEND_API_KEY`, both off by default.** The key
+  alone is not consent: a developer with a copied production `.env`, or a test run, must
+  not be able to mail a customer. Unset, the full payload is logged and the marker is
+  still consumed, so dev exercises the same once-only path production does.
+- **A disabled sender must announce itself.** `main.py`'s lifespan WARNs when sending is
+  off while `ALLOWED_ORIGINS` contains a non-local origin. The domain-live promise sat
+  undelivered precisely because the fallback was quiet — a silent safe default is how a
+  user-facing promise goes unnoticed.
+- **A KB's `domain_live_email_sent_at` is deliberately NOT reset by `claim_kb()`** — the
+  one documented exception to §10d. It records that we sent a message, not owner state;
+  a claimed KB's domain is already live and does not go live again, so resetting it can
+  only produce a stale notification. The reason lives on the column comment in the DB.
+- **Auth mail (magic links, confirmations) is Supabase SMTP, configured by hand** in
+  Project Settings → Auth, pointed at Resend. Not in code, and the built-in sender is
+  rate-limited and not for production.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock
@@ -356,3 +436,7 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   Grotesk, timeline-seam). **Note:** brand direction is being revisited under the name Quink;
   treat final colors/wordmark as not-yet-locked. Logo wordmark: `Qu_nk.svg` (single path,
   `#211F1B`; swap to `currentColor` to recolor; no standalone glyph yet).
+
+
+  ## SUPABASE SQL changes
+  -The supabase link is in the root .env, make all changes to the db using the same

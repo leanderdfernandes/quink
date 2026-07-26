@@ -154,16 +154,44 @@ VIDEO_PURGE_INTERVAL_SECONDS = int(os.environ.get("VIDEO_PURGE_INTERVAL_SECONDS"
 
 # --- Email ------------------------------------------------------------------
 # DNS can take hours, so the "we'll email you the moment it's live" promise in the UI needs
-# a real sender. Unset -> the emails are logged instead (fine for dev; the promise is a lie
-# in production, so set it before launch).
+# a real sender. All sending goes through mailer.py — see the module docstring for why it
+# is not called email.py and why every looped send needs a persisted marker.
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+
+# Both addresses are real, monitored mailboxes on the verified domain — this is not a
+# noreply setup, and the copy invites a reply. Replies to hello@ would still reach us, but
+# support@ is where they belong.
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "Quink <hello@quink.online>")
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", "support@quink.online")
+
+# The kill switch, DEFAULT OFF. A real send needs this AND RESEND_API_KEY — the key alone
+# is not consent, because a developer with production secrets in their .env (or a test run
+# that imports config) would otherwise mail a live customer. Set it on Render only.
+# Unset, mailer.py logs the whole payload instead; main.py's lifespan warns loudly if that
+# is the state while the worker is serving a non-local origin, because the silent version
+# of this is how a user-facing promise goes undelivered for a month.
+EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "").lower() in ("1", "true", "yes")
 
 # --- Limits -----------------------------------------------------------------
 # Gemini's inline ceiling for Part.from_bytes. Above this the File API is required;
 # we don't implement that fallback yet, so we fail loudly instead of silently
 # truncating (CLAUDE.md §5).
 MAX_INLINE_BYTES = 100 * 1024 * 1024
+
+# Duration ceiling, checked after ffprobe. The 100MB size cap the SPA enforces is a proxy
+# for this and a bad one — a low-bitrate 40-minute screen recording sails under it and then
+# produces a Stage 1 prompt that costs real money to get a mediocre 60-step article from.
+# Mirrored by MAX_VIDEO_MINUTES in web/src/lib/config.ts, which only renders the number.
+MAX_VIDEO_MINUTES = 20
+
+# Wall clock ceiling on one run. A ~90s job that has been going 15 minutes is wedged, not
+# slow. Checked at every stage boundary inside the pipeline (so the worker STOPS rather than
+# racing a sweep), and again by retention.sweep_timeouts() for the case the process died and
+# left the row at 'running' forever — the stuck-spinner state.
+JOB_TIMEOUT_MIN = 15
+# The sweep waits this much longer than the in-process check, so under normal operation the
+# pipeline always classifies its own timeout and the sweep only ever catches dead processes.
+JOB_TIMEOUT_GRACE_MIN = 5
 
 # Dense frame set for the Tier-1 filmstrip: 1 frame per second across the whole
 # video. Pure ffmpeg, no model call — "code does everything deterministic".

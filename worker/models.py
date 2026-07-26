@@ -78,6 +78,13 @@ class GenerateResponse(BaseModel):
     job_id: str
 
 
+class RetryRequest(BaseModel):
+    """Re-run a failed job from the recording already in Storage. No file, deliberately:
+    a retry that asks for the video again is not a retry."""
+
+    job_id: str
+
+
 # --- Custom domain (build spec §4) ------------------------------------------
 class DomainConnectRequest(BaseModel):
     kb_id: str
