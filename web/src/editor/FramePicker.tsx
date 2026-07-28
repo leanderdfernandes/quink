@@ -1,26 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
 import { listDenseFrames, signedFrameUrl, uploadStepFrame } from '../lib/storage'
 
-// The image picker (ux-spec §4, simplified). Originally four tiers; collapsed to one
-// frame browser + upload, because the pipeline already extracts a 1fps dense set for the
-// WHOLE video. So a single scrollable strip of every frame — auto-scrolled to the current
-// one — covers both "the timestamp drifted a bit" and "the right moment is elsewhere in
-// the video," in one interaction. That also removes the client-side <video> scrubber and
-// its browser-decode fragility (high-level/high-fps recordings that browsers refuse).
+// The image picker (ux-spec §4, simplified). Originally four tiers; collapsed to one frame
+// browser + upload, because the pipeline already extracts a 1fps dense set for the WHOLE
+// video. A single scrollable strip of every frame — auto-scrolled to the current one —
+// covers both "the timestamp drifted a bit" and "the right moment is elsewhere in the
+// video," in one interaction. That also removes the client-side <video> scrubber and its
+// browser-decode fragility (high-fps recordings browsers refuse).
 //
 // For a manual (no-video) article there are no frames, so it degrades to upload-only.
-// Any manual pick/upload marks the step is_edited (CLAUDE.md §8).
+// Any manual pick/upload marks the step is_edited (CLAUDE.md §8) — the caller does that.
 
 type Props = {
   kbId: string
   articleId: string
   stepNumber: number
-  currentUrl: string | null // signed URL of the step's current image, to highlight it
-  currentPath: string | null // storage path of the current image
+  currentPath: string | null
   onPick: (newPath: string) => void
   onRemove: () => void
   onClose: () => void
+  // Upload used to fail silently: a null path from storage just did nothing. Now it goes to
+  // the one status surface in the header.
+  onError: (msg: string) => void
 }
+
+// Frames are named "{second}.webp"; the strip labels them so a long video is navigable.
+const clock = (s: number) =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
 export default function FramePicker({
   kbId,
@@ -30,8 +36,9 @@ export default function FramePicker({
   onPick,
   onRemove,
   onClose,
+  onError,
 }: Props) {
-  const [frames, setFrames] = useState<{ path: string; url: string }[]>([])
+  const [frames, setFrames] = useState<{ second: number; path: string; url: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -42,7 +49,11 @@ export default function FramePicker({
     ;(async () => {
       const dense = await listDenseFrames(kbId, articleId)
       const withUrls = await Promise.all(
-        dense.map(async (f) => ({ path: f.path, url: (await signedFrameUrl(f.path)) ?? '' })),
+        dense.map(async (f) => ({
+          second: f.second,
+          path: f.path,
+          url: (await signedFrameUrl(f.path)) ?? '',
+        })),
       )
       if (!cancelled) {
         setFrames(withUrls.filter((f) => f.url))
@@ -66,6 +77,9 @@ export default function FramePicker({
       const blob = await toWebp(file)
       const path = await uploadStepFrame(kbId, articleId, stepNumber, blob)
       if (path) onPick(path)
+      else onError('Image didn’t upload. Check your connection and try again.')
+    } catch {
+      onError('That file couldn’t be read as an image. Try a JPG or PNG.')
     } finally {
       setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -75,52 +89,50 @@ export default function FramePicker({
   const hasFrames = frames.length > 0
 
   return (
-    <div className="frame-picker">
-      <div className="fp-head">
-        <span className="fp-title">
-          {hasFrames ? 'Pick a frame from the video' : 'Add an image'}
-        </span>
-        <div className="fp-head-right">
-          <button className="fp-upload" disabled={busy} onClick={() => inputRef.current?.click()}>
-            Upload image instead
+    <div className="ed-picker">
+      <div className="ed-picker-hd">
+        <span className="ed-picker-ti">{hasFrames ? 'Pick a frame' : 'Add an image'}</span>
+        <span className="ed-picker-alt">
+          <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
+            {busy ? 'Uploading…' : 'Upload an image'}
           </button>
           {currentPath && (
-            <button className="fp-remove" onClick={onRemove}>
+            <button type="button" className="danger" onClick={onRemove}>
               Remove image
             </button>
           )}
-          <button className="fp-close" onClick={onClose} aria-label="Close">
-            ✕
+          <button type="button" onClick={onClose} aria-label="Close frame picker">
+            Close
           </button>
-        </div>
+        </span>
       </div>
 
-      <div className="fp-body">
-        {loading ? (
-          <p className="cap">Loading frames…</p>
-        ) : hasFrames ? (
-          <div className="filmstrip">
-            {frames.map((f) => {
-              const isCurrent = f.path === currentPath
-              return (
-                <button
-                  key={f.path}
-                  ref={isCurrent ? currentRef : undefined}
-                  className={`filmstrip-frame${isCurrent ? ' on' : ''}`}
-                  onClick={() => onPick(f.path)}
-                  title={isCurrent ? 'Current frame' : 'Use this frame'}
-                >
-                  <img src={f.url} alt="" />
-                </button>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="cap">
-            This article has no video. Upload an image to illustrate the step.
-          </p>
-        )}
-      </div>
+      {loading ? (
+        <p className="ed-picker-msg">Loading frames…</p>
+      ) : hasFrames ? (
+        <div className="ed-strip">
+          {frames.map((f) => {
+            const isCurrent = f.path === currentPath
+            return (
+              <button
+                key={f.path}
+                ref={isCurrent ? currentRef : undefined}
+                className="ed-frame"
+                aria-current={isCurrent ? 'true' : undefined}
+                onClick={() => onPick(f.path)}
+                title={isCurrent ? 'Current frame' : 'Use this frame'}
+              >
+                <img src={f.url} alt="" decoding="async" />
+                <span className="ed-frame-ts">{clock(f.second)}</span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="ed-picker-msg">
+          This article has no video. Upload an image to illustrate the step.
+        </p>
+      )}
 
       <input
         ref={inputRef}

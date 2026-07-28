@@ -484,7 +484,13 @@ export default function App() {
     return (
       <>
         {adminBar}
-        <Editor articleId={routeArticleId} kb={kb} plan={plan} onBack={closeArticle} />
+        <Editor
+          articleId={routeArticleId}
+          kb={kb}
+          plan={plan}
+          onBack={closeArticle}
+          onOpenTheme={() => setPhase('theme')}
+        />
       </>
     )
   }

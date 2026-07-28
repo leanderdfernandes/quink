@@ -2,14 +2,22 @@ import { useEffect, useState } from 'react'
 import { READER_DOMAIN } from '../lib/config'
 import type { Folder } from '../lib/types'
 
-// The publish gate (build spec §7 / "Quink Flow" PUBLISH screen). An article can't go live
-// unfiled — publishing IS filing it in a folder, because that folder is the category card
-// its readers browse. A first-time user has no folders yet, so "+ New category" is inline:
-// the make-articles → publish loop must never dead-end (North Star, CLAUDE.md §2).
+// The publish gate (build spec §7). An article can't go live unfiled — publishing IS filing
+// it in a folder, because that folder is the category card its readers browse. A first-time
+// user has no folders yet, so "+ New category" is inline: the make-articles → publish loop
+// must never dead-end (North Star, CLAUDE.md §2).
+//
+// The success face used to dead-end at "You're live!" with a button that opened the site.
+// It now carries the actual URL with a copy button — the first thing anyone does after
+// publishing is send the link to someone — and offers theming. ux-spec §5 always said
+// branding should surface contextually "at preview/publish, where brand visibly matters";
+// it never shipped. It is an OFFER, not a redirect: they came here to publish, and hijacking
+// that into a settings screen is how a pull becomes a push.
 
 type Props = {
   articleTitle: string
   subdomain: string | null
+  slug: string | null
   // Whether this article still holds its source recording — publishing collects it.
   hasSourceVideo: boolean
   folders: Folder[]
@@ -18,14 +26,27 @@ type Props = {
   onCreateFolder: (name: string) => Promise<Folder | null>
   publishing: boolean
   published: boolean
+  // Re-filing an already-published article: same picker, no first-publish framing.
+  recategorizeOnly?: boolean
   onPublish: () => void
   onClose: () => void
   onViewSite: () => void
+  onCustomize: () => void
+  onNotify: (msg: string) => void
+}
+
+function CheckIcon({ size = 13 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  )
 }
 
 export default function PublishModal({
   articleTitle,
   subdomain,
+  slug,
   hasSourceVideo,
   folders,
   selectedFolderId,
@@ -33,9 +54,12 @@ export default function PublishModal({
   onCreateFolder,
   publishing,
   published,
+  recategorizeOnly = false,
   onPublish,
   onClose,
   onViewSite,
+  onCustomize,
+  onNotify,
 }: Props) {
   const [newMode, setNewMode] = useState(false)
   const [newName, setNewName] = useState('')
@@ -51,6 +75,7 @@ export default function PublishModal({
   }, [publishing, onClose])
 
   const hcUrl = `${subdomain ?? '…'}.${READER_DOMAIN}`
+  const liveUrl = `${hcUrl}/${slug ?? ''}`
   const selectedName = folders.find((f) => f.id === selectedFolderId)?.name ?? ''
 
   async function createAndSelect() {
@@ -66,22 +91,25 @@ export default function PublishModal({
     }
   }
 
+  async function copyLive() {
+    try {
+      await navigator.clipboard.writeText(`https://${liveUrl}`)
+      onNotify('Link copied')
+    } catch {
+      onNotify('Couldn’t copy — the address is shown above')
+    }
+  }
+
   return (
     <div className="pub-overlay" onClick={() => !publishing && onClose()}>
-      <div className="pub-card" onClick={(e) => e.stopPropagation()}>
+      <div className="pub-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         {!published ? (
-          <>
-            <span className="pub-icon">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3v13" />
-                <path d="m8 12 4 4 4-4" />
-                <path d="M20 21H4" />
-              </svg>
-            </span>
-            <h2>Publish this article?</h2>
+          <div className="pub-sheet-in">
+            <h2>{recategorizeOnly ? 'Change category' : 'Publish this article?'}</h2>
             <p className="pub-lede">
-              It goes live on your help center immediately. You can edit or unpublish it any
-              time.
+              {recategorizeOnly
+                ? 'Readers browse your help center by category, so this is where it appears.'
+                : 'It goes live on your help center immediately. You can edit or unpublish it any time.'}
             </p>
 
             <div className="pub-section">
@@ -110,6 +138,7 @@ export default function PublishModal({
                         }
                       }}
                       placeholder="Category name"
+                      aria-label="New category name"
                     />
                     <button className="pub-pill add" disabled={creating} onClick={createAndSelect}>
                       {creating ? '…' : 'Add'}
@@ -138,13 +167,13 @@ export default function PublishModal({
             </div>
 
             <button
-              className="btn btn-lg pub-go"
+              className="btn btn-lg pub-go-big"
               disabled={!selectedFolderId || publishing}
               onClick={onPublish}
             >
-              {publishing ? 'Publishing…' : 'Publish now'}
+              {publishing ? 'Publishing…' : recategorizeOnly ? 'Save category' : 'Publish now'}
             </button>
-            {hasSourceVideo && (
+            {hasSourceVideo && !recategorizeOnly && (
               // The upload screen promises we delete the recording once the article is
               // published. Saying so again at the moment it happens turns a silent
               // background deletion into a visibly kept promise. Your screenshots stay —
@@ -153,40 +182,53 @@ export default function PublishModal({
                 Your source recording is deleted when this goes live. The screenshots stay.
               </p>
             )}
-            {!selectedFolderId && (
-              <p className="pub-hint">Pick a category above to publish.</p>
-            )}
+            {!selectedFolderId && <p className="pub-hint">Pick a category above to publish.</p>}
             <button className="linklike pub-back" onClick={onClose}>
-              Not yet — keep editing
+              {recategorizeOnly ? 'Cancel' : 'Not yet — keep editing'}
             </button>
-          </>
+          </div>
         ) : (
           <>
-            <span className="pub-icon done">
-              <CheckIcon size={30} />
-            </span>
-            <h2>You’re live!</h2>
-            <p className="pub-lede">
-              Your article is now live under {selectedName} and searchable on your help center.
-            </p>
-            <div className="pub-live-url mono">{hcUrl}</div>
-            <button className="btn btn-lg pub-go" onClick={onViewSite}>
-              View your live help center
-            </button>
-            <button className="linklike pub-back" onClick={onClose}>
-              Back to editor
-            </button>
+            <div className="pub-done-top">
+              <span className="pub-tick">
+                <CheckIcon size={20} />
+              </span>
+              <h2>You’re live</h2>
+              <p>Anyone with the link can read this now.</p>
+            </div>
+
+            <div className="pub-url">
+              <code>{liveUrl}</code>
+              <button onClick={copyLive}>Copy link</button>
+            </div>
+
+            {/* The pull, at the moment brand visibly matters (ux-spec §5). An offer with a
+                way past it, never a redirect. */}
+            <div className="pub-nudge">
+              <span className="pub-nudge-sw" aria-hidden>
+                <i />
+                <b />
+              </span>
+              <span className="pub-nudge-tx">
+                <b>Make it look like you</b>
+                Add your logo and colour so this reads as your help center, not ours.
+              </span>
+              <button className="btn" onClick={onCustomize}>
+                Customize
+              </button>
+            </div>
+
+            <div className="pub-done-foot">
+              <button className="linklike" onClick={onViewSite}>
+                View live page
+              </button>
+              <button className="linklike" onClick={onClose}>
+                Back to the editor
+              </button>
+            </div>
           </>
         )}
       </div>
     </div>
-  )
-}
-
-function CheckIcon({ size = 13 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
   )
 }

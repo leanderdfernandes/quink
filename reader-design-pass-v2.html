@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quink Reader — Design Pass v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300..800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS
+   --brand is the only customer-supplied colour.
+   --band-* are set by the header treatment, never guessed.
+   No serif. One family, one mono fallback stack.
+   ============================================================ */
+:root{
+  --brand:#0E5C6B;
+
+  --paper:#FBF9F5;
+  --surface:#FFFFFF;
+  --subtle:#F3F0EA;
+  --border:#E7E2D9;
+  --rule:#DBD4C7;
+  --muted:#857E71;
+  --ink-soft:#4A463E;
+  --ink:#1C1A16;
+
+  --brand-tint:  color-mix(in oklab, var(--brand) 13%, var(--paper));
+  --brand-edge:  color-mix(in oklab, var(--brand) 30%, var(--border));
+  --brand-deep:  color-mix(in oklab, var(--brand) 30%, #17150F);
+  --brand-ring:  color-mix(in oklab, var(--brand) 18%, transparent);
+
+  --sans:'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono:ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --r-sm:8px; --r-md:12px; --r-lg:18px; --r-xl:26px; --r-pill:999px;
+  --measure:66ch;
+  --shell:1160px;
+
+  --sh-1:0 1px 2px rgba(28,26,22,.05);
+  --sh-2:0 2px 4px rgba(28,26,22,.04), 0 8px 20px rgba(28,26,22,.06);
+  --sh-3:0 4px 8px rgba(28,26,22,.05), 0 18px 44px rgba(28,26,22,.10);
+  --ease:cubic-bezier(.2,.7,.3,1);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#141310;font-family:var(--sans);color:var(--ink)}
+img{max-width:100%;display:block}
+button{font:inherit;color:inherit}
+a{color:inherit}
+:focus-visible{outline:2px solid currentColor;outline-offset:3px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* ============================================================
+   HARNESS — review scaffolding, not part of the design
+   ============================================================ */
+.harness{position:sticky;top:0;z-index:100;background:#141310;color:#C9C2B4;
+  border-bottom:1px solid #2A2721;padding:11px 22px;display:flex;gap:18px;
+  align-items:center;flex-wrap:wrap;font-size:12.5px}
+.harness b{color:#F2EDE3;font-weight:650;letter-spacing:-.01em}
+.harness .sep{width:1px;height:19px;background:#2E2A23}
+.harness .hint{color:#7C7466}
+.sws{display:flex;gap:6px}
+.sws button{width:22px;height:22px;border-radius:7px;border:1px solid rgba(255,255,255,.22);
+  cursor:pointer;padding:0;transition:transform .15s var(--ease)}
+.sws button:hover{transform:translateY(-2px) scale(1.07)}
+.sws button[aria-pressed="true"]{box-shadow:0 0 0 2px #141310,0 0 0 3.5px #EFE9DD}
+.segs{display:flex;gap:0;border:1px solid #2E2A23;border-radius:8px;overflow:hidden}
+.segs button{padding:5px 12px;background:transparent;border:0;border-right:1px solid #2E2A23;
+  color:#8D8576;font-size:12px;cursor:pointer;transition:background .14s var(--ease)}
+.segs button:last-child{border-right:0}
+.segs button:hover{background:#1F1D18}
+.segs button[aria-pressed="true"]{background:#EFE9DD;color:#141310;font-weight:650}
+
+.plate{background:var(--paper);border-top:1px solid #2A2721}
+.plate-in{max-width:var(--shell);margin:0 auto;padding:52px 30px 30px}
+.plate-in .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted);margin:0}
+.plate-in .eyebrow span{color:var(--ink);font-weight:600}
+.plate-in p{max-width:76ch;font-size:14px;line-height:1.62;color:var(--ink-soft);margin:12px 0 0}
+.plate-in p strong{color:var(--ink);font-weight:650}
+
+/* ============================================================
+   BAND — masthead + hero, one surface. No separate white strip.
+   Treatments set --band-ink / --band-soft / --band-line / background.
+   ============================================================ */
+.reader{background:var(--paper);color:var(--ink)}
+
+.band{position:relative;isolation:isolate;
+  --band-ink:var(--ink); --band-soft:var(--ink-soft); --band-line:var(--border);
+  --band-field:var(--surface); --band-field-line:var(--border);
+  background:var(--brand-tint);border-bottom:1px solid var(--border)}
+
+.reader[data-header="solid"] .band{background:var(--brand);border-bottom-color:transparent;
+  --band-ink:#fff; --band-soft:rgba(255,255,255,.76); --band-line:rgba(255,255,255,.20);
+  --band-field:rgba(255,255,255,.10); --band-field-line:rgba(255,255,255,.28)}
+.reader[data-header="ink"] .band{background:var(--brand-deep);border-bottom-color:transparent;
+  --band-ink:#fff; --band-soft:rgba(255,255,255,.70); --band-line:rgba(255,255,255,.16);
+  --band-field:rgba(255,255,255,.09); --band-field-line:rgba(255,255,255,.24)}
+.reader[data-header="image"] .band{background:var(--brand-deep);border-bottom-color:transparent;
+  --band-ink:#fff; --band-soft:rgba(255,255,255,.74); --band-line:rgba(255,255,255,.18);
+  --band-field:rgba(255,255,255,.12); --band-field-line:rgba(255,255,255,.30)}
+/* photo stand-in + scrim. Real build: customer upload behind the same scrim. */
+.reader[data-header="image"] .band::before{content:"";position:absolute;inset:0;z-index:-2;
+  background:
+    radial-gradient(58% 92% at 78% 8%, color-mix(in oklab,var(--brand) 62%,#fff) 0%, transparent 62%),
+    radial-gradient(46% 80% at 12% 96%, color-mix(in oklab,var(--brand) 44%,#000) 0%, transparent 60%),
+    radial-gradient(34% 60% at 46% 30%, color-mix(in oklab,var(--brand) 30%,#fff) 0%, transparent 70%),
+    var(--brand-deep)}
+.reader[data-header="image"] .band::after{content:"";position:absolute;inset:0;z-index:-1;
+  background:linear-gradient(96deg, color-mix(in oklab,var(--brand-deep) 92%,transparent) 0%,
+    color-mix(in oklab,var(--brand-deep) 74%,transparent) 46%,
+    color-mix(in oklab,var(--brand-deep) 40%,transparent) 100%)}
+
+.band-in{max-width:var(--shell);margin:0 auto;padding:26px 30px 62px;position:relative;z-index:1}
+.band.compact .band-in{padding:24px 30px 26px}
+
+/* masthead — logo and name are the identity, sized like it */
+.mast{display:flex;align-items:center;gap:15px;text-decoration:none;color:var(--band-ink);
+  width:max-content;max-width:100%}
+.mast .glyph{width:46px;height:46px;border-radius:13px;flex-shrink:0;
+  display:grid;place-items:center;font-size:22px;font-weight:700;letter-spacing:-.03em;
+  background:var(--surface);color:var(--brand);box-shadow:var(--sh-1)}
+.reader[data-header="tint"] .mast .glyph{background:var(--brand);color:#fff;box-shadow:none}
+.mast .nm{font-size:25px;font-weight:700;letter-spacing:-.032em;line-height:1.1}
+.band.compact .mast .glyph{width:38px;height:38px;border-radius:11px;font-size:18px}
+.band.compact .mast .nm{font-size:20px}
+
+.band h1{margin:44px 0 0;color:var(--band-ink);
+  font-size:clamp(33px,5vw,54px);font-weight:700;letter-spacing:-.042em;line-height:1.02;max-width:14ch}
+.band .sub{margin:15px 0 0;color:var(--band-soft);
+  font-size:clamp(16px,1.7vw,18.5px);line-height:1.55;max-width:44ch;font-weight:400}
+
+/* search sits on the band, inherits band colours */
+.srch{position:relative;max-width:520px;margin:32px 0 0}
+.srch input{width:100%;padding:14px 18px 14px 46px;border-radius:var(--r-pill);
+  border:1px solid var(--band-field-line);background:var(--band-field);color:var(--band-ink);
+  font-family:inherit;font-size:15.5px;
+  transition:border-color .16s var(--ease),background .16s var(--ease),box-shadow .16s var(--ease)}
+.srch input::placeholder{color:var(--band-soft)}
+.srch input:focus{outline:none;border-color:var(--band-ink);
+  box-shadow:0 0 0 3px color-mix(in oklab,var(--band-ink) 16%,transparent)}
+.srch .mag{position:absolute;left:18px;top:50%;transform:translateY(-50%);
+  color:var(--band-soft);pointer-events:none}
+.band.compact .srch{max-width:340px;margin:0}
+.band.compact .srch input{padding:9px 14px 9px 37px;font-size:14px}
+.band.compact .srch .mag{left:14px}
+.band.compact .band-in{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.band.compact .srch{margin-left:auto}
+
+/* results — always on paper, never on the band */
+.drop{position:absolute;top:calc(100% + 9px);left:0;right:0;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh-3);
+  overflow:hidden;color:var(--ink);text-align:left}
+.drop .cap{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);padding:12px 17px 7px;margin:0}
+.drop a{display:block;padding:11px 17px 13px;text-decoration:none;border-top:1px solid var(--subtle)}
+.drop a:hover{background:var(--brand-tint)}
+.drop .t{font-weight:600;font-size:14.5px;letter-spacing:-.012em;margin:0 0 3px}
+.drop .s{font-size:13px;line-height:1.5;color:var(--muted);margin:0}
+.drop .s mark{background:color-mix(in oklab,var(--brand) 20%,#fff);color:var(--ink);
+  padding:0 2px;border-radius:3px;font-weight:600}
+
+/* ============================================================
+   LISTS — two-column: heading rail + rows. Kills stretched rows.
+   ============================================================ */
+.shell{max-width:var(--shell);margin:0 auto;padding:58px 30px 78px}
+
+.cat{display:grid;grid-template-columns:216px minmax(0,1fr);gap:0 52px;
+  padding:0 0 40px;margin:0 0 40px;border-bottom:1px solid var(--border)}
+.cat:last-child{border-bottom:0;padding-bottom:0;margin-bottom:0}
+.cat-hd{position:sticky;top:26px;align-self:start}
+.cat-hd h2{margin:0;font-size:21px;font-weight:700;letter-spacing:-.028em;line-height:1.2}
+.cat-hd .n{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);
+  letter-spacing:.04em;margin:7px 0 0}
+
+.rows{max-width:730px;border-top:1px solid var(--border)}
+.row{display:block;padding:17px 40px 17px 0;border-bottom:1px solid var(--border);
+  text-decoration:none;position:relative;
+  transition:background .15s var(--ease),padding-left .18s var(--ease)}
+.row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--brand);
+  transform:scaleY(0);transform-origin:center;transition:transform .2s var(--ease)}
+.row:hover,.row:focus-visible{background:var(--brand-tint);padding-left:14px}
+.row:hover::before,.row:focus-visible::before{transform:scaleY(1)}
+.row .t{margin:0 0 4px;font-weight:600;font-size:16.5px;letter-spacing:-.017em;line-height:1.32}
+.row .d{margin:0;font-size:14.5px;color:var(--ink-soft);line-height:1.5}
+.row .meta{display:block;margin:8px 0 0;font-family:var(--mono);font-size:10.5px;
+  color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.row .arw{position:absolute;right:12px;top:50%;transform:translate(-5px,-50%);color:var(--brand);
+  opacity:0;transition:opacity .18s var(--ease),transform .18s var(--ease)}
+.row:hover .arw,.row:focus-visible .arw{opacity:1;transform:translate(0,-50%)}
+
+/* ============================================================
+   ARTICLE
+   ============================================================ */
+.art-wrap{max-width:var(--shell);margin:0 auto;padding:0 30px}
+.art-grid{display:grid;grid-template-columns:164px minmax(0,1fr);gap:0 60px;padding:42px 0 82px}
+
+/* --- the spine: the signature --- */
+.spine{position:sticky;top:24px;align-self:start;max-height:calc(100vh - 48px);
+  overflow:auto;padding:2px 4px 20px 0;scrollbar-width:thin}
+.spine .cap{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 13px}
+.spine ol{list-style:none;margin:0;padding:0}
+.spine li{margin:0 0 4px}
+.spine a{display:flex;gap:11px;align-items:center;text-decoration:none;
+  padding:5px 7px 5px 5px;border-radius:10px;transition:background .15s var(--ease)}
+.spine a:hover{background:var(--subtle)}
+.spine .idx{font-family:var(--mono);font-size:10px;color:var(--muted);width:11px;
+  text-align:right;flex-shrink:0}
+.spine .thumb{width:34px;height:44px;border-radius:6px;overflow:hidden;flex-shrink:0;
+  border:1px solid var(--border);background:var(--surface);
+  transition:border-color .18s var(--ease),transform .18s var(--ease),box-shadow .18s var(--ease)}
+.spine .thumb.wide{width:46px;height:30px}
+.spine .lbl{font-size:12.5px;line-height:1.32;color:var(--muted);font-weight:500;
+  transition:color .15s var(--ease)}
+.spine a:hover .lbl{color:var(--ink-soft)}
+.spine a[aria-current="true"] .thumb{border-color:var(--brand);transform:scale(1.06);
+  box-shadow:0 0 0 3px var(--brand-ring)}
+.spine a[aria-current="true"] .lbl{color:var(--ink);font-weight:650}
+.spine a[aria-current="true"] .idx{color:var(--brand);font-weight:700}
+
+.crumb{font-size:13px;color:var(--muted);margin:0 0 20px;
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.crumb a{text-decoration:none;color:var(--muted);transition:color .15s var(--ease)}
+.crumb a:hover{color:var(--brand)}
+.crumb .sl{opacity:.5}
+.crumb .cur{color:var(--ink-soft)}
+
+.art h1{margin:0;font-size:clamp(31px,4.3vw,47px);font-weight:700;
+  letter-spacing:-.042em;line-height:1.04;max-width:19ch}
+.standfirst{margin:18px 0 0;font-size:clamp(17.5px,2vw,20.5px);font-weight:400;
+  line-height:1.55;color:var(--ink-soft);max-width:47ch}
+.art-meta{display:flex;align-items:center;flex-wrap:wrap;margin:26px 0 0;
+  font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.art-meta span{padding-right:13px;margin-right:13px;border-right:1px solid var(--rule)}
+.art-meta span:last-child{border-right:0;margin-right:0;padding-right:0}
+.art-rule{height:1px;background:var(--rule);margin:28px 0 0}
+
+.step{padding:44px 0 0;scroll-margin-top:26px}
+.step-hd{display:flex;gap:16px;align-items:flex-start;margin:0 0 14px}
+.step-num{flex-shrink:0;width:22px;padding-top:5px;border-top:2px solid var(--brand);
+  font-family:var(--mono);font-size:13px;font-weight:600;color:var(--brand);
+  line-height:1.5;letter-spacing:.02em}
+.step h3{margin:0;font-size:clamp(20px,2.3vw,25px);font-weight:650;
+  letter-spacing:-.028em;line-height:1.24}
+.step .prose{margin:0 0 0 38px;font-size:17.5px;line-height:1.72;
+  color:var(--ink-soft);max-width:var(--measure)}
+.step .prose p{margin:0 0 14px}
+.step .prose b{color:var(--ink);font-weight:650}
+.step .prose kbd{font-family:var(--mono);font-size:.85em;background:var(--subtle);
+  border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--ink)}
+
+/* aspect-aware figures — the letterbox fix */
+.step.is-portrait .stack{display:flex;gap:40px;align-items:flex-start;margin-left:38px}
+.step.is-portrait .prose{margin-left:0;flex:1;min-width:0;max-width:46ch}
+.step.is-portrait figure{flex-shrink:0;width:252px;margin:0}
+.step.is-landscape figure{margin:22px 0 0 38px;max-width:min(860px,100%)}
+.frame{border-radius:var(--r-lg);overflow:hidden;background:var(--surface);
+  border:1px solid var(--border);box-shadow:var(--sh-2)}
+.frame.phone{border-radius:var(--r-xl);padding:7px;background:var(--subtle)}
+.frame.phone .glass{border-radius:20px;overflow:hidden;background:#fff;border:1px solid var(--border)}
+figcaption{margin:9px 0 0;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+  letter-spacing:.05em;text-transform:uppercase}
+
+.fb{margin:64px 0 0;padding:25px 27px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-lg);max-width:var(--measure)}
+.fb .q{margin:0 0 4px;font-size:16px;font-weight:650;letter-spacing:-.017em}
+.fb .why{margin:0 0 16px;font-size:13.5px;color:var(--muted);line-height:1.5}
+.fb .btns{display:flex;gap:9px}
+.fb button{padding:8px 20px;border-radius:var(--r-pill);border:1px solid var(--border);
+  background:var(--paper);font-size:14px;font-weight:600;cursor:pointer;transition:all .15s var(--ease)}
+.fb button:hover{border-color:var(--brand-edge);background:var(--brand-tint)}
+.fb .miss{display:flex;gap:9px;margin:16px 0 0}
+.fb .miss input{flex:1;padding:10px 13px;border:1px solid var(--border);border-radius:var(--r-sm);
+  font-family:inherit;font-size:14px;background:var(--paper);color:var(--ink)}
+.fb .miss input:focus{outline:none;border-color:var(--brand-edge);box-shadow:0 0 0 3px var(--brand-ring)}
+.fb .miss button{background:var(--brand);color:#fff;border-color:var(--brand)}
+.fb .done{margin:0;font-size:14.5px;color:var(--ink-soft)}
+.fb .done b{color:var(--ink)}
+
+.rel{margin:54px 0 0;max-width:730px}
+.rel .cap{margin:0 0 4px;font-family:var(--mono);font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+
+/* ============================================================
+   STATES
+   ============================================================ */
+.states{max-width:var(--shell);margin:0 auto;padding:8px 30px 76px;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.state{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  overflow:hidden;box-shadow:var(--sh-1)}
+.state .tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  padding:9px 16px;border-bottom:1px solid var(--border);color:var(--muted);background:var(--subtle)}
+.state .in{padding:34px 26px 32px;text-align:center}
+.state .icon{width:40px;height:40px;border-radius:12px;background:var(--brand-tint);
+  display:grid;place-items:center;margin:0 auto 15px;color:var(--brand)}
+.state h4{margin:0 0 7px;font-size:17.5px;font-weight:650;letter-spacing:-.024em}
+.state p{margin:0 auto;font-size:14.5px;line-height:1.6;color:var(--muted);max-width:38ch}
+.state .act{margin:18px 0 0}
+.state .act button{padding:9px 19px;border-radius:var(--r-pill);border:1px solid var(--brand);
+  background:var(--brand);color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.state .skel{padding:26px 26px 32px}
+.sk{background:var(--subtle);border-radius:6px}
+
+/* ============================================================
+   FOOTER — the watermark is a real link
+   ============================================================ */
+.ft{border-top:1px solid var(--border);background:var(--surface)}
+.ft-in{max-width:var(--shell);margin:0 auto;padding:24px 30px;display:flex;
+  justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;
+  font-size:13px;color:var(--muted)}
+.ft a{text-decoration:none;color:var(--muted);display:inline-flex;align-items:center;gap:6px;
+  transition:color .15s var(--ease)}
+.ft a:hover{color:var(--ink)}
+.ft a b{color:var(--ink-soft);font-weight:650;letter-spacing:-.018em}
+
+/* ============================================================
+   MOCK SCREENSHOT INTERIORS
+   ============================================================ */
+.mock{background:#fff;font-family:var(--sans)}
+.mock .ln,.mock .cta{display:block}
+.mock.p{padding:26px 20px 30px;min-height:352px;display:flex;flex-direction:column}
+.mock .lg{width:48px;height:48px;border-radius:14px;background:#E8F0EA;margin:6px auto 14px;
+  display:grid;place-items:center;font-size:20px}
+.mock .wt{margin:0 0 20px;text-align:center;font-size:12.5px;font-weight:700;color:#2A3B31}
+.mock .fl{margin:0 0 5px;font-size:9px;font-weight:700;color:#4C5C52}
+.mock .fi{height:29px;border-radius:8px;background:#F5F7F5;border:1px solid #E2E8E3;
+  margin:0 0 13px;display:flex;align-items:center;padding:0 9px;font-size:9.5px;color:#A6AFA9}
+.mock .fi.filled{color:#2A3B31;background:#FFFBEA;border-color:#EDDFA8}
+.mock .btn{height:33px;border-radius:var(--r-pill);background:#5FA97B;margin:16px 0 0;
+  display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700}
+.mock .fine{margin:11px 0 0;text-align:center;font-size:8px;color:#B3BCB6}
+.mock.l{min-height:0;aspect-ratio:16/10;display:flex;flex-direction:column}
+.mock .bar{height:30px;background:#F5F7F5;border-bottom:1px solid #E2E8E3;display:flex;
+  align-items:center;gap:5px;padding:0 11px;flex-shrink:0}
+.mock .dot{width:7px;height:7px;border-radius:50%;background:#DCE3DD}
+.mock .url{margin-left:9px;height:14px;flex:1;max-width:180px;border-radius:var(--r-pill);
+  background:#fff;border:1px solid #E2E8E3}
+.mock .cnt{flex:1;display:flex}
+.mock .side{width:23%;background:#FAFBFA;border-right:1px solid #EEF1EE;padding:13px 10px}
+.mock .main{flex:1;padding:15px 17px}
+.mock .ln{height:7px;border-radius:4px;background:#EAEEEB;margin:0 0 8px}
+.mock .ln.a{background:#D6E4DB;width:46%;height:9px}
+.mock .cta{height:24px;width:88px;border-radius:7px;background:#5FA97B;margin:14px 0 0}
+.mock.tiny{padding:5px 4px;min-height:0;height:100%}
+.mock.tiny .lg{width:11px;height:11px;border-radius:4px;margin:3px auto 4px;font-size:0}
+.mock.tiny .ln{height:2.5px;margin:0 0 3px;border-radius:2px}
+.mock.tiny .btn{height:6px;margin:5px 0 0;border-radius:3px}
+.mock.tiny.l{aspect-ratio:auto;height:100%;padding:0}
+.mock.tiny.l .bar{height:7px;padding:0 3px;gap:2px}
+.mock.tiny.l .dot{width:2px;height:2px}
+.mock.tiny.l .url{display:none}
+.mock.tiny.l .side{padding:3px}
+.mock.tiny.l .main{padding:4px 5px}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media(max-width:940px){
+  .cat{grid-template-columns:minmax(0,1fr);gap:0}
+  .cat-hd{position:static;margin:0 0 16px}
+  .rows{max-width:none}
+  .art-grid{grid-template-columns:minmax(0,1fr);gap:0}
+  .spine{position:static;max-height:none;overflow:visible;margin:0 0 30px;
+    padding:16px 0 18px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .spine ol{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
+  .spine ol::-webkit-scrollbar{display:none}
+  .spine li{margin:0}
+  .spine a{flex-direction:column;gap:6px;width:72px;text-align:center;padding:5px}
+  .spine .idx{display:none}
+  .spine .lbl{font-size:10.5px;line-height:1.25;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .step.is-portrait .stack{flex-direction:column;gap:20px;margin-left:0}
+  .step.is-portrait figure{width:100%;max-width:288px}
+  .step .prose,.step.is-landscape figure{margin-left:0}
+}
+@media(max-width:620px){
+  .band-in{padding:22px 20px 46px}
+  .band.compact .band-in{padding:18px 20px 20px}
+  .band.compact .srch{margin-left:0;max-width:none;flex-basis:100%}
+  .mast .glyph{width:40px;height:40px;font-size:19px}
+  .mast .nm{font-size:21px}
+  .band h1{margin-top:34px}
+  .shell,.art-wrap,.states{padding-left:20px;padding-right:20px}
+  .step .prose{font-size:16.5px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== HARNESS ===================== -->
+<div class="harness">
+  <b>Quink reader — v2</b>
+  <div class="sep"></div>
+  <span class="hint">Brand</span>
+  <div class="sws" id="sw">
+    <button style="background:#0E5C6B" data-c="#0E5C6B" aria-pressed="true" aria-label="Teal"></button>
+    <button style="background:#4338CA" data-c="#4338CA" aria-pressed="false" aria-label="Indigo"></button>
+    <button style="background:#B4341F" data-c="#B4341F" aria-pressed="false" aria-label="Rust"></button>
+    <button style="background:#1F7A3D" data-c="#1F7A3D" aria-pressed="false" aria-label="Green"></button>
+    <button style="background:#B0248C" data-c="#B0248C" aria-pressed="false" aria-label="Magenta"></button>
+    <button style="background:#C2820A" data-c="#C2820A" aria-pressed="false" aria-label="Amber"></button>
+    <button style="background:#2B2F38" data-c="#2B2F38" aria-pressed="false" aria-label="Slate"></button>
+  </div>
+  <div class="sep"></div>
+  <span class="hint">Header</span>
+  <div class="segs" id="hd">
+    <button data-h="solid" aria-pressed="true">Solid</button>
+    <button data-h="ink" aria-pressed="false">Ink</button>
+    <button data-h="tint" aria-pressed="false">Tint</button>
+    <button data-h="image" aria-pressed="false">Image</button>
+  </div>
+  <span class="hint">Try Slate — that's the case that turned grey.</span>
+</div>
+
+<!-- ===================== 1. HOME ===================== -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">01 — <span>Home</span></p>
+  <p>One band, not two. The logo and name live <strong>inside</strong> the header surface at 46px and 25px, so the customer's identity is the first thing on the page instead of chrome above it. Four header treatments, all derived from the one brand colour — <strong>Solid is the default because it can't turn grey</strong>. The old 7% tint produced flat grey for any desaturated brand; Tint is now 13% and is the option, not the default. Category headings sit in a sticky left rail so rows stop stretching to 1600px.</p>
+</div></div>
+
+<div class="reader" data-header="solid">
+  <header class="band"><div class="band-in">
+    <a class="mast" href="#"><span class="glyph">M</span><span class="nm">Memory</span></a>
+    <h1>How can we help?</h1>
+    <p class="sub">Guides for setting up your library, sharing collections, and getting answers fast.</p>
+    <div class="srch">
+      <svg class="mag" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input placeholder="Search for articles…" aria-label="Search" value="playlist">
+      <div class="drop">
+        <p class="cap">3 results</p>
+        <a href="#"><p class="t">Create and fill your Spotify playlist</p><p class="s">…start a new <mark>playlist</mark> and add your favourite tracks in a few taps…</p></a>
+        <a href="#"><p class="t">Share a collection</p><p class="s">…anyone with the link can view the <mark>playlist</mark> without an account…</p></a>
+        <a href="#"><p class="t">Import from another service</p><p class="s">…bring an existing <mark>playlist</mark> across without losing track order…</p></a>
+      </div>
+    </div>
+  </div></header>
+
+  <div class="shell">
+    <section class="cat">
+      <div class="cat-hd"><h2>Getting started</h2><span class="n">3 articles</span></div>
+      <div class="rows">
+        <a class="row" href="#"><p class="t">Create and fill your Spotify playlist</p><p class="d">Start a new playlist and add your favourite tracks.</p><span class="meta">Updated 6 days ago</span><span class="arw">→</span></a>
+        <a class="row" href="#"><p class="t">Invite your team</p><p class="d">Add teammates and set what each of them can do.</p><span class="meta">Updated 6 days ago</span><span class="arw">→</span></a>
+        <a class="row" href="#"><p class="t">Log in to Memory</p><p class="d">Getting into your account, and turning on two-factor sign-in.</p><span class="meta">Updated 3 days ago</span><span class="arw">→</span></a>
+      </div>
+    </section>
+
+    <section class="cat">
+      <div class="cat-hd"><h2>Collections</h2><span class="n">2 articles</span></div>
+      <div class="rows">
+        <a class="row" href="#"><p class="t">Share a collection</p><p class="d">Send a read-only link without giving away a seat.</p><span class="meta">Updated 5 days ago</span><span class="arw">→</span></a>
+        <a class="row" href="#"><p class="t">Import from another service</p><p class="d">Bring an existing library across without losing order.</p><span class="meta">Updated 2 weeks ago</span><span class="arw">→</span></a>
+      </div>
+    </section>
+
+    <section class="cat">
+      <div class="cat-hd"><h2>Billing</h2><span class="n">1 article</span></div>
+      <div class="rows">
+        <a class="row" href="#"><p class="t">Update your payment method</p><p class="d">Change the card on file and download past invoices.</p><span class="meta">Updated 4 days ago</span><span class="arw">→</span></a>
+      </div>
+    </section>
+  </div>
+
+  <footer class="ft"><div class="ft-in">
+    <span>© 2026 Memory</span>
+    <a href="https://quink.online" target="_blank" rel="noopener">Made with <b>Quink</b></a>
+  </div></footer>
+</div>
+
+<!-- ===================== 2. ARTICLE ===================== -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">02 — <span>Article</span></p>
+  <p>The band goes compact — masthead and search only, so the customer's brand is still present on every view without repeating the hero. The serif is gone: it read as a font change rather than a voice, and it's the exact pairing that reads as machine-made. Editorial now comes from scale, measure, mono metadata and hairlines. <strong>The spine is the signature</strong> — spend the boldness there and nowhere else.</p>
+</div></div>
+
+<div class="reader" data-header="solid">
+  <header class="band compact"><div class="band-in">
+    <a class="mast" href="#"><span class="glyph">M</span><span class="nm">Memory</span></a>
+    <div class="srch">
+      <svg class="mag" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input placeholder="Search for articles…" aria-label="Search">
+    </div>
+  </div></header>
+
+  <div class="art-wrap"><div class="art-grid">
+    <nav class="spine" aria-label="Steps in this article">
+      <p class="cap">Steps</p>
+      <ol>
+        <li><a href="#s1" aria-current="true"><span class="idx">1</span>
+          <span class="thumb"><span class="mock p tiny"><span class="lg"></span><span class="ln"></span><span class="ln" style="width:70%"></span><span class="btn"></span></span></span>
+          <span class="lbl">Open the sign-in page</span></a></li>
+        <li><a href="#s2"><span class="idx">2</span>
+          <span class="thumb"><span class="mock p tiny"><span class="lg"></span><span class="ln"></span><span class="ln" style="width:80%"></span><span class="ln" style="width:55%"></span><span class="btn"></span></span></span>
+          <span class="lbl">Enter your credentials</span></a></li>
+        <li><a href="#s3"><span class="idx">3</span>
+          <span class="thumb wide"><span class="mock l tiny"><span class="bar"><span class="dot"></span><span class="dot"></span></span><span class="cnt"><span class="side"></span><span class="main"><span class="ln a"></span><span class="ln"></span><span class="ln" style="width:60%"></span></span></span></span></span>
+          <span class="lbl">Land on your library</span></a></li>
+        <li><a href="#s4"><span class="idx">4</span>
+          <span class="thumb wide"><span class="mock l tiny"><span class="bar"><span class="dot"></span><span class="dot"></span></span><span class="cnt"><span class="side"></span><span class="main"><span class="ln"></span><span class="ln a"></span><span class="ln" style="width:44%"></span></span></span></span></span>
+          <span class="lbl">Turn on two-factor sign-in</span></a></li>
+      </ol>
+    </nav>
+
+    <article class="art">
+      <nav class="crumb"><a href="#">Help center</a><span class="sl">/</span><a href="#">Getting started</a><span class="sl">/</span><span class="cur">Log in to Memory</span></nav>
+      <h1>Log in to Memory</h1>
+      <p class="standfirst">Getting into your account for the first time, and turning on two-factor sign-in while you're there.</p>
+      <div class="art-meta"><span>4 steps</span><span>2 min read</span><span>Updated 3 days ago</span></div>
+      <div class="art-rule"></div>
+
+      <section class="step is-portrait" id="s1">
+        <div class="step-hd"><span class="step-num">01</span><h3>Open the sign-in page</h3></div>
+        <div class="stack">
+          <div class="prose">
+            <p>Go to <b>memory.app/login</b> on your phone or laptop. If your team uses a custom address, it's the link in your invitation email.</p>
+            <p>You'll know you're in the right place when you see the logo above a <b>Welcome back</b> heading.</p>
+          </div>
+          <figure><div class="frame phone"><div class="glass"><div class="mock p">
+            <div class="lg">✽</div><p class="wt">Welcome back</p>
+            <p class="fl">Email</p><div class="fi">Enter your email</div>
+            <p class="fl">Password</p><div class="fi">Enter your password</div>
+            <div class="btn">Log in</div><p class="fine">Privacy policy</p>
+          </div></div></div></figure>
+        </div>
+      </section>
+
+      <section class="step is-portrait" id="s2">
+        <div class="step-hd"><span class="step-num">02</span><h3>Enter your credentials</h3></div>
+        <div class="stack">
+          <div class="prose">
+            <p>Tap the <b>Email</b> field and type the address your invitation was sent to. Then tap <b>Password</b> and enter the password you set.</p>
+            <p>If you haven't set one yet, use <b>Forgot password?</b> to have a link sent to you. Then press <kbd>Log in</kbd>.</p>
+          </div>
+          <figure><div class="frame phone"><div class="glass"><div class="mock p">
+            <div class="lg">✽</div><p class="wt">Welcome back</p>
+            <p class="fl">Email</p><div class="fi filled">you@company.com</div>
+            <p class="fl">Password</p><div class="fi filled">••••••••••</div>
+            <div class="btn">Log in</div><p class="fine">Privacy policy</p>
+          </div></div></div></figure>
+        </div>
+      </section>
+
+      <section class="step is-landscape" id="s3">
+        <div class="step-hd"><span class="step-num">03</span><h3>Land on your library</h3></div>
+        <div class="prose"><p>Memory opens on <b>All collections</b>. Anything your team has already saved is listed here; a brand-new account shows an empty list and a <b>New collection</b> button.</p></div>
+        <figure><div class="frame"><div class="mock l">
+          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url"></span></div>
+          <div class="cnt"><div class="side"><div class="ln" style="width:80%"></div><div class="ln" style="width:62%"></div><div class="ln" style="width:71%"></div><div class="ln" style="width:50%"></div></div>
+          <div class="main"><div class="ln a"></div><div class="ln" style="width:88%"></div><div class="ln" style="width:74%"></div><div class="ln" style="width:81%"></div><div class="cta"></div></div></div>
+        </div></div></figure>
+      </section>
+
+      <section class="step is-landscape" id="s4">
+        <div class="step-hd"><span class="step-num">04</span><h3>Turn on two-factor sign-in</h3></div>
+        <div class="prose"><p>Open <b>Settings → Security</b> and switch on <b>Two-factor authentication</b>. Memory shows a QR code — scan it with your authenticator app and enter the six-digit code to confirm.</p></div>
+        <figure><div class="frame"><div class="mock l">
+          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url"></span></div>
+          <div class="cnt"><div class="side"><div class="ln" style="width:66%"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:55%"></div></div>
+          <div class="main"><div class="ln" style="width:52%"></div><div class="ln a"></div><div class="ln" style="width:69%"></div><div class="cta"></div></div></div>
+        </div></div></figure>
+      </section>
+
+      <div class="fb" id="fb">
+        <p class="q">Did this answer your question?</p>
+        <p class="why">Your answer goes to the Memory team.</p>
+        <div class="btns"><button data-fb="y">Yes</button><button data-fb="n">No</button></div>
+        <div class="miss" hidden id="miss"><input placeholder="What were you looking for?" aria-label="What were you looking for?"><button>Send</button></div>
+      </div>
+
+      <div class="rel">
+        <p class="cap">Next in Getting started</p>
+        <div class="rows">
+          <a class="row" href="#"><p class="t">Invite your team</p><p class="d">Add teammates and set what each of them can do.</p><span class="meta">Updated 6 days ago</span><span class="arw">→</span></a>
+          <a class="row" href="#"><p class="t">Share a collection</p><p class="d">Send a read-only link without giving away a seat.</p><span class="meta">Updated 5 days ago</span><span class="arw">→</span></a>
+        </div>
+      </div>
+    </article>
+  </div></div>
+
+  <footer class="ft"><div class="ft-in">
+    <span>© 2026 Memory</span>
+    <a href="https://quink.online" target="_blank" rel="noopener">Made with <b>Quink</b></a>
+  </div></footer>
+</div>
+
+<!-- ===================== 3. STATES ===================== -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">03 — <span>States</span></p>
+  <p>Static skeleton, no shimmer — Claude Code was right to flag that against the motion budget.</p>
+</div></div>
+
+<div class="reader"><div class="states">
+  <div class="state"><div class="tag">Loading</div><div class="skel">
+    <div class="sk" style="height:13px;width:38%;margin-bottom:18px"></div>
+    <div class="sk" style="height:28px;width:74%;margin-bottom:11px"></div>
+    <div class="sk" style="height:28px;width:52%;margin-bottom:24px"></div>
+    <div class="sk" style="height:11px;width:100%;margin-bottom:9px"></div>
+    <div class="sk" style="height:11px;width:93%;margin-bottom:9px"></div>
+    <div class="sk" style="height:11px;width:66%"></div>
+  </div></div>
+  <div class="state"><div class="tag">Not found</div><div class="in">
+    <div class="icon"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></div>
+    <h4>We couldn't find that page</h4>
+    <p>It may have been renamed or unpublished. Search for it, or start from the help center home.</p>
+    <div class="act"><button>Go to help center</button></div>
+  </div></div>
+  <div class="state"><div class="tag">Help center offline</div><div class="in">
+    <div class="icon"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.5M12 16.2v.1"/></svg></div>
+    <h4>This help center is temporarily unavailable</h4>
+    <p>Memory has paused it. Get in touch with them directly and they'll be able to help.</p>
+  </div></div>
+  <div class="state"><div class="tag">No articles yet</div><div class="in">
+    <div class="icon"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 4h14v16H5z"/><path d="M9 9h6M9 13h6"/></svg></div>
+    <h4>Nothing published yet</h4>
+    <p>The Memory team is still writing. Check back soon, or contact them in the meantime.</p>
+  </div></div>
+</div></div>
+
+<script>
+(function(){
+  var sw = document.getElementById('sw');
+  sw.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    document.documentElement.style.setProperty('--brand', b.dataset.c);
+    sw.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', String(x===b)); });
+  });
+
+  var hd = document.getElementById('hd');
+  hd.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('.reader').forEach(function(r){
+      if(r.hasAttribute('data-header')) r.setAttribute('data-header', b.dataset.h);
+    });
+    hd.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', String(x===b)); });
+  });
+
+  var fb = document.getElementById('fb');
+  fb.addEventListener('click', function(e){
+    var b = e.target.closest('button[data-fb]'); if(!b) return;
+    if(b.dataset.fb === 'n'){
+      document.getElementById('miss').hidden = false;
+      fb.querySelector('.q').textContent = 'What was missing?';
+      fb.querySelector('.why').textContent = 'This goes to the Memory team so they can fill the gap.';
+      fb.querySelector('.btns').hidden = true;
+      document.querySelector('#miss input').focus();
+    } else {
+      fb.innerHTML = '<p class="done"><b>Thanks.</b> That tells the Memory team this one is working.</p>';
+    }
+  });
+
+  var links = [].slice.call(document.querySelectorAll('.spine a'));
+  var steps = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if(!en.isIntersecting) return;
+      var i = steps.indexOf(en.target); if(i < 0) return;
+      links.forEach(function(a,j){ a.setAttribute('aria-current', String(j===i)); });
+    });
+  }, {rootMargin:'-12% 0px -70% 0px'});
+  steps.forEach(function(s){ if(s) io.observe(s); });
+})();
+</script>
+</body>
+</html>

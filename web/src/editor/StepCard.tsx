@@ -7,11 +7,14 @@ import FramePicker from './FramePicker'
 import type { StepRow } from '../lib/types'
 
 // The step block — the unit of everything (CLAUDE.md §9): { heading, body, image }.
-// Body is TipTap, never a textarea. Heading is a title field (a single-line input).
+// Body is TipTap, never a textarea — editability is half the product, and the design file's
+// <textarea> is comp shorthand, not a spec (see notes).
 //
-// Structural vocabulary is exactly three gestures (CLAUDE.md §9): reorder (drag handle),
-// merge (fuse into the step above), split (cleave the body at the cursor). No duplicate,
-// no delete — a good editor is defined by what it refuses.
+// The control cluster is the four gestures ux-spec §4 actually lists: merge up, split,
+// duplicate, delete. Split and Insert are deliberately different jobs and their labels say
+// so — Split means "this step covers two things" and carries the text below the cursor into
+// a new step; Insert (the hairline between cards, in Editor) means "I missed a step" and
+// makes an empty one.
 
 type Props = {
   step: StepRow
@@ -24,10 +27,12 @@ type Props = {
   onBody: (html: string) => void
   onMergeUp: () => void
   onSplit: (beforeHtml: string, afterHtml: string) => void
+  onDuplicate: () => void
+  onDelete: () => void
   onPickFrame: (newPath: string) => void
   onRemoveFrame: () => void
+  onError: (msg: string) => void
   hasVideo: boolean
-  // Native drag-reorder wiring (from the parent).
   onDragStart: () => void
   onDragEnterCard: () => void
   onDrop: () => void
@@ -44,14 +49,18 @@ export default function StepCard({
   onBody,
   onMergeUp,
   onSplit,
+  onDuplicate,
+  onDelete,
   onPickFrame,
   onRemoveFrame,
+  onError,
   hasVideo,
   onDragStart,
   onDragEnterCard,
   onDrop,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -83,17 +92,64 @@ export default function StepCard({
 
   return (
     <article
-      className="step-card"
+      className="ed-card"
       id={`step-${step.step_number}`}
       data-index={index}
       onDragEnter={onDragEnterCard}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
     >
-      <div className="step-head">
+      {confirmDelete ? (
+        <div className="ed-tools ed-tools-confirm">
+          <span>Delete this step?</span>
+          <button
+            className="row-confirm"
+            onClick={() => {
+              setConfirmDelete(false)
+              onDelete()
+            }}
+          >
+            Delete
+          </button>
+          <button className="row-cancel" onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="ed-tools">
+          {!isFirst && (
+            <button type="button" onClick={onMergeUp} title="Join this step onto the one above">
+              Merge up
+            </button>
+          )}
+          {/* preventDefault on mousedown keeps focus in the editor, so splitHere reads
+              the real caret position instead of a blurred selection collapsing to 0. */}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={splitHere}
+            title="Cut this step in two at the cursor"
+          >
+            Split here
+          </button>
+          <button type="button" onClick={onDuplicate} title="Make a copy of this step">
+            Duplicate
+          </button>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => setConfirmDelete(true)}
+            title="Delete this step"
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
+      <div className="ed-card-hd">
         {/* Only the handle is draggable, so text selection inside the body still works. */}
         <span
-          className="drag-handle"
+          className="ed-grip"
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDrop}
@@ -102,57 +158,43 @@ export default function StepCard({
         >
           ⠿
         </span>
-        <span className="step-num">{step.step_number}</span>
+        <span className="ed-num" aria-hidden>
+          {String(step.step_number).padStart(2, '0')}
+        </span>
         <input
-          className="step-heading"
+          className="ed-h-in"
           value={step.heading}
           placeholder="What's the first thing they do?"
           onChange={(e) => onHeading(e.target.value)}
+          aria-label={`Step ${step.step_number} heading`}
         />
-
-        {/* Control cluster — hover only. Restraint is the design for this buyer. */}
-        <div className="step-controls">
-          {!isFirst && (
-            <button type="button" className="ctrl" onClick={onMergeUp} title="Merge into step above">
-              ⤒ Merge up
-            </button>
-          )}
-          {/* preventDefault on mousedown keeps focus in the editor, so splitHere reads
-              the real caret position instead of a blurred selection collapsing to 0. */}
-          <button
-            type="button"
-            className="ctrl"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={splitHere}
-            title="Split at cursor"
-          >
-            ⤢ Split
-          </button>
-        </div>
       </div>
 
-      <EditorContent editor={editor} className="step-body" />
+      <EditorContent editor={editor} className="ed-prose" />
 
-      {/* Not every step needs an image. With one: the picture + a hover affordance to
-          change it. Without: a quiet "Add image" — no big empty placeholder box. */}
       {screenshotUrl ? (
-        <div className="step-shot">
-          <img src={screenshotUrl} alt={`Step ${step.step_number}`} />
-          {step.is_edited && <span className="edited-badge">✓ edited</span>}
-          <button
-            className="wrong-frame"
-            type="button"
-            onClick={() => setPickerOpen((o) => !o)}
-          >
-            {/* "Wrong frame?" only makes sense for a video-drafted step; a manual step
-                just changes its image. */}
-            {hasVideo ? '⟳ Wrong frame?' : '⟳ Change image'}
-          </button>
+        <div className="ed-shotwrap">
+          <div className="ed-shot">
+            <img src={screenshotUrl} alt={`Step ${step.step_number}`} />
+            <div className="ed-shot-ov">
+              <button type="button" onClick={() => setPickerOpen((o) => !o)}>
+                {hasVideo ? 'Change frame' : 'Change image'}
+              </button>
+            </div>
+          </div>
+          {step.is_edited && (
+            <p className="ed-edited">✓ Edited — a re-run won’t overwrite this</p>
+          )}
         </div>
       ) : (
-        <button className="add-image" type="button" onClick={() => setPickerOpen((o) => !o)}>
-          + Add image
-        </button>
+        // Not a quiet "+ Add image": a step with no screenshot is the visible face of a
+        // frames_partial degrade, and the reader navigates by pictures. It says why.
+        <div className="ed-noshot">
+          <p>No screenshot for this step. Readers follow steps by what the screen looked like.</p>
+          <button type="button" onClick={() => setPickerOpen((o) => !o)}>
+            {hasVideo ? 'Pick a frame' : 'Add an image'}
+          </button>
+        </div>
       )}
 
       {pickerOpen && (
@@ -160,7 +202,6 @@ export default function StepCard({
           kbId={kbId}
           articleId={articleId}
           stepNumber={step.step_number}
-          currentUrl={screenshotUrl}
           currentPath={step.screenshot_url}
           onPick={(path) => {
             onPickFrame(path)
@@ -171,6 +212,7 @@ export default function StepCard({
             setPickerOpen(false)
           }}
           onClose={() => setPickerOpen(false)}
+          onError={onError}
         />
       )}
     </article>

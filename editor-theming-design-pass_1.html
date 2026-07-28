@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quink — Editor &amp; Theming Design Pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300..800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#0E5C6B;          /* Quink's own brand. The app never wears the customer's colour. */
+  --cust:#4338CA;           /* customer brand — preview panes only */
+
+  --paper:#FBF9F5; --surface:#FFFFFF; --subtle:#F3F0EA;
+  --border:#E7E2D9; --rule:#DBD4C7; --muted:#857E71;
+  --ink-soft:#4A463E; --ink:#1C1A16;
+
+  --tint:  color-mix(in oklab, var(--brand) 11%, var(--paper));
+  --edge:  color-mix(in oklab, var(--brand) 30%, var(--border));
+  --press: color-mix(in oklab, var(--brand) 82%, #17150F);
+  --ring:  color-mix(in oklab, var(--brand) 18%, transparent);
+
+  --ok:#2F7D57; --ok-tint:color-mix(in oklab,#2F7D57 11%,var(--paper));
+  --warn:#B4791F; --warn-tint:color-mix(in oklab,#B4791F 13%,var(--paper));
+  --bad:#B23B3B; --bad-tint:color-mix(in oklab,#B23B3B 10%,var(--paper));
+
+  --sans:'Hanken Grotesk',ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+  --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+  --sh-1:0 1px 2px rgba(28,26,22,.05);
+  --sh-2:0 2px 4px rgba(28,26,22,.04),0 8px 20px rgba(28,26,22,.06);
+  --sh-3:0 4px 10px rgba(28,26,22,.06),0 20px 48px rgba(28,26,22,.12);
+  --ease:cubic-bezier(.2,.7,.3,1);
+}
+*{box-sizing:border-box}
+body{margin:0;background:#141310;font-family:var(--sans);color:var(--ink)}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:inherit}
+img{max-width:100%;display:block}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---------- plates ---------- */
+.plate{background:var(--paper);border-top:1px solid #2A2721}
+.plate-in{max-width:1240px;margin:0 auto;padding:48px 30px 26px}
+.eyebrow{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.eyebrow span{color:var(--ink);font-weight:600}
+.plate-in p.d{max-width:78ch;font-size:14px;line-height:1.62;color:var(--ink-soft);margin:11px 0 0}
+.plate-in p.d strong{color:var(--ink);font-weight:650}
+.stage{background:var(--paper);padding:0 30px 54px}
+.stage-in{max-width:1240px;margin:0 auto}
+
+/* ---------- shared app chrome ---------- */
+.app{background:var(--paper);border:1px solid var(--border);border-radius:var(--r-lg);
+  overflow:hidden;box-shadow:var(--sh-2)}
+.bar{display:flex;align-items:center;gap:12px;padding:11px 16px;background:var(--surface);
+  border-bottom:1px solid var(--border);flex-wrap:wrap}
+.back{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border:1px solid var(--border);
+  border-radius:var(--r-pill);background:var(--paper);font-size:13.5px;font-weight:550;text-decoration:none}
+.back:hover{border-color:var(--edge);background:var(--tint)}
+.spacer{flex:1}
+
+.seg{display:flex;border:1px solid var(--border);border-radius:var(--r-pill);overflow:hidden;background:var(--paper)}
+.seg button{padding:6px 15px;border:0;background:transparent;font-size:13.5px;font-weight:550;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--brand);color:#fff;font-weight:650}
+.seg button:not([aria-pressed="true"]):hover{color:var(--ink)}
+
+.icbtn{width:32px;height:32px;border:1px solid var(--border);border-radius:9px;background:var(--paper);
+  display:grid;place-items:center;color:var(--ink-soft)}
+.icbtn:hover{border-color:var(--edge);background:var(--tint);color:var(--brand)}
+.icbtn[disabled]{opacity:.34;cursor:default}
+.icbtn[disabled]:hover{border-color:var(--border);background:var(--paper);color:var(--ink-soft)}
+
+/* ---------- status pill: one place for draft/published/saving/failed ---------- */
+.status{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 10px;
+  border-radius:var(--r-pill);font-size:12.5px;font-weight:600;letter-spacing:-.005em;
+  border:1px solid var(--border);background:var(--paper);color:var(--ink-soft)}
+.status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.status.live{background:var(--ok-tint);border-color:color-mix(in oklab,var(--ok) 26%,var(--border));color:#245F42}
+.status.live .dot{background:var(--ok)}
+.status.dirty{background:var(--warn-tint);border-color:color-mix(in oklab,var(--warn) 28%,var(--border));color:#8A5C13}
+.status.dirty .dot{background:var(--warn)}
+.status.err{background:var(--bad-tint);border-color:color-mix(in oklab,var(--bad) 28%,var(--border));color:#8E2F2F}
+.status.err .dot{background:var(--bad)}
+.status .sub{font-weight:450;color:inherit;opacity:.72}
+
+/* ---------- publish cluster ---------- */
+.pub{position:relative;display:flex}
+.pub .go{padding:8px 17px;border:1px solid var(--brand);background:var(--brand);color:#fff;
+  font-size:14px;font-weight:650;border-radius:var(--r-pill) 0 0 var(--r-pill);letter-spacing:-.01em}
+.pub .go:hover{background:var(--press);border-color:var(--press)}
+.pub .go.quiet{background:var(--paper);color:var(--ink);border-color:var(--border)}
+.pub .go.quiet:hover{background:var(--tint);border-color:var(--edge)}
+.pub .caret{padding:8px 11px;border:1px solid var(--brand);border-left-color:rgba(255,255,255,.28);
+  background:var(--brand);color:#fff;border-radius:0 var(--r-pill) var(--r-pill) 0;display:grid;place-items:center}
+.pub .caret:hover{background:var(--press);border-color:var(--press)}
+.pub .caret.quiet{background:var(--paper);color:var(--ink-soft);border-color:var(--border);border-left-color:var(--border)}
+.pub .caret.quiet:hover{background:var(--tint);border-color:var(--edge)}
+
+.menu{position:absolute;top:calc(100% + 8px);right:0;width:290px;background:var(--surface);
+  border:1px solid var(--border);border-radius:14px;box-shadow:var(--sh-3);padding:6px;z-index:20}
+.menu .grp{padding:9px 11px 5px;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.menu .it{display:flex;gap:11px;align-items:flex-start;width:100%;padding:9px 11px;border:0;
+  background:transparent;border-radius:9px;text-align:left;font-size:14px;font-weight:550}
+.menu .it:hover{background:var(--tint)}
+.menu .it .ic{color:var(--muted);flex-shrink:0;margin-top:1px}
+.menu .it small{display:block;font-weight:400;font-size:12.5px;color:var(--muted);
+  line-height:1.4;margin-top:2px}
+.menu .it[disabled]{opacity:.4;cursor:default}
+.menu .it[disabled]:hover{background:transparent}
+.menu .it.danger{color:var(--bad)}
+.menu .it.danger .ic{color:var(--bad)}
+.menu .it.danger:hover{background:var(--bad-tint)}
+.menu hr{border:0;border-top:1px solid var(--border);margin:6px 8px}
+.menu .sw{margin-left:auto;width:34px;height:20px;border-radius:var(--r-pill);background:var(--border);
+  position:relative;flex-shrink:0;margin-top:1px}
+.menu .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+  border-radius:50%;background:#fff;box-shadow:var(--sh-1)}
+.menu .sw.on{background:var(--brand)}
+.menu .sw.on::after{left:16px}
+
+/* ---------- editor body ---------- */
+.edit{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:640px}
+.rail{border-right:1px solid var(--border);background:var(--surface);padding:18px 12px 24px}
+.rail .cap{margin:0 0 12px 6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.rail ol{list-style:none;margin:0;padding:0}
+.rail li{margin:0 0 3px}
+.rail .item{display:flex;gap:10px;align-items:center;padding:5px 7px 5px 5px;border-radius:10px;
+  width:100%;border:0;background:transparent;text-align:left}
+.rail .item:hover{background:var(--subtle)}
+.rail .item[aria-current="true"]{background:var(--tint)}
+.rail .idx{font-family:var(--mono);font-size:10px;color:var(--muted);width:11px;text-align:right;flex-shrink:0}
+.rail .item[aria-current="true"] .idx{color:var(--brand);font-weight:700}
+.rail .th{width:30px;height:39px;border-radius:5px;border:1px solid var(--border);background:var(--paper);
+  overflow:hidden;flex-shrink:0}
+.rail .th.wide{width:40px;height:26px}
+.rail .th.none{display:grid;place-items:center;font-family:var(--mono);font-size:9px;color:var(--muted);
+  border-style:dashed}
+.rail .item[aria-current="true"] .th{border-color:var(--brand);box-shadow:0 0 0 2.5px var(--ring)}
+.rail .lb{font-size:12px;line-height:1.3;color:var(--muted);font-weight:500}
+.rail .item[aria-current="true"] .lb{color:var(--ink);font-weight:650}
+.rail .add{margin:12px 0 0;width:100%;padding:8px;border:1px dashed var(--border);border-radius:10px;
+  background:transparent;font-size:12.5px;font-weight:600;color:var(--muted)}
+.rail .add:hover{border-color:var(--edge);color:var(--brand);background:var(--tint)}
+
+.canvas{padding:34px 40px 60px;overflow:auto}
+.canvas-in{max-width:720px}
+.t-in{width:100%;border:0;background:transparent;font-family:inherit;padding:0;color:var(--ink);
+  font-size:34px;font-weight:700;letter-spacing:-.04em;line-height:1.08}
+.t-in::placeholder{color:color-mix(in oklab,var(--muted) 55%,var(--paper))}
+.s-in{width:100%;border:0;background:transparent;font-family:inherit;padding:0;margin:12px 0 0;
+  color:var(--ink-soft);font-size:17px;line-height:1.5}
+.s-in::placeholder{color:color-mix(in oklab,var(--muted) 55%,var(--paper))}
+.t-in:focus,.s-in:focus{outline:none}
+.divider{height:1px;background:var(--rule);margin:26px 0 0}
+
+.card{position:relative;padding:26px 0 0}
+.card-hd{display:flex;gap:14px;align-items:flex-start}
+.grip{width:20px;padding-top:9px;color:var(--border);flex-shrink:0;cursor:grab;font-size:14px;
+  transition:color .15s var(--ease)}
+.card:hover .grip{color:var(--muted)}
+.num{flex-shrink:0;width:20px;padding-top:5px;border-top:2px solid var(--brand);
+  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--brand)}
+.h-in{flex:1;border:0;background:transparent;font-family:inherit;padding:0;color:var(--ink);
+  font-size:21px;font-weight:650;letter-spacing:-.025em;line-height:1.3;min-width:0}
+.h-in:focus{outline:none}
+.b-in{margin:11px 0 0 54px;border:0;background:transparent;font-family:inherit;padding:0;width:calc(100% - 54px);
+  color:var(--ink-soft);font-size:16px;line-height:1.68;resize:none}
+.b-in:focus{outline:none}
+.h-in::placeholder,.b-in::placeholder{color:color-mix(in oklab,var(--muted) 52%,var(--paper))}
+
+.tools{position:absolute;top:22px;right:0;display:flex;gap:4px;opacity:0;
+  transition:opacity .15s var(--ease)}
+.card:hover .tools,.card:focus-within .tools{opacity:1}
+.tools button{padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);
+  font-size:12px;font-weight:600;color:var(--ink-soft);box-shadow:var(--sh-1)}
+.tools button:hover{border-color:var(--edge);color:var(--brand);background:var(--tint)}
+.tools button.danger:hover{border-color:color-mix(in oklab,var(--bad) 40%,var(--border));
+  color:var(--bad);background:var(--bad-tint)}
+
+.shotwrap{margin:16px 0 0 54px}
+.shot{position:relative;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;
+  background:var(--subtle);width:max-content;max-width:100%}
+.shot.portrait{width:186px}
+.shot.landscape{width:100%;max-width:520px}
+.shot .ov{position:absolute;right:8px;bottom:8px;display:flex;gap:5px;opacity:0;
+  transition:opacity .15s var(--ease)}
+.shotwrap:hover .ov{opacity:1}
+.shot .ov button{padding:5px 10px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:rgba(255,255,255,.94);font-size:11.5px;font-weight:650;box-shadow:var(--sh-1)}
+.shot .ov button:hover{background:#fff;color:var(--brand);border-color:var(--edge)}
+.edited{display:inline-flex;align-items:center;gap:5px;margin:8px 0 0;font-family:var(--mono);
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ok)}
+.noshot{margin:16px 0 0 54px;padding:13px 16px;border:1px dashed var(--border);border-radius:var(--r-md);
+  display:flex;align-items:center;gap:12px;background:var(--surface);max-width:420px}
+.noshot p{margin:0;font-size:13px;color:var(--muted);line-height:1.45}
+.noshot button{margin-left:auto;padding:6px 13px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--paper);font-size:12.5px;font-weight:600;white-space:nowrap}
+.noshot button:hover{border-color:var(--edge);color:var(--brand);background:var(--tint)}
+
+/* frame picker */
+/* inline step insertion — hairline between cards, quiet until hovered */
+.ins{position:relative;height:26px;margin:0 0 -13px;display:flex;align-items:center;
+  justify-content:center;opacity:0;transition:opacity .14s var(--ease)}
+.ins:hover,.ins:focus-within{opacity:1}
+.ins::before{content:"";position:absolute;left:54px;right:0;height:1px;background:var(--edge)}
+.ins button{position:relative;padding:3px 12px;border:1px solid var(--edge);border-radius:var(--r-pill);
+  background:var(--surface);font-size:11.5px;font-weight:650;color:var(--brand);
+  box-shadow:var(--sh-1);white-space:nowrap}
+.ins button:hover{background:var(--tint)}
+
+.addstep{margin:30px 0 0 54px;width:calc(100% - 54px);padding:13px;border:1px dashed var(--border);
+  border-radius:var(--r-md);background:transparent;display:flex;align-items:center;
+  justify-content:center;gap:10px;font-size:14px;font-weight:650;color:var(--muted)}
+.addstep:hover{border-color:var(--edge);color:var(--brand);background:var(--tint)}
+.addstep kbd{font-family:var(--mono);font-size:10.5px;font-weight:500;padding:2px 6px;
+  border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;
+  background:var(--surface);color:var(--muted)}
+
+.picker{margin:12px 0 0 54px;border:1px solid var(--edge);border-radius:var(--r-md);
+  background:var(--surface);box-shadow:var(--sh-1);overflow:hidden;max-width:100%}
+.picker-hd{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);
+  background:var(--tint)}
+.picker-hd .ti{font-size:13px;font-weight:650}
+.picker-hd .alt{margin-left:auto;display:flex;gap:14px}
+.picker-hd .alt button{border:0;background:transparent;font-size:12.5px;font-weight:600;
+  color:var(--brand);padding:0}
+.picker-hd .alt button.danger{color:var(--bad)}
+.strip{display:flex;gap:8px;padding:13px 14px;overflow-x:auto}
+.strip .f{width:52px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;
+  background:var(--paper);position:relative;padding:0}
+.strip .f.tall{height:68px}
+.strip .f:hover{border-color:var(--edge)}
+.strip .f[aria-current="true"]{border-color:var(--brand);box-shadow:0 0 0 2.5px var(--ring)}
+.strip .f .ts{position:absolute;left:0;right:0;bottom:0;background:rgba(28,26,22,.62);color:#fff;
+  font-family:var(--mono);font-size:8px;padding:1px 0;text-align:center}
+
+/* ---------- preview mode ---------- */
+.pv-note{display:flex;align-items:center;gap:9px;padding:9px 16px;background:var(--tint);
+  border-bottom:1px solid var(--border);font-size:12.5px;color:var(--ink-soft)}
+.pv-note b{font-weight:650;color:var(--ink)}
+.pv{padding:0;background:var(--paper);--brand:var(--cust)}
+.pv .band{background:var(--brand);padding:20px 30px;display:flex;align-items:center;gap:14px}
+.pv .band .g{width:36px;height:36px;border-radius:11px;background:#fff;color:var(--cust);
+  display:grid;place-items:center;font-weight:700;font-size:17px}
+.pv .band .n{color:#fff;font-size:19px;font-weight:700;letter-spacing:-.03em}
+.pv .band .out{margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+  padding:6px 14px;border-radius:var(--r-pill);border:1px solid rgba(255,255,255,.32);
+  color:#fff;font-size:13.5px;font-weight:600;text-decoration:none}
+.pv .band .out:hover{background:rgba(255,255,255,.13)}
+.pv .body{padding:34px 40px 44px;max-width:760px}
+.pv h1{margin:0;font-size:34px;font-weight:700;letter-spacing:-.04em;line-height:1.06}
+.pv .sf{margin:14px 0 0;font-size:17.5px;color:var(--ink-soft);line-height:1.55;max-width:46ch}
+.pv .mt{margin:20px 0 0;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--muted)}
+.pv .rule{height:1px;background:var(--rule);margin:20px 0 0}
+.pv .st{padding:28px 0 0;display:flex;gap:14px}
+.pv .st .n2{flex-shrink:0;width:20px;padding-top:4px;border-top:2px solid var(--cust);
+  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--cust)}
+.pv .st h3{margin:0 0 9px;font-size:20px;font-weight:650;letter-spacing:-.025em}
+.pv .st p{margin:0;font-size:16px;line-height:1.7;color:var(--ink-soft);max-width:56ch}
+
+/* ---------- success sheet ---------- */
+.sheet{max-width:520px;margin:0 auto;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-lg);box-shadow:var(--sh-3);overflow:hidden}
+.sheet .top{padding:30px 30px 26px;text-align:center;background:var(--ok-tint);
+  border-bottom:1px solid color-mix(in oklab,var(--ok) 20%,var(--border))}
+.sheet .tick{width:42px;height:42px;border-radius:50%;background:var(--ok);color:#fff;
+  display:grid;place-items:center;margin:0 auto 14px}
+.sheet h3{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-.03em}
+.sheet .top p{margin:0;font-size:14.5px;color:#3D6B52;line-height:1.5}
+.sheet .url{display:flex;align-items:center;gap:10px;margin:20px 30px 0;padding:11px 14px;
+  border:1px solid var(--border);border-radius:var(--r-md);background:var(--paper)}
+.sheet .url code{flex:1;font-family:var(--mono);font-size:12.5px;color:var(--ink-soft);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet .url button{padding:5px 12px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--surface);font-size:12.5px;font-weight:650;white-space:nowrap}
+.sheet .url button:hover{border-color:var(--edge);color:var(--brand)}
+.nudge{margin:18px 30px 0;padding:16px;border:1px solid var(--edge);border-radius:var(--r-md);
+  background:var(--tint);display:flex;gap:14px;align-items:center}
+.nudge .sw2{width:52px;height:52px;border-radius:11px;flex-shrink:0;overflow:hidden;
+  border:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column}
+.nudge .sw2 i{display:block;height:17px;background:var(--cust)}
+.nudge .sw2 b{flex:1;background:var(--surface)}
+.nudge .tx p{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink-soft)}
+.nudge .tx p b{color:var(--ink);font-weight:650;display:block;font-size:14.5px;margin-bottom:2px}
+.nudge a{margin-left:auto;padding:8px 15px;border:1px solid var(--brand);border-radius:var(--r-pill);
+  background:var(--brand);color:#fff;font-size:13.5px;font-weight:650;text-decoration:none;white-space:nowrap}
+.nudge a:hover{background:var(--press)}
+.sheet .foot{padding:18px 30px 24px;text-align:center}
+.sheet .foot button{border:0;background:transparent;font-size:13.5px;font-weight:600;color:var(--muted)}
+.sheet .foot button:hover{color:var(--ink)}
+
+/* ---------- theming ---------- */
+.theme{display:grid;grid-template-columns:360px minmax(0,1fr);min-height:660px}
+.ctrl{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column}
+.ctrl-scroll{flex:1;overflow:auto;padding:24px 26px 26px}
+.ctrl h2{margin:0 0 4px;font-size:19px;font-weight:700;letter-spacing:-.03em}
+.ctrl .lede{margin:0 0 24px;font-size:13.5px;color:var(--muted);line-height:1.5}
+.grp2{padding:20px 0 0;border-top:1px solid var(--border);margin:20px 0 0}
+.grp2:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.grp2 .gt{margin:0 0 14px;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.fld{margin:0 0 15px}
+.fld label{display:block;font-size:13px;font-weight:650;margin:0 0 6px}
+.fld input[type=text]{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--r-sm);
+  font-family:inherit;font-size:14px;background:var(--paper);color:var(--ink)}
+.fld input:focus{outline:none;border-color:var(--edge);box-shadow:0 0 0 3px var(--ring)}
+.fld .hint{margin:6px 0 0;font-size:12px;color:var(--muted);line-height:1.45}
+.fld .hint code{font-family:var(--mono);font-size:11.5px}
+
+.fld .opt{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-weight:500;margin-left:6px}
+.radios{display:flex;flex-direction:column;gap:7px}
+.ra{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);
+  border-radius:var(--r-sm);background:var(--paper);cursor:pointer;font-weight:400}
+.ra:hover{border-color:var(--edge)}
+.ra:has(input:checked){border-color:var(--brand);background:var(--tint);box-shadow:0 0 0 2.5px var(--ring)}
+.ra input{margin:3px 0 0;accent-color:var(--brand);flex-shrink:0}
+.ra span{font-size:12.5px;color:var(--muted);line-height:1.45}
+.ra span b{display:block;font-size:13.5px;font-weight:650;color:var(--ink);margin-bottom:1px}
+.pair{display:flex;flex-direction:column;gap:7px}
+
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tile{padding:0;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;
+  background:var(--surface);text-align:left}
+.tile:hover{border-color:var(--edge)}
+.tile[aria-pressed="true"]{border-color:var(--brand);box-shadow:0 0 0 2.5px var(--ring)}
+.tile .sw3{height:44px;display:flex;align-items:center;padding:0 9px;gap:6px}
+.tile .sw3 i{width:14px;height:14px;border-radius:4px;background:#fff;flex-shrink:0}
+.tile .sw3 u{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.55);text-decoration:none}
+.tile.solid .sw3{background:var(--cust)}
+.tile.ink .sw3{background:color-mix(in oklab,var(--cust) 30%,#17150F)}
+.tile.tint .sw3{background:color-mix(in oklab,var(--cust) 13%,var(--paper))}
+.tile.tint .sw3 i{background:var(--cust)}
+.tile.tint .sw3 u{background:color-mix(in oklab,var(--cust) 30%,var(--paper))}
+.tile.image .sw3{background:
+  radial-gradient(60% 100% at 78% 0%,color-mix(in oklab,var(--cust) 60%,#fff) 0%,transparent 62%),
+  color-mix(in oklab,var(--cust) 30%,#17150F)}
+.tile .nm{display:block;padding:7px 10px 8px;font-size:12.5px;font-weight:650;
+  border-top:1px solid var(--border)}
+
+.drop2{margin:10px 0 0;padding:15px;border:1px dashed var(--border);border-radius:var(--r-md);
+  background:var(--paper);text-align:center}
+.drop2 p{margin:0 0 9px;font-size:12.5px;color:var(--muted);line-height:1.45}
+.drop2 button{padding:7px 15px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--surface);font-size:13px;font-weight:650}
+.drop2 button:hover{border-color:var(--edge);color:var(--brand)}
+
+.dots{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 10px}
+.dots button{width:26px;height:26px;border-radius:8px;border:1px solid rgba(0,0,0,.09);padding:0}
+.dots button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--surface),0 0 0 3.5px var(--ink)}
+.hexrow{display:flex;gap:9px;align-items:center}
+.hexrow .chip{width:38px;height:38px;border-radius:var(--r-sm);border:1px solid var(--border);flex-shrink:0}
+
+.savebar{padding:14px 26px;border-top:1px solid var(--border);background:var(--surface);
+  display:flex;align-items:center;gap:12px}
+.savebar .primary{padding:9px 20px;border:1px solid var(--brand);border-radius:var(--r-pill);
+  background:var(--brand);color:#fff;font-size:14px;font-weight:650}
+.savebar .primary:hover{background:var(--press)}
+.savebar .msg{font-size:12.5px;color:var(--muted)}
+
+.pane{background:var(--subtle);display:flex;flex-direction:column}
+.pane-bar{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--border);
+  background:var(--surface);flex-wrap:wrap}
+.pane-bar .lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted)}
+.pane-body{flex:1;padding:22px;overflow:auto;display:flex;justify-content:center}
+.frame2{background:var(--paper);border:1px solid var(--border);border-radius:var(--r-md);
+  overflow:hidden;width:100%;box-shadow:var(--sh-1)}
+.frame2.mob{max-width:340px}
+.sample{display:flex;align-items:center;gap:8px;padding:8px 18px;background:var(--warn-tint);
+  border-bottom:1px solid color-mix(in oklab,var(--warn) 26%,var(--border));
+  font-size:12.5px;color:#8A5C13}
+.p-band{background:var(--cust);padding:22px 26px 30px}
+.p-band .mast{display:flex;align-items:center;gap:12px}
+.p-band .g{width:38px;height:38px;border-radius:11px;background:#fff;color:var(--cust);
+  display:grid;place-items:center;font-weight:700;font-size:18px}
+.p-band .n{color:#fff;font-size:21px;font-weight:700;letter-spacing:-.03em}
+.p-band .out{margin-left:auto;display:inline-flex;align-items:center;gap:5px;
+  padding:5px 12px;border-radius:var(--r-pill);border:1px solid rgba(255,255,255,.32);
+  color:#fff;font-size:12.5px;font-weight:600;text-decoration:none}
+.p-band h1{margin:26px 0 0;color:#fff;font-size:31px;font-weight:700;letter-spacing:-.04em;line-height:1.05}
+.p-band .sb{margin:11px 0 0;color:rgba(255,255,255,.78);font-size:15px;line-height:1.5;max-width:40ch}
+.p-band .sf2{margin:20px 0 0;padding:11px 16px;border-radius:var(--r-pill);
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);
+  color:rgba(255,255,255,.74);font-size:14px}
+.p-body{padding:26px}
+.p-cat{display:grid;grid-template-columns:150px minmax(0,1fr);gap:0 26px;padding:0 0 20px;
+  margin:0 0 20px;border-bottom:1px solid var(--border)}
+.p-cat:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+.p-cat h2{margin:0;font-size:16px;font-weight:700;letter-spacing:-.025em}
+.p-cat .cnt{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);margin:5px 0 0}
+.p-row{padding:11px 0;border-bottom:1px solid var(--border)}
+.p-row:first-child{border-top:1px solid var(--border)}
+.p-row .t{margin:0 0 3px;font-size:14.5px;font-weight:600;letter-spacing:-.015em}
+.p-row .d{margin:0;font-size:13px;color:var(--ink-soft);line-height:1.45}
+
+/* ---------- small state cards ---------- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}
+.mini{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.mini .tag{padding:8px 14px;border-bottom:1px solid var(--border);background:var(--subtle);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.mini .in{padding:16px 14px}
+.mini .cap{margin:10px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5}
+
+/* mock interiors */
+.mk{background:#fff;height:100%;display:flex;flex-direction:column}
+.mk.p2{padding:14px 11px}
+.mk .lg{width:20px;height:20px;border-radius:6px;background:#E8F0EA;margin:2px auto 8px}
+.mk .l{height:4px;border-radius:3px;background:#EAEEEB;margin:0 0 5px}
+.mk .b2{height:12px;border-radius:6px;background:#5FA97B;margin:9px 0 0}
+.mk.l2{padding:0}
+.mk .bar2{height:9px;background:#F5F7F5;border-bottom:1px solid #E2E8E3;flex-shrink:0}
+.mk .cn{flex:1;display:flex}
+.mk .sd{width:24%;background:#FAFBFA;border-right:1px solid #EEF1EE}
+.mk .mn{flex:1;padding:6px}
+.mk.big{min-height:0}
+.mk.big.p2{padding:24px 18px 26px}
+.mk.big .lg{width:34px;height:34px;border-radius:10px;margin:4px auto 12px}
+.mk.big .l{height:7px;margin:0 0 8px}
+.mk.big .b2{height:22px;border-radius:11px;margin:14px 0 0}
+.mk.big.l2{aspect-ratio:16/10}
+.mk.big .bar2{height:18px}
+.mk.big .mn{padding:12px}
+
+@media(max-width:1080px){
+  .theme{grid-template-columns:minmax(0,1fr)}
+  .ctrl{border-right:0;border-bottom:1px solid var(--border)}
+  .edit{grid-template-columns:minmax(0,1fr)}
+  .rail{border-right:0;border-bottom:1px solid var(--border)}
+  .rail ol{display:flex;gap:8px;overflow-x:auto}
+  .rail li{margin:0}
+  .rail .item{flex-direction:column;width:76px;text-align:center;gap:5px}
+  .rail .idx{display:none}
+  .canvas{padding:26px 22px 44px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ 1. EDITOR ============ -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">01 — <span>Editor</span> · authoring surface</p>
+  <p class="d">The header had four publishing concepts competing flat: Listed/Unlisted, Publish changes, a locked slug, Copy link and View. Now it's <strong>one status pill, one button, one menu</strong>. Save state stopped being a floating string and moved into the pill, which is also where a failed save has to appear — currently a dozen actions fail silently. The step rail is the same filmstrip component as the reader, so you build it once.</p>
+  <p class="d"><strong>Adding a step moved out of the rail and into the canvas.</strong> Hover between any two steps for an insertion point, or use the button at the end with <code>⌘⏎</code>. The rail is now purely a map — it navigates, it doesn't act. Note this is a different job from Split: Split means "this step covers two things," insert means "I missed a step entirely."</p>
+</div></div>
+
+<div class="stage"><div class="stage-in"><div class="app">
+  <div class="bar">
+    <a class="back" href="#">← Help center</a>
+    <div class="seg"><button aria-pressed="true">Edit</button><button aria-pressed="false">Preview</button></div>
+    <button class="icbtn" aria-label="Undo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+    <button class="icbtn" aria-label="Redo" disabled><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+    <div class="spacer"></div>
+    <span class="status dirty"><span class="dot"></span>Published <span class="sub">· 2 unpublished edits</span></span>
+    <div class="pub">
+      <button class="go">Publish changes</button>
+      <button class="caret" aria-label="More publishing options"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
+    </div>
+  </div>
+
+  <div class="edit">
+    <nav class="rail">
+      <p class="cap">Steps</p>
+      <ol>
+        <li><button class="item"><span class="idx">1</span><span class="th"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:70%"></span><span class="b2"></span></span></span><span class="lb">Open the sign-in page</span></button></li>
+        <li><button class="item" aria-current="true"><span class="idx">2</span><span class="th"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:80%"></span><span class="b2"></span></span></span><span class="lb">Enter your credentials</span></button></li>
+        <li><button class="item"><span class="idx">3</span><span class="th wide"><span class="mk l2"><span class="bar2"></span><span class="cn"><span class="sd"></span><span class="mn"><span class="l"></span><span class="l" style="width:60%"></span></span></span></span></span><span class="lb">Land on your library</span></button></li>
+        <li><button class="item"><span class="idx">4</span><span class="th none">4</span><span class="lb">Turn on two-factor sign-in</span></button></li>
+      </ol>
+    </nav>
+
+    <div class="canvas"><div class="canvas-in">
+      <input class="t-in" value="Log in to Memory" aria-label="Article title">
+      <input class="s-in" value="Getting into your account for the first time, and turning on two-factor sign-in." aria-label="One-line summary">
+      <div class="divider"></div>
+
+      <div class="ins" style="margin-top:8px"><button>+ Add a step here</button></div>
+
+      <div class="card">
+        <div class="tools">
+          <button>⤒ Merge up</button><button>⤢ Split</button><button>Duplicate</button><button class="danger">Delete</button>
+        </div>
+        <div class="card-hd">
+          <span class="grip">⠿</span><span class="num">01</span>
+          <input class="h-in" value="Open the sign-in page" aria-label="Step heading">
+        </div>
+        <textarea class="b-in" rows="2" aria-label="Step body">Go to memory.app/login on your phone or laptop. If your team uses a custom address, it's the link in your invitation email.</textarea>
+        <div class="shotwrap">
+          <div class="shot portrait">
+            <div class="mk big p2"><div class="lg"></div><div class="l"></div><div class="l" style="width:78%"></div><div class="l" style="width:60%"></div><div class="b2"></div></div>
+            <div class="ov"><button>⟳ Change image</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ins"><button>+ Add a step here</button></div>
+
+      <div class="card">
+        <div class="tools">
+          <button>⤒ Merge up</button><button>⤢ Split</button><button>Duplicate</button><button class="danger">Delete</button>
+        </div>
+        <div class="card-hd">
+          <span class="grip">⠿</span><span class="num">02</span>
+          <input class="h-in" value="Enter your credentials" aria-label="Step heading">
+        </div>
+        <textarea class="b-in" rows="2" aria-label="Step body">Tap the Email field and type the address your invitation was sent to. Then tap Password and enter the password you set.</textarea>
+        <div class="picker">
+          <div class="picker-hd">
+            <span class="ti">Pick a frame</span>
+            <span class="alt"><button>Upload an image</button><button class="danger">Remove image</button></span>
+          </div>
+          <div class="strip">
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:66%"></span></span><span class="ts">0:04</span></button>
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:72%"></span></span><span class="ts">0:09</span></button>
+            <button class="f tall" aria-current="true"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:80%"></span><span class="b2"></span></span><span class="ts">0:19</span></button>
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l" style="width:88%"></span><span class="l" style="width:54%"></span></span><span class="ts">0:24</span></button>
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:62%"></span></span><span class="ts">0:29</span></button>
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l" style="width:70%"></span></span><span class="ts">0:34</span></button>
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l"></span><span class="l" style="width:84%"></span></span><span class="ts">0:39</span></button>
+            <button class="f tall"><span class="mk p2"><span class="lg"></span><span class="l" style="width:58%"></span></span><span class="ts">0:44</span></button>
+          </div>
+        </div>
+        <p class="edited">✓ Edited — a re-run won't overwrite this</p>
+      </div>
+
+      <div class="card">
+        <div class="tools">
+          <button>⤒ Merge up</button><button>⤢ Split</button><button>Duplicate</button><button class="danger">Delete</button>
+        </div>
+        <div class="card-hd">
+          <span class="grip">⠿</span><span class="num">04</span>
+          <input class="h-in" value="Turn on two-factor sign-in" aria-label="Step heading">
+        </div>
+        <textarea class="b-in" rows="2" aria-label="Step body">Open Settings → Security and switch on Two-factor authentication.</textarea>
+        <div class="noshot">
+          <p>No screenshot for this step. Readers follow steps by what the screen looked like.</p>
+          <button>Pick a frame</button>
+        </div>
+      </div>
+
+      <button class="addstep">+ Add a step <kbd>⌘ ⏎</kbd></button>
+    </div></div>
+  </div>
+</div></div></div>
+
+<!-- ============ 2. PUBLISH MODEL ============ -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">02 — <span>Publishing</span> · one button, one menu</p>
+  <p class="d">Every competitor stores a draft and a published version separately and gives you a way back — Help Scout puts <strong>Unpublish</strong> and <strong>Discard changes</strong> in a dropdown beside the primary button, which is where people already look. You currently have neither: <code>visibility</code> can never return to draft from the UI. "Listed / Unlisted" is also renamed — nobody outside this category knows what unlisted means, but everyone understands "hidden from search and browsing."</p>
+</div></div>
+
+<div class="stage"><div class="stage-in">
+  <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));align-items:start">
+
+    <div class="mini"><div class="tag">Draft — never published</div><div class="in">
+      <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end">
+        <span class="status"><span class="dot"></span>Draft</span>
+        <div class="pub"><button class="go">Publish</button><button class="caret" aria-label="More"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      </div>
+      <p class="cap">No dead URL, no disabled Copy link. A draft has no address yet, so we don't show one.</p>
+    </div></div>
+
+    <div class="mini"><div class="tag">Published — up to date</div><div class="in">
+      <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end">
+        <span class="status live"><span class="dot"></span>Published</span>
+        <div class="pub"><button class="go quiet">View live page</button><button class="caret quiet" aria-label="More"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      </div>
+      <p class="cap">Nothing to publish, so the primary action becomes the useful one: go look at it.</p>
+    </div></div>
+
+    <div class="mini"><div class="tag">Save failed</div><div class="in">
+      <div style="display:flex;align-items:center;gap:10px;justify-content:flex-end">
+        <span class="status err"><span class="dot"></span>Couldn't save <span class="sub">· retrying</span></span>
+        <div class="pub"><button class="go">Publish changes</button><button class="caret" aria-label="More"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      </div>
+      <p class="cap">Every silent failure in the inventory lands here. One place to look, always in the same spot.</p>
+    </div></div>
+
+  </div>
+
+  <div style="max-width:340px;margin:26px 0 0;position:relative">
+    <p class="eyebrow" style="margin-bottom:12px">The menu</p>
+    <div class="menu" style="position:static;width:auto">
+      <p class="grp">This article</p>
+      <button class="it"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>Copy link</button>
+      <button class="it"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg></span>View live page</button>
+      <button class="it"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>Change category<small>Filed under Getting started</small></button>
+      <hr>
+      <p class="grp">Who can find it</p>
+      <button class="it">Hide from search and browsing<span class="sw"></span><small>Stays live at its link. Removed from your help center's search results and category pages.</small></button>
+      <hr>
+      <button class="it danger"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg></span>Discard unpublished edits<small>Restores the published version. Can't be undone.</small></button>
+      <button class="it danger"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5-6"/><path d="M1 1l22 22"/></svg></span>Unpublish<small>Takes it off your help center. Keeps the content.</small></button>
+      <button class="it danger"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></span>Delete article</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- ============ 3. PREVIEW + SUCCESS ============ -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">03 — <span>Preview</span> and the publish moment</p>
+  <p class="d">Zendesk and Help Scout both open preview in a new browser tab you have to manually refresh after every edit; Intercom has no preview and tells you to publish as unlisted instead. Your reader is already a component in this same app, so an <strong>in-place toggle</strong> costs nearly nothing and beats all three. And "You're live!" currently dead-ends — this is where theming should be offered, which is what §5 always said and what the build never did.</p>
+</div></div>
+
+<div class="stage"><div class="stage-in">
+  <div class="app" style="margin-bottom:26px">
+    <div class="bar">
+      <a class="back" href="#">← Help center</a>
+      <div class="seg"><button aria-pressed="false">Edit</button><button aria-pressed="true">Preview</button></div>
+      <div class="spacer"></div>
+      <span class="status dirty"><span class="dot"></span>Published <span class="sub">· 2 unpublished edits</span></span>
+      <div class="pub"><button class="go">Publish changes</button><button class="caret" aria-label="More"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button></div>
+    </div>
+    <div class="pv-note">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v.1M12 11.5V16"/></svg>
+      <span><b>Preview.</b> This is your unpublished draft, in your help center's branding. Readers still see the published version.</span>
+    </div>
+    <div class="pv">
+      <div class="band"><span class="g">M</span><span class="n">Memory</span>
+        <a class="out" href="#">Back to Memory ↗</a></div>
+      <div class="body">
+        <h1>Log in to Memory</h1>
+        <p class="sf">Getting into your account for the first time, and turning on two-factor sign-in.</p>
+        <p class="mt">4 steps · 2 min read · Updated just now</p>
+        <div class="rule"></div>
+        <div class="st"><span class="n2">01</span><div><h3>Open the sign-in page</h3><p>Go to memory.app/login on your phone or laptop. If your team uses a custom address, it's the link in your invitation email.</p></div></div>
+        <div class="st"><span class="n2">02</span><div><h3>Enter your credentials</h3><p>Tap the Email field and type the address your invitation was sent to. Then tap Password and enter the password you set.</p></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="top">
+      <div class="tick"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 13l4 4L19 7"/></svg></div>
+      <h3>You're live</h3>
+      <p>Anyone with the link can read this now.</p>
+    </div>
+    <div class="url"><code>memory.quink.online/log-in-to-memory</code><button>Copy link</button></div>
+    <div class="nudge">
+      <span class="sw2"><i></i><b></b></span>
+      <span class="tx"><p><b>Make it look like you</b>Add your logo and colour so this reads as your help center, not ours.</p></span>
+      <a href="#">Customize</a>
+    </div>
+    <div class="foot"><button>Back to the editor</button></div>
+  </div>
+</div></div>
+
+<!-- ============ 4. THEMING ============ -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">04 — <span>Theming</span></p>
+  <p class="d">Header treatment goes first because it's the largest visual lever — and it's the fix for a brand colour that turns the band grey. The preview gains a <strong>view switcher and a device switcher</strong>, which is what Intercom does; yours is pinned to the home view only, so nobody can check what an article looks like. Sample content is now labelled rather than passed off as real — right now fake articles render silently and stay if the fetch returns nothing. Save moved to a sticky bar with somewhere for a failure to appear; today a failed save renders nothing at all.</p>
+</div></div>
+
+<div class="stage"><div class="stage-in"><div class="app">
+  <div class="bar">
+    <a class="back" href="#">← Help center</a>
+    <div class="spacer"></div>
+    <a class="back" href="#">View live site ↗</a>
+  </div>
+  <div class="theme">
+    <div class="ctrl">
+      <div class="ctrl-scroll">
+        <h2>Customize your help center</h2>
+        <p class="lede">Every change shows in the preview. Nothing goes live until you save.</p>
+
+        <div class="grp2">
+          <p class="gt">Header</p>
+          <div class="fld">
+            <label>Style</label>
+            <div class="tiles">
+              <button class="tile solid" aria-pressed="true"><span class="sw3"><i></i><u></u></span><span class="nm">Solid</span></button>
+              <button class="tile ink" aria-pressed="false"><span class="sw3"><i></i><u></u></span><span class="nm">Ink</span></button>
+              <button class="tile tint" aria-pressed="false"><span class="sw3"><i></i><u></u></span><span class="nm">Tint</span></button>
+              <button class="tile image" aria-pressed="false"><span class="sw3"><i></i><u></u></span><span class="nm">Image</span></button>
+            </div>
+            <p class="hint">All four are built from your brand colour, so none of them can clash.</p>
+          </div>
+          <div class="fld">
+            <label>Header image</label>
+            <div class="drop2"><p>JPG or PNG, at least 1600px wide.</p><button>Choose an image</button></div>
+            <p class="hint">We darken it behind your text so the heading stays readable.</p>
+          </div>
+        </div>
+
+        <div class="grp2">
+          <p class="gt">Brand</p>
+          <div class="fld">
+            <label>Logo</label>
+            <div class="drop2"><p>Square works best. Your favicon is made from it.</p><button>Upload a logo</button></div>
+          </div>
+          <div class="fld">
+            <label>Colour</label>
+            <div class="dots">
+              <button style="background:#1E63D0"></button>
+              <button style="background:#4338CA" aria-pressed="true"></button>
+              <button style="background:#8B31C4"></button>
+              <button style="background:#12907F"></button>
+              <button style="background:#1F7A3D"></button>
+              <button style="background:#D4610E"></button>
+              <button style="background:#B4341F"></button>
+              <button style="background:#2B2F38"></button>
+            </div>
+            <div class="hexrow"><span class="chip" style="background:#4338CA"></span><input type="text" value="#4338CA" aria-label="Brand colour hex"></div>
+          </div>
+        </div>
+
+        <div class="grp2">
+          <p class="gt">Content</p>
+          <div class="fld"><label>Help center name</label><input type="text" value="Memory">
+            <p class="hint">Your address is <code>memory.quink.online</code>. It follows this name until your first article is published, then it stays put so links keep working.</p></div>
+          <div class="fld"><label>Headline</label><input type="text" value="How can we help?"></div>
+          <div class="fld"><label>Description</label><input type="text" value="Guides for setting up your library and sharing collections."></div>
+          <div class="fld"><label>Search box text</label><input type="text" value="Search for articles…"></div>
+        </div>
+
+        <div class="grp2">
+          <p class="gt">Links</p>
+          <div class="fld">
+            <label>Your logo and name link to</label>
+            <div class="radios">
+              <label class="ra"><input type="radio" name="logolink" checked><span><b>Help center home</b>What readers expect inside a help center.</span></label>
+              <label class="ra"><input type="radio" name="logolink"><span><b>Your website</b>Readers leave the help center when they click it.</span></label>
+            </div>
+          </div>
+          <div class="fld">
+            <label>Header link <span class="opt">optional</span></label>
+            <div class="pair">
+              <input type="text" value="Back to Memory" aria-label="Header link label">
+              <input type="text" value="https://memory.app" aria-label="Header link address">
+            </div>
+            <p class="hint">Sits opposite your logo. This is how most readers get back to your product.</p>
+          </div>
+        </div>
+      </div>
+      <div class="savebar">
+        <button class="primary">Save changes</button>
+        <span class="msg">Unsaved changes</span>
+      </div>
+    </div>
+
+    <div class="pane">
+      <div class="pane-bar">
+        <span class="lbl">Preview</span>
+        <div class="seg"><button aria-pressed="true">Home</button><button aria-pressed="false">Article</button></div>
+        <div class="spacer"></div>
+        <div class="seg"><button aria-pressed="true">Desktop</button><button aria-pressed="false">Mobile</button></div>
+      </div>
+      <div class="pane-body">
+        <div class="frame2">
+          <div class="sample">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v.1M12 11.5V16"/></svg>
+            Showing sample articles — you haven't published anything yet.
+          </div>
+          <div class="p-band">
+            <div class="mast"><span class="g">M</span><span class="n">Memory</span>
+              <a class="out" href="#">Back to Memory ↗</a></div>
+            <h1>How can we help?</h1>
+            <p class="sb">Guides for setting up your library and sharing collections.</p>
+            <div class="sf2">Search for articles…</div>
+          </div>
+          <div class="p-body">
+            <div class="p-cat">
+              <div><h2>Getting started</h2><span class="cnt">2 articles</span></div>
+              <div>
+                <div class="p-row"><p class="t">Create your first collection</p><p class="d">Start a collection and add your first few items.</p></div>
+                <div class="p-row"><p class="t">Invite your team</p><p class="d">Add teammates and set what each of them can do.</p></div>
+              </div>
+            </div>
+            <div class="p-cat">
+              <div><h2>Billing</h2><span class="cnt">1 article</span></div>
+              <div>
+                <div class="p-row"><p class="t">Update your payment method</p><p class="d">Change the card on file and download past invoices.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+
+</body>
+</html>

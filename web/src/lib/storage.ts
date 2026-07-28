@@ -25,7 +25,7 @@ export function publicBrandingUrl(path: string | null): string | null {
 // person who happened to upload it — so it moves with the KB.
 export async function uploadBranding(
   kbId: string,
-  kind: 'logo' | 'favicon',
+  kind: 'logo' | 'favicon' | 'header',
   blob: Blob,
   ext: string,
 ): Promise<string | null> {

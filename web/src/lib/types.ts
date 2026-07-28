@@ -75,6 +75,12 @@ export type Folder = {
 export type FontPairing = 'modern' | 'editorial' | 'classic'
 export type DomainStatus = 'none' | 'pending' | 'verifying' | 'live' | 'failed'
 
+// How the reader's masthead band is filled (migration 0024). All four derive from the one
+// stored brand colour except `image`, which puts a customer photo behind a brand scrim.
+// `solid` is the default: a flat fill of the brand cannot go grey, where a paper-mixed tint
+// does exactly that for a desaturated brand.
+export type HeaderStyle = 'solid' | 'ink' | 'tint' | 'image'
+
 export type KnowledgeBase = {
   id: string
   owner_id: string
@@ -93,6 +99,17 @@ export type KnowledgeBase = {
   font_pairing: FontPairing
   logo_path: string | null
   favicon_path: string | null
+  // Masthead band treatment (migration 0024). Theming, not an entitlement: it describes the
+  // help center, so it travels with the KB through claim_kb() and is deliberately not in
+  // that function's reset list. `header_image_path` is a public `branding` object, keyed
+  // {kb_id}/… like the logo, and is only read when header_style === 'image'.
+  header_style: HeaderStyle
+  header_image_path: string | null
+  // One optional label + URL rendered opposite the masthead (migration 0026). The URL is
+  // customer-supplied and renders on a page we host, so the scheme is constrained in the
+  // database as well as in the form.
+  header_link_label: string | null
+  header_link_url: string | null
   domain_status: DomainStatus
   domain_last_checked_at: string | null
   domain_error: string | null
@@ -148,6 +165,15 @@ export type ReaderKb = {
   // has no business knowing what tier its host pays for — or that tier names exist.
   noindex: boolean
   watermark: boolean
+  header_style: HeaderStyle
+  header_image_path: string | null
+  header_link_label: string | null
+  header_link_url: string | null
+  // Migration 0025: an offline help center now RESOLVES and says so, instead of being
+  // filtered out and rendering as "doesn't exist" — that told a customer's own readers
+  // their site was gone. Everything above except id/name/watermark is blanked server-side
+  // while offline, and the other three reader RPCs still return nothing at all.
+  offline: boolean
 }
 
 // Nav/sitemap row from reader_articles(). Carries the folder it's filed in so the home

@@ -81,3 +81,24 @@ export async function searchReader(kbId: string, query: string): Promise<SearchH
   if (error || !data) return []
   return data as SearchHit[]
 }
+
+// The only write on the reader (migration 0025). Anonymous by construction: no id, no
+// session, no fingerprint is sent or stored, because the widget's copy says so.
+//
+// kb_id is deliberately NOT a parameter — the function derives it from the article and
+// refuses anything that isn't published on a live help center, so a caller cannot file
+// feedback against a KB it names itself. Returns false when refused (unknown/draft article,
+// or over the per-article flood limit); the caller acknowledges either way, because telling
+// a flooder they were blocked only tells them where the limit is.
+export async function submitFeedback(
+  articleId: string,
+  helpful: boolean,
+  missingText?: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc('submit_article_feedback', {
+    p_article_id: articleId,
+    p_helpful: helpful,
+    p_missing_text: missingText?.trim() || null,
+  })
+  return !error && data === true
+}
