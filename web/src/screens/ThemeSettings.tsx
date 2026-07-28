@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { removeBranding, uploadBranding } from '../lib/storage'
+import { publicBrandingUrl, removeBranding, uploadBranding } from '../lib/storage'
 import { limitsFor } from '../lib/plans'
 import {
-  COLOR_PRESETS,
   DEFAULT_PRIMARY_COLOR,
   FONT_PAIRINGS,
   READER_DOMAIN,
   helpCenterUrl,
 } from '../lib/config'
+import { extractLogoColors, pickableColors } from '../lib/palette'
 import { isValidHex, normalizeHex, themeVars } from '../reader/theme'
 import { ReaderChrome } from '../reader/ReaderSite'
 import PreviewFrame from '../components/PreviewFrame'
@@ -52,6 +52,10 @@ const MOBILE_W = 390
 // The header image has to survive being stretched across a 1600px+ band. Anything smaller
 // is upscaled and looks it, so it is refused at the point of choosing rather than after the
 // customer has published a blurry masthead.
+//
+// This check is CLIENT-SIDE and there is no server-side counterpart — the worker never sees
+// a branding upload, and Storage does not measure images. It is enforced here, before the
+// object is uploaded, which is why the message has to render here too.
 const MIN_HEADER_WIDTH = 1600
 
 // Stand-ins so the preview is never empty before anything is published. They are LABELLED
@@ -164,6 +168,13 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState<null | 'logo' | 'header'>(null)
+  // Upload failures belong AT the control that failed, not in the save bar 600px below it,
+  // where a rejected file read as a save status and was missed entirely.
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const [headerError, setHeaderError] = useState<string | null>(null)
+  // Colours pulled out of the uploaded logo. Empty means "nothing usable came back", and
+  // the row is hidden outright — an empty "From your logo" row is a promise not kept.
+  const [logoColors, setLogoColors] = useState<string[]>([])
 
   const [previewView, setPreviewView] = useState<'home' | 'article'>('home')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
@@ -173,6 +184,7 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
   const [isSample, setIsSample] = useState(true)
 
   const headerInputRef = useRef<HTMLInputElement>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
   // Branding objects this session has replaced, deleted once the save commits. A ref, not
   // state: nothing renders from it and it must survive re-renders between upload and save.
   // ponytail: an upload abandoned without saving still leaks one object — the row never
@@ -209,6 +221,24 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     }
   }, [kb.id])
 
+  // Pull colours out of whatever logo is currently set. Runs for a logo that was already
+  // saved as well as one uploaded a second ago; onLogo also runs it against the local File
+  // so the row appears immediately instead of waiting on a CDN read that may be blocked.
+  useEffect(() => {
+    const url = publicBrandingUrl(logoPath)
+    if (!url) {
+      setLogoColors([])
+      return
+    }
+    let cancelled = false
+    extractLogoColors(url).then((c) => {
+      if (!cancelled && c.length) setLogoColors(c)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [logoPath])
+
   // Malformed hex must NOT blank the preview — keep the last valid colour (build spec §1).
   function onHex(v: string) {
     setHexInput(v)
@@ -224,19 +254,26 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
 
   async function onLogo(file: File) {
     setUploading('logo')
+    setLogoError(null)
     touch()
     const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
-    const lp = await uploadBranding(kb.id, 'logo', file, ext)
+    const { path: lp, error: upErr } = await uploadBranding(kb.id, 'logo', file, ext)
     if (!lp) {
-      setError('Logo didn’t upload. Check your connection and try again.')
+      setLogoError(`${file.name} didn’t upload. ${upErr ?? 'Try again.'}`)
       setUploading(null)
       return
     }
     if (logoPath) superseded.current.push(logoPath)
     setLogoPath(lp)
+    // Read the colours off the local file: a blob URL is same-origin, so this can't be
+    // blocked the way a read back off the CDN can.
+    const blobUrl = URL.createObjectURL(file)
+    extractLogoColors(blobUrl)
+      .then((c) => c.length && setLogoColors(c))
+      .finally(() => URL.revokeObjectURL(blobUrl))
     const fav = await deriveFavicon(file)
     if (fav) {
-      const fp = await uploadBranding(kb.id, 'favicon', fav, 'png')
+      const { path: fp } = await uploadBranding(kb.id, 'favicon', fav, 'png')
       if (fp) {
         if (faviconPath) superseded.current.push(faviconPath)
         setFaviconPath(fp)
@@ -249,30 +286,40 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
   // never a URL — a URL would eventually expire or move.
   async function onHeaderImage(file: File) {
     setUploading('header')
+    setHeaderError(null)
     touch()
     const dim = await measure(file)
     if (!dim) {
-      setError('That file couldn’t be read as an image. Try a JPG or PNG.')
+      setHeaderError(`${file.name} couldn’t be read as an image. Try a JPG or PNG.`)
       setUploading(null)
       return
     }
     if (dim.w < MIN_HEADER_WIDTH) {
-      setError(
-        `That image is ${dim.w}px wide. Header images need to be at least ${MIN_HEADER_WIDTH}px or they blur when stretched.`,
+      setHeaderError(
+        `That image is ${dim.w}px wide. Header images need to be at least ${MIN_HEADER_WIDTH}px wide so they stay sharp on large screens.`,
       )
       setUploading(null)
       return
     }
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    const hp = await uploadBranding(kb.id, 'header', file, ext)
+    const { path: hp, error: upErr } = await uploadBranding(kb.id, 'header', file, ext)
     if (!hp) {
-      setError('Header image didn’t upload. Check your connection and try again.')
+      setHeaderError(`${file.name} didn’t upload. ${upErr ?? 'Try again.'}`)
       setUploading(null)
       return
     }
     if (headerImagePath) superseded.current.push(headerImagePath)
     setHeaderImagePath(hp)
     setUploading(null)
+  }
+
+  // A file input keeps the last chosen file as its value, so picking the SAME file again
+  // fires no change event at all. After a rejection that is the likeliest next action —
+  // shrink nothing, re-pick, and watch the screen do nothing.
+  function pickFile(e: React.ChangeEvent<HTMLInputElement>, run: (f: File) => void) {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (f) run(f)
   }
 
   // Selecting Image opens the file dialog straight away — the style is inert without one,
@@ -365,6 +412,11 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     font,
   )
 
+  // Generated from oklch(46% 0.15 h), not pasted hex — the equal lightness across the row
+  // is the property that matters and a hand-written list can't hold it. Empty on a browser
+  // with no oklch() support, where the hex field is still the way through.
+  const pickable = pickableColors()
+
   return (
     <div className="th">
       <header className="th-bar">
@@ -422,9 +474,83 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                 </p>
               </div>
 
+              {/* Colour sits directly under the tiles: it is what makes them mean
+                  anything. Two rows — what you already use, then a set to pick from. */}
+              <div className="th-fld">
+                <label id="colour-label">Colour</label>
+                {logoColors.length > 0 && (
+                  <>
+                    <p className="th-swlabel">From your logo</p>
+                    <div className="th-dots" role="group" aria-label="Colours from your logo">
+                      {logoColors.map((c) => (
+                        <button
+                          key={c}
+                          style={{ background: c }}
+                          aria-pressed={normalizeHex(color) === c}
+                          aria-label={`Use ${c}`}
+                          onClick={() => pickPreset(c)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {pickable.length > 0 && (
+                  <>
+                    {logoColors.length > 0 && <p className="th-swlabel">Or pick one</p>}
+                    <div className="th-dots" role="group" aria-labelledby="colour-label">
+                      {pickable.map((c) => (
+                        <button
+                          key={c}
+                          style={{ background: c }}
+                          aria-pressed={normalizeHex(color) === c}
+                          aria-label={`Use ${c}`}
+                          onClick={() => pickPreset(c)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                <div className="th-hexrow">
+                  <input
+                    type="color"
+                    className="th-chip"
+                    value={isValidHex(color) ? normalizeHex(color) : DEFAULT_PRIMARY_COLOR}
+                    onChange={(e) => pickPreset(e.target.value)}
+                    aria-label="Colour picker"
+                  />
+                  <input
+                    type="text"
+                    className={!isValidHex(hexInput) ? 'invalid' : ''}
+                    value={hexInput}
+                    onChange={(e) => onHex(e.target.value)}
+                    placeholder="#1F6E6B"
+                    spellCheck={false}
+                    aria-label="Brand colour hex"
+                  />
+                </div>
+                {!isValidHex(hexInput) && (
+                  <p className="th-hint th-warn">
+                    Not a valid hex colour — the preview keeps the last good one.
+                  </p>
+                )}
+              </div>
+
               <div className="th-fld">
                 <label>Header image</label>
-                {headerImagePath ? (
+                {headerError ? (
+                  <div className="th-drop bad">
+                    <p className="th-droperr">
+                      <AlertIcon />
+                      {headerError}
+                    </p>
+                    <button
+                      disabled={uploading === 'header'}
+                      onClick={() => headerInputRef.current?.click()}
+                    >
+                      Choose another image
+                    </button>
+                  </div>
+                ) : headerImagePath ? (
                   <div className="th-hasfile">
                     <span>Image added.</span>
                     <button className="linklike" onClick={() => headerInputRef.current?.click()}>
@@ -454,7 +580,7 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   hidden
-                  onChange={(e) => e.target.files?.[0] && onHeaderImage(e.target.files[0])}
+                  onChange={(e) => pickFile(e, onHeaderImage)}
                 />
                 {headerStyle === 'image' && !headerImagePath && (
                   <p className="th-hint th-warn">Upload an image to use this style.</p>
@@ -470,23 +596,31 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
               <p className="th-gt">Brand</p>
               <div className="th-fld">
                 <label>Logo</label>
-                {logoPath ? (
+                {logoError ? (
+                  <div className="th-drop bad">
+                    <p className="th-droperr">
+                      <AlertIcon />
+                      {logoError}
+                    </p>
+                    <button
+                      disabled={uploading === 'logo'}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      Choose another file
+                    </button>
+                  </div>
+                ) : logoPath ? (
                   <div className="th-hasfile">
                     <span>Logo added.</span>
-                    <label className="linklike th-filelabel">
+                    <button className="linklike" onClick={() => logoInputRef.current?.click()}>
                       Replace
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                        hidden
-                        onChange={(e) => e.target.files?.[0] && onLogo(e.target.files[0])}
-                      />
-                    </label>
+                    </button>
                     <button
                       className="linklike"
                       onClick={() => {
                         setLogoPath(null)
                         setFaviconPath(null)
+                        setLogoColors([])
                         touch()
                       }}
                     >
@@ -496,55 +630,21 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                 ) : (
                   <div className="th-drop">
                     <p>Square works best. Your favicon is made from it.</p>
-                    <label className="th-filelabel-btn">
+                    <button
+                      disabled={uploading === 'logo'}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
                       {uploading === 'logo' ? 'Uploading…' : 'Upload a logo'}
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                        hidden
-                        onChange={(e) => e.target.files?.[0] && onLogo(e.target.files[0])}
-                      />
-                    </label>
+                    </button>
                   </div>
                 )}
-              </div>
-
-              <div className="th-fld">
-                <label>Colour</label>
-                <div className="th-dots">
-                  {COLOR_PRESETS.map((c) => (
-                    <button
-                      key={c}
-                      style={{ background: c }}
-                      aria-pressed={normalizeHex(color) === c}
-                      aria-label={`Use ${c}`}
-                      onClick={() => pickPreset(c)}
-                    />
-                  ))}
-                </div>
-                <div className="th-hexrow">
-                  <input
-                    type="color"
-                    className="th-chip"
-                    value={isValidHex(color) ? normalizeHex(color) : DEFAULT_PRIMARY_COLOR}
-                    onChange={(e) => pickPreset(e.target.value)}
-                    aria-label="Colour picker"
-                  />
-                  <input
-                    type="text"
-                    className={!isValidHex(hexInput) ? 'invalid' : ''}
-                    value={hexInput}
-                    onChange={(e) => onHex(e.target.value)}
-                    placeholder="#1F6E6B"
-                    spellCheck={false}
-                    aria-label="Brand colour hex"
-                  />
-                </div>
-                {!isValidHex(hexInput) && (
-                  <p className="th-hint th-warn">
-                    Not a valid hex colour — the preview keeps the last good one.
-                  </p>
-                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  hidden
+                  onChange={(e) => pickFile(e, onLogo)}
+                />
               </div>
 
               <div className="th-fld">
@@ -767,3 +867,21 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     </div>
   )
 }
+
+// The only icon on this screen. It marks a rejected file, so it earns its place — a
+// decorative icon beside every label would not.
+const AlertIcon = () => (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    aria-hidden
+  >
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5v5.5M12 16.4v.1" />
+  </svg>
+)

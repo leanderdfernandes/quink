@@ -23,17 +23,23 @@ export function publicBrandingUrl(path: string | null): string | null {
 
 // Logo + derived favicon (build spec §1). Branding belongs to the help center, not the
 // person who happened to upload it — so it moves with the KB.
+//
+// Returns the storage error's own message rather than a bare null. It used to swallow it
+// and every caller printed "check your connection", which is the wrong instruction for the
+// two failures that actually happen: an object too large for the bucket, and a MIME type
+// the bucket refuses. Neither is fixed by trying again.
 export async function uploadBranding(
   kbId: string,
   kind: 'logo' | 'favicon' | 'header',
   blob: Blob,
   ext: string,
-): Promise<string | null> {
+): Promise<{ path: string | null; error: string | null }> {
   const path = `${kbId}/${kind}-${crypto.randomUUID()}.${ext}`
   const { error } = await supabase.storage
     .from(STORAGE_BUCKET_BRANDING)
     .upload(path, blob, { contentType: blob.type || 'image/png' })
-  return error ? null : path
+  if (error) return { path: null, error: error.message || 'The upload was refused.' }
+  return { path, error: null }
 }
 
 // Frames and videos live in PRIVATE buckets (frames can contain on-screen PII —

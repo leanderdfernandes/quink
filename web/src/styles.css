@@ -740,10 +740,6 @@ textarea {
 .new-menu-item.primary:hover {
   background: var(--brand-100);
 }
-.new-menu-icon {
-  font-size: 18px;
-  line-height: 1.2;
-}
 .new-menu-item b {
   display: block;
   font-size: 14px;
@@ -2647,8 +2643,7 @@ textarea {
   color: var(--muted);
   line-height: 1.45;
 }
-.th-drop button,
-.th-filelabel-btn {
+.th-drop button {
   display: inline-block;
   padding: 7px 15px;
   border: 1px solid var(--border);
@@ -2659,8 +2654,7 @@ textarea {
   font-weight: 650;
   cursor: pointer;
 }
-.th-drop button:hover,
-.th-filelabel-btn:hover {
+.th-drop button:hover {
   border-color: var(--brand-300);
   color: var(--brand);
 }
@@ -2676,10 +2670,6 @@ textarea {
   background: var(--paper);
   flex-wrap: wrap;
 }
-.th-filelabel {
-  cursor: pointer;
-}
-
 .th-dots {
   display: flex;
   gap: 7px;
@@ -4470,4 +4460,983 @@ a.rs-crumb-link:hover {
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--muted);
+}
+
+/* ======================================================================================
+   Article list — articles-domain-design-pass.html §01
+   ======================================================================================
+   Rebuilt from a row with three persistent controls (category select, Edit, bin) into a row
+   that IS the control, with everything else behind one hover menu. The old version put ~66
+   controls on a 22-article screen and made the list read as a queue of work. */
+
+/* One shared, visible focus ring for the whole authoring app. The reader has its own
+   (currentColor, so it survives the brand band); this is the app's warm chassis. */
+.lib :focus-visible,
+.settings :focus-visible,
+.th :focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Motion budget: hover tints, the row menu, the DNS spinner. All of it is decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .lib *,
+  .settings *,
+  .th * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Free trial + run ledger. Both exist in the data and appeared nowhere in the UI. */
+.rail-trial {
+  margin: 24px 8px 0;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+.rail-meter {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: 9px;
+}
+.rail-meter i {
+  display: block;
+  height: 100%;
+  background: var(--brand-600);
+}
+.rail-trial p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.rail-trial p b {
+  display: block;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.rail-trial .linklike {
+  margin-top: 9px;
+  font-size: 12.5px;
+}
+
+/* The two-door New article menu states the remaining runs above the doors, because the
+   choice between them is exactly the thing the number governs. */
+.new-menu-rem {
+  margin: 3px 11px 5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* Value-proof strip. A seamed row, not a card grid — these are four readings of one
+   help center, not four separate things. */
+.al-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  margin: 22px auto;
+}
+.al-stat {
+  background: var(--surface);
+  padding: 14px 16px;
+  text-align: left;
+  border: 0;
+  font: inherit;
+  color: inherit;
+}
+.al-stat > span {
+  display: block;
+}
+.al-stat .k {
+  margin: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.al-stat .v {
+  margin: 6px 0 0;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.al-stat .v small {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.al-stat .t {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.al-stat .t.warn {
+  color: #8a5c13;
+}
+/* An empty figure is stated as empty. A zero here would read as a measurement. */
+.al-stat.empty .v {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+.al-stat.as-btn {
+  cursor: pointer;
+}
+.al-stat.as-btn:hover {
+  background: var(--brand-50);
+}
+.al-stat.as-btn[aria-pressed='true'] {
+  background: var(--brand-50);
+  box-shadow: inset 2px 0 0 var(--brand-600);
+}
+
+.al-tools {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 auto 16px;
+}
+.al-tools .lib-search {
+  flex: 1;
+  min-width: 220px;
+  margin: 0;
+}
+.al-tools .lib-search input {
+  padding: 9px 14px 9px 40px;
+  border-radius: var(--r-pill);
+  border-color: var(--border);
+}
+.al-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.al-chip {
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.al-chip:hover {
+  border-color: var(--border-strong);
+}
+.al-chip[aria-pressed='true'] {
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+  color: #fff;
+}
+.al-chip .c {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  opacity: 0.7;
+  margin-left: 5px;
+}
+.al-chip.attn[aria-pressed='false'] {
+  border-color: #ecd9b3;
+  background: #fbf3e3;
+  color: #8a5c13;
+}
+
+/* Folder groups */
+.al-grp {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+  margin: 0 auto 14px;
+}
+.al-grp.unfiled {
+  border-color: #e6d6b2;
+}
+.al-grp-hd {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 16px;
+  background: var(--subtle);
+  border-bottom: 1px solid var(--border);
+}
+.al-grp.unfiled .al-grp-hd {
+  background: #fbf3e3;
+  border-bottom-color: #ecd9b3;
+}
+.al-grp-hd h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.al-grp-hd .n {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.al-hint {
+  font-size: 12.5px;
+  color: #8a5c13;
+}
+.al-tw {
+  background: none;
+  border: 0;
+  padding: 2px;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+}
+.al-tw svg {
+  transition: transform 0.15s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+/* Folder tools come on hover, like the row's. Three always-visible bins across a screen
+   of folders is the same mistake one row down. */
+.al-ga {
+  margin-left: auto;
+  display: flex;
+  gap: 5px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.al-grp-hd:hover .al-ga,
+.al-ga:focus-within {
+  opacity: 1;
+}
+.al-ga button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+.al-ga button:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.al-grp-empty {
+  padding: 18px;
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Rows */
+.al-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border-top: 1px solid var(--subtle);
+  position: relative;
+  transition: background 0.14s ease;
+}
+.al-grp-hd + .al-row,
+.al-row:first-child {
+  border-top: 0;
+}
+.al-row:hover,
+.al-row.sel {
+  background: var(--brand-50);
+}
+.al-chk {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-600);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.14s ease;
+}
+.al-row:hover .al-chk,
+.al-row.sel .al-chk,
+.al-chk:focus-visible,
+.al-chk:checked {
+  opacity: 1;
+}
+/* The row itself is the target. A button, not an anchor wrapping other buttons — the
+   checkbox and the menu are siblings, so nothing interactive is nested. */
+.al-open {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.al-titleline {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.al-titleline b {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.al-sum {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.al-meta {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.al-meta > span {
+  padding-right: 11px;
+  margin-right: 11px;
+  border-right: 1px solid var(--border);
+}
+.al-meta > span:last-child {
+  border-right: 0;
+  margin-right: 0;
+  padding-right: 0;
+}
+.al-meta .good {
+  color: var(--success);
+}
+.al-meta .poor {
+  color: #8a5c13;
+}
+.al-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--muted);
+}
+.al-badge.listed {
+  color: #245f42;
+  background: #eaf5ee;
+  border-color: #cfe4d8;
+}
+.al-badge.unlisted {
+  color: var(--brand-700);
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+}
+.al-badge.dirty,
+.al-badge.gen {
+  color: #8a5c13;
+  background: #fbf3e3;
+  border-color: #ecd9b3;
+}
+.al-flag {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #8a5c13;
+}
+.al-row-confirm {
+  background: #fbf0ee;
+  font-size: 13.5px;
+  color: #7a2e2a;
+}
+.al-row-confirm > span {
+  flex: 1;
+}
+
+.al-menuwrap {
+  position: relative;
+  flex: none;
+}
+.al-more {
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+}
+.al-row:hover .al-more,
+.al-more:focus-visible,
+.al-more[aria-expanded='true'] {
+  opacity: 1;
+}
+.al-more:hover {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+}
+.al-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 190px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-lg);
+}
+.al-menu button,
+.al-menu a {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.al-menu button:hover,
+.al-menu a:hover {
+  background: var(--subtle);
+}
+.al-menu button:disabled,
+.al-menu a.off {
+  color: var(--muted);
+  cursor: default;
+  pointer-events: none;
+}
+.al-menu button.danger {
+  color: var(--danger);
+}
+.al-menu .al-menu-cap {
+  margin: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.al-menu .al-menu-back {
+  color: var(--muted);
+  border-top: 1px solid var(--subtle);
+  border-radius: 0;
+  margin-top: 4px;
+}
+
+/* Selection replaces the header rather than stacking under it. */
+.al-selbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-radius: var(--r-md);
+  background: var(--brand-600);
+  color: #fff;
+  margin: 0 auto;
+}
+.al-selcount {
+  font-size: 14px;
+  font-weight: 600;
+}
+.al-selsp {
+  flex: 1;
+}
+.al-selbar button {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.al-selbar button:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.al-selbar button.x {
+  border-color: transparent;
+  background: none;
+  padding: 6px 8px;
+}
+.al-selbar :focus-visible {
+  outline-color: #fff;
+}
+
+.al-bulkconfirm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px auto 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-size: 13.5px;
+}
+.al-bulkconfirm p {
+  flex: 1;
+  min-width: 220px;
+  margin: 0;
+}
+.al-bulkconfirm select {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+/* Per-article outcomes. "3 of 5 failed" with no names is not something anyone can act on. */
+.al-bulkresult {
+  margin: 12px auto 0;
+  padding: 12px 16px;
+  border: 1px solid #cfe4d8;
+  border-radius: var(--r-md);
+  background: #eaf5ee;
+  font-size: 13.5px;
+  color: #245f42;
+}
+.al-bulkresult.bad {
+  border-color: #ecd9b3;
+  background: #fbf3e3;
+  color: #7a5310;
+}
+.al-bulkresult p {
+  margin: 0;
+}
+.al-bulkresult ul {
+  margin: 8px 0 0 18px;
+  padding: 0;
+}
+.al-bulkresult li {
+  margin-top: 3px;
+}
+.al-bulkresult .linklike {
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+
+.al-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 60;
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 13.5px;
+  box-shadow: var(--sh-lg);
+}
+
+/* ======================================================================================
+   Domain — articles-domain-design-pass.html §02
+   ====================================================================================== */
+.dm {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  width: 100%;
+}
+.dm h1 {
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.dm-lede {
+  margin: 7px 0 26px;
+  font-size: 14.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 56ch;
+}
+.dm-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 18px 20px;
+  margin-bottom: 12px;
+}
+/* Exactly one card carries this. Two cards both stamped LIVE told the customer nothing
+   about which address their readers actually land on. */
+.dm-card.serving {
+  border-color: var(--brand-300);
+  box-shadow: 0 0 0 2.5px var(--brand-50);
+}
+.dm-card.bad {
+  border-color: #e2bcbc;
+}
+.dm-row1 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dm-addr a,
+.dm-addr-flat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.dm-addr-flat {
+  color: var(--secondary);
+}
+.dm-addr a svg {
+  color: var(--muted);
+  flex: none;
+}
+.dm-addr a:hover,
+.dm-addr a:hover svg {
+  color: var(--brand-600);
+}
+.dm-copy {
+  margin-left: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--paper);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.dm-copy:hover {
+  border-color: var(--border-strong);
+  color: var(--brand-600);
+}
+.dm-tag {
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.dm-tag.serving {
+  background: #eaf5ee;
+  color: #245f42;
+  border: 1px solid #cfe4d8;
+}
+.dm-tag.backup {
+  background: var(--paper);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.dm-tag.wait {
+  background: #fbf3e3;
+  color: #8a5c13;
+  border: 1px solid #ecd9b3;
+}
+.dm-tag.bad {
+  background: #fbf0ee;
+  color: #8e2f2f;
+  border: 1px solid #e2bcbc;
+}
+.dm-note {
+  margin: 9px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.dm-bad {
+  margin: 9px 0 0;
+  font-size: 13.5px;
+  color: #8e2f2f;
+  line-height: 1.5;
+}
+.dm-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+.dm-connect {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dm-connect input {
+  flex: 1;
+  min-width: 200px;
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.dm-add {
+  width: 100%;
+  padding: 15px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dm-add:hover {
+  border-color: var(--brand-300);
+  color: var(--brand-600);
+  background: var(--brand-50);
+}
+.dm-danger {
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--danger);
+  cursor: pointer;
+}
+.dm-danger:hover {
+  text-decoration: underline;
+}
+.dm-confirm {
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid #e2bcbc;
+  border-radius: var(--r-sm);
+  background: #fbf0ee;
+  font-size: 13.5px;
+  color: #7a2e2a;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dm-confirm p {
+  flex-basis: 100%;
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+/* The record, inline and copyable. Nobody should have to go looking for it in an email. */
+.dm-dns {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--paper);
+}
+.dm-dns-h,
+.dm-dns-r {
+  display: grid;
+  grid-template-columns: 76px 100px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+}
+.dm-dns-h {
+  background: var(--subtle);
+  border-bottom: 1px solid var(--border);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dm-dns-r {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12.5px;
+}
+.dm-dns-r > span:first-child {
+  color: var(--muted);
+}
+.dm-dns-r > span:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-dns-r .dm-copy {
+  margin-left: 0;
+  font-family: var(--font);
+  font-size: 11.5px;
+}
+.dm-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.dm-spin {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--brand-600);
+  border-radius: 50%;
+  animation: dmspin 1s linear infinite;
+}
+@keyframes dmspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.dm-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+/* ======================================================================================
+   Theming amendments — editor-theming-design-pass.html §04
+   ====================================================================================== */
+.th-swlabel {
+  margin: 0 0 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.th-dots + .th-swlabel {
+  margin-top: 12px;
+}
+/* A rejected file says what was wrong with it, at the control that rejected it. */
+.th-drop.bad {
+  border-style: solid;
+  border-color: #e2bcbc;
+  background: #fbf0ee;
+}
+.th-droperr {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 9px;
+  color: #8e2f2f;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.th-droperr svg {
+  flex: none;
+  margin-top: 2px;
+}
+.th-drop.bad button {
+  border-color: #e2bcbc;
+}
+
+/* ---- narrow ---- */
+@media (max-width: 900px) {
+  .lib-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .al-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .lib-main {
+    padding: 22px 18px 60px;
+  }
+}
+@media (max-width: 560px) {
+  .lib-top {
+    padding: 10px 12px;
+  }
+  .lib-kb-tag {
+    display: none;
+  }
+  .al-stats {
+    grid-template-columns: 1fr;
+  }
+  .al-grp-hd,
+  .al-row {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .al-sum {
+    white-space: normal;
+  }
+  .lib-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .lib-head-actions {
+    flex-wrap: wrap;
+  }
+  .dm {
+    padding: 26px 14px 60px;
+  }
+  .dm-dns-h,
+  .dm-dns-r {
+    grid-template-columns: 60px 72px minmax(0, 1fr);
+  }
+  .dm-dns-h > span:last-child {
+    display: none;
+  }
+  .dm-dns-r .dm-copy {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .dm-copy {
+    margin-left: 0;
+  }
+}
+/* Hover-revealed controls do not exist on a touch screen — the same rule the editor's
+   step tools already use. */
+@media (hover: none), (pointer: coarse) {
+  .al-chk,
+  .al-more,
+  .al-ga {
+    opacity: 1;
+  }
 }

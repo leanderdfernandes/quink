@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quink — Articles &amp; Domain Design Pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300..800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand:#0E5C6B;
+  --paper:#FBF9F5; --surface:#FFFFFF; --subtle:#F3F0EA;
+  --border:#E7E2D9; --rule:#DBD4C7; --muted:#857E71;
+  --ink-soft:#4A463E; --ink:#1C1A16;
+  --tint:color-mix(in oklab,var(--brand) 11%,var(--paper));
+  --edge:color-mix(in oklab,var(--brand) 30%,var(--border));
+  --press:color-mix(in oklab,var(--brand) 82%,#17150F);
+  --ring:color-mix(in oklab,var(--brand) 18%,transparent);
+  --ok:#2F7D57; --ok-tint:color-mix(in oklab,#2F7D57 11%,var(--paper));
+  --warn:#B4791F; --warn-tint:color-mix(in oklab,#B4791F 13%,var(--paper));
+  --bad:#B23B3B; --bad-tint:color-mix(in oklab,#B23B3B 10%,var(--paper));
+  --sans:'Hanken Grotesk',ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+  --r-sm:8px; --r-md:12px; --r-lg:18px; --r-pill:999px;
+  --sh-1:0 1px 2px rgba(28,26,22,.05);
+  --sh-2:0 2px 4px rgba(28,26,22,.04),0 8px 20px rgba(28,26,22,.06);
+  --sh-3:0 4px 10px rgba(28,26,22,.06),0 20px 48px rgba(28,26,22,.12);
+  --ease:cubic-bezier(.2,.7,.3,1);
+}
+*{box-sizing:border-box}
+body{margin:0;background:#141310;font-family:var(--sans);color:var(--ink)}
+button{font:inherit;color:inherit;cursor:pointer}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.plate{background:var(--paper);border-top:1px solid #2A2721}
+.plate-in{max-width:1280px;margin:0 auto;padding:48px 30px 26px}
+.eyebrow{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.eyebrow span{color:var(--ink);font-weight:600}
+.plate-in p.d{max-width:78ch;font-size:14px;line-height:1.62;color:var(--ink-soft);margin:11px 0 0}
+.plate-in p.d strong{color:var(--ink);font-weight:650}
+.stage{background:var(--paper);padding:0 30px 54px}
+.stage-in{max-width:1280px;margin:0 auto}
+.app{background:var(--paper);border:1px solid var(--border);border-radius:var(--r-lg);
+  overflow:hidden;box-shadow:var(--sh-2)}
+
+/* ---------- top chrome ---------- */
+.top{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--surface);
+  border-bottom:1px solid var(--border)}
+.logo{font-size:19px;font-weight:800;letter-spacing:-.05em;color:var(--brand)}
+.slash{color:var(--border)}
+.kbpick{display:flex;align-items:center;gap:9px;padding:5px 11px 5px 6px;border:1px solid var(--border);
+  border-radius:var(--r-pill);background:var(--paper);font-size:14px;font-weight:600}
+.kbpick:hover{border-color:var(--edge)}
+.kbpick .av{width:22px;height:22px;border-radius:7px;background:var(--brand);color:#fff;
+  display:grid;place-items:center;font-size:11px;font-weight:700}
+.spacer{flex:1}
+.ghost{padding:6px 14px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--paper);font-size:13.5px;font-weight:600;text-decoration:none;
+  display:inline-flex;align-items:center;gap:6px}
+.ghost:hover{border-color:var(--edge);background:var(--tint);color:var(--brand)}
+
+.shell{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:720px}
+.side{border-right:1px solid var(--border);background:var(--surface);padding:20px 12px}
+.side .cap{margin:0 0 8px 10px;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.side .cap.two{margin-top:24px}
+.side a{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px;
+  text-decoration:none;font-size:14.5px;font-weight:550;color:var(--ink-soft)}
+.side a:hover{background:var(--subtle);color:var(--ink)}
+.side a[aria-current="page"]{background:var(--tint);color:var(--brand);font-weight:650}
+.side a .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.side .ic{width:17px;display:grid;place-items:center;flex-shrink:0}
+
+.trial{margin:22px 8px 0;padding:13px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--paper)}
+.trial .bar{height:5px;border-radius:3px;background:var(--border);overflow:hidden;margin:0 0 9px}
+.trial .bar i{display:block;height:100%;width:33%;background:var(--brand)}
+.trial p{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted)}
+.trial p b{display:block;color:var(--ink);font-weight:650;font-size:13px;margin-bottom:2px}
+.trial a{padding:0;margin:9px 0 0;font-size:12.5px;font-weight:650;color:var(--brand);display:inline}
+.trial a:hover{background:transparent;text-decoration:underline}
+
+/* ---------- main ---------- */
+.main{padding:28px 32px 60px;overflow:auto}
+.hd{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;margin:0 0 22px}
+.hd h1{margin:0;font-size:29px;font-weight:700;letter-spacing:-.035em}
+.hd .sub{margin:4px 0 0;font-size:13.5px;color:var(--muted)}
+.hd .acts{margin-left:auto;display:flex;gap:9px;align-items:center}
+.primary{padding:9px 17px;border:1px solid var(--brand);border-radius:var(--r-pill);
+  background:var(--brand);color:#fff;font-size:14px;font-weight:650;display:inline-flex;
+  align-items:center;gap:8px}
+.primary:hover{background:var(--press)}
+
+/* value-proof strip: the North Star, made visible */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin:0 0 22px}
+.stat{background:var(--surface);padding:14px 16px}
+.stat .k{margin:0;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted)}
+.stat .v{margin:6px 0 0;font-size:23px;font-weight:700;letter-spacing:-.035em;line-height:1}
+.stat .v small{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:0}
+.stat .t{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.stat .t.up{color:var(--ok)}
+.stat .t.warn{color:#8A5C13}
+.stat.empty .v{color:var(--muted);font-size:16px;font-weight:600;letter-spacing:-.02em}
+
+/* search + filters */
+.tools{display:flex;gap:10px;align-items:center;margin:0 0 16px;flex-wrap:wrap}
+.find{position:relative;flex:1;min-width:240px}
+.find input{width:100%;padding:9px 14px 9px 37px;border:1px solid var(--border);
+  border-radius:var(--r-pill);background:var(--surface);font-family:inherit;font-size:14px;color:var(--ink)}
+.find input:focus{outline:none;border-color:var(--edge);box-shadow:0 0 0 3px var(--ring)}
+.find svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:7px 13px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--surface);font-size:13px;font-weight:600;color:var(--ink-soft)}
+.chip:hover{border-color:var(--edge)}
+.chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
+.chip .c{font-family:var(--mono);font-size:10.5px;opacity:.7;margin-left:5px}
+.chip.attn[aria-pressed="false"]{border-color:color-mix(in oklab,var(--warn) 34%,var(--border));
+  background:var(--warn-tint);color:#8A5C13}
+
+/* folder groups */
+.grp{margin:0 0 14px;border:1px solid var(--border);border-radius:var(--r-md);
+  background:var(--surface);overflow:hidden}
+.grp-hd{display:flex;align-items:center;gap:11px;padding:12px 16px;background:var(--subtle);
+  border-bottom:1px solid var(--border)}
+.grp-hd .tw{color:var(--muted);display:grid;place-items:center}
+.grp-hd h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-.02em}
+.grp-hd .n{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.grp-hd .ga{margin-left:auto;display:flex;gap:5px;opacity:0;transition:opacity .15s var(--ease)}
+.grp-hd:hover .ga{opacity:1}
+.grp-hd .ga button{width:28px;height:28px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface);display:grid;place-items:center;color:var(--muted)}
+.grp-hd .ga button:hover{border-color:var(--edge);color:var(--brand)}
+.grp.unfiled .grp-hd{background:var(--warn-tint);
+  border-bottom-color:color-mix(in oklab,var(--warn) 26%,var(--border))}
+.grp.unfiled .grp-hd .hint{font-size:12.5px;color:#8A5C13}
+
+/* rows */
+.r{display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid var(--border);
+  text-decoration:none;position:relative;transition:background .14s var(--ease)}
+.r:last-child{border-bottom:0}
+.r:hover{background:var(--tint)}
+.r .chk{width:17px;height:17px;border:1.5px solid var(--border);border-radius:5px;background:var(--surface);
+  flex-shrink:0;opacity:0;transition:opacity .14s var(--ease)}
+.r:hover .chk,.r.sel .chk{opacity:1}
+.r.sel{background:var(--tint)}
+.r.sel .chk{background:var(--brand);border-color:var(--brand);display:grid;place-items:center;color:#fff}
+.r .tx{flex:1;min-width:0}
+.r .ti{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 3px}
+.r .ti b{font-size:15px;font-weight:650;letter-spacing:-.017em}
+.r .d{margin:0;font-size:13.5px;color:var(--muted);line-height:1.45;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r .mt{margin:6px 0 0;display:flex;gap:0;flex-wrap:wrap;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.r .mt span{padding-right:11px;margin-right:11px;border-right:1px solid var(--rule)}
+.r .mt span:last-child{border-right:0;margin-right:0;padding-right:0}
+.r .mt span.good{color:var(--ok)}
+.r .mt span.poor{color:#8A5C13}
+.r .more{width:30px;height:30px;border:1px solid transparent;border-radius:8px;background:transparent;
+  display:grid;place-items:center;color:var(--muted);flex-shrink:0;opacity:0;
+  transition:opacity .14s var(--ease)}
+.r:hover .more{opacity:1}
+.r .more:hover{border-color:var(--border);background:var(--surface);color:var(--ink)}
+
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--r-pill);
+  font-size:11px;font-weight:700;letter-spacing:.01em;border:1px solid var(--border);
+  background:var(--paper);color:var(--muted)}
+.badge.live{background:var(--ok-tint);border-color:color-mix(in oklab,var(--ok) 26%,var(--border));color:#245F42}
+.badge.dirty{background:var(--warn-tint);border-color:color-mix(in oklab,var(--warn) 28%,var(--border));color:#8A5C13}
+.badge.link{background:var(--tint);border-color:var(--edge);color:var(--brand)}
+.flag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:#8A5C13}
+
+/* selection bar */
+.selbar{display:flex;align-items:center;gap:10px;padding:11px 16px;background:var(--brand);
+  color:#fff;border-radius:var(--r-md);margin:0 0 14px;flex-wrap:wrap}
+.selbar .cnt{font-size:14px;font-weight:650}
+.selbar .sp{flex:1}
+.selbar button{padding:6px 14px;border:1px solid rgba(255,255,255,.34);border-radius:var(--r-pill);
+  background:rgba(255,255,255,.12);color:#fff;font-size:13px;font-weight:600}
+.selbar button:hover{background:rgba(255,255,255,.22)}
+.selbar button.x{border-color:transparent;background:transparent;padding:6px 8px}
+
+/* new article menu */
+.nmenu{position:relative}
+.nm-pop{position:absolute;top:calc(100% + 8px);right:0;width:310px;background:var(--surface);
+  border:1px solid var(--border);border-radius:14px;box-shadow:var(--sh-3);padding:6px;z-index:20}
+.nm-pop button{display:flex;gap:12px;align-items:flex-start;width:100%;padding:11px;border:0;
+  background:transparent;border-radius:10px;text-align:left}
+.nm-pop button:hover{background:var(--tint)}
+.nm-pop .ic{width:32px;height:32px;border-radius:9px;background:var(--tint);color:var(--brand);
+  display:grid;place-items:center;flex-shrink:0}
+.nm-pop b{display:block;font-size:14.5px;font-weight:650;letter-spacing:-.015em;margin-bottom:2px}
+.nm-pop small{display:block;font-size:12.5px;color:var(--muted);line-height:1.45}
+.nm-pop .rem{margin:3px 11px 4px;font-family:var(--mono);font-size:10px;color:var(--muted);
+  letter-spacing:.05em}
+
+/* ---------- domain ---------- */
+.dwrap{max-width:720px;margin:0 auto;padding:40px 0 60px}
+.dwrap h1{margin:0;font-size:29px;font-weight:700;letter-spacing:-.035em}
+.dwrap .lede{margin:7px 0 26px;font-size:14.5px;color:var(--muted);line-height:1.55;max-width:56ch}
+
+.dcard{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);
+  padding:18px 20px;margin:0 0 12px}
+.dcard.primary-d{border-color:var(--edge);box-shadow:0 0 0 2.5px var(--ring)}
+.dcard .row1{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dcard .addr{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:15px;
+  font-weight:600;letter-spacing:-.01em;text-decoration:none;color:var(--ink)}
+.dcard .addr:hover{color:var(--brand)}
+.dcard .addr svg{color:var(--muted)}
+.dcard .addr:hover svg{color:var(--brand)}
+.dcard .tools2{margin-left:auto;display:flex;gap:6px;align-items:center}
+.dcard .tools2 button{padding:5px 12px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--paper);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.dcard .tools2 button:hover{border-color:var(--edge);color:var(--brand)}
+.dcard p.n{margin:9px 0 0;font-size:13.5px;color:var(--muted);line-height:1.5}
+.dcard .tagp{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--r-pill);
+  font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.tagp.serving{background:var(--ok-tint);color:#245F42;border:1px solid color-mix(in oklab,var(--ok) 26%,var(--border))}
+.tagp.backup{background:var(--paper);color:var(--muted);border:1px solid var(--border)}
+.tagp.wait{background:var(--warn-tint);color:#8A5C13;border:1px solid color-mix(in oklab,var(--warn) 28%,var(--border))}
+.dcard .danger{margin:14px 0 0;padding:0;border:0;background:transparent;font-size:13.5px;
+  font-weight:650;color:var(--bad)}
+.dcard .danger:hover{text-decoration:underline}
+
+.dns{margin:14px 0 0;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;
+  background:var(--paper)}
+.dns .h{display:flex;padding:8px 13px;background:var(--subtle);border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.dns .h span:first-child{width:70px}
+.dns .h span:nth-child(2){width:96px}
+.dns .rw{display:flex;align-items:center;padding:11px 13px;font-family:var(--mono);font-size:12.5px}
+.dns .rw span:first-child{width:70px;color:var(--muted)}
+.dns .rw span:nth-child(2){width:96px}
+.dns .rw span:nth-child(3){flex:1;overflow:hidden;text-overflow:ellipsis}
+.dns .rw button{margin-left:auto;padding:4px 10px;border:1px solid var(--border);border-radius:var(--r-pill);
+  background:var(--surface);font-family:var(--sans);font-size:11.5px;font-weight:650}
+.dns .rw button:hover{border-color:var(--edge);color:var(--brand)}
+.dcheck{display:flex;align-items:center;gap:9px;margin:12px 0 0;font-size:13px;color:var(--muted)}
+.dcheck .sp2{width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--brand);
+  border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.addbtn{width:100%;padding:15px;border:1px dashed var(--border);border-radius:var(--r-md);
+  background:transparent;font-size:14px;font-weight:650;color:var(--muted)}
+.addbtn:hover{border-color:var(--edge);color:var(--brand);background:var(--tint)}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.mini{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.mini .tag{padding:8px 14px;border-bottom:1px solid var(--border);background:var(--subtle);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.mini .in{padding:16px}
+.mini .cap2{margin:12px 0 0;font-size:12.5px;color:var(--muted);line-height:1.5}
+
+@media(max-width:1000px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .side{border-right:0;border-bottom:1px solid var(--border)}
+  .stats{grid-template-columns:1fr 1fr}
+  .main{padding:22px 18px 44px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ ARTICLES ============ -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">01 — <span>All articles</span></p>
+  <p class="d">Every row carried a category dropdown, an Edit button and a bin — three persistent controls × 22 rows. The row itself is now the target, actions come on hover, and category moves into the row menu where it's used once and forgotten. <strong>The strip at the top is the thing that was missing entirely</strong>: <code>article_feedback_summary</code> and <code>reader_views</code> both exist and nothing has ever called them. That's the number that answers "is this worth ₹999" — for you at renewal, and for a founder deciding whether to keep going.</p>
+  <p class="d"><strong>"Needs attention"</strong> is the retention lever. Steps with no screenshot, drafts stuck unfiled, published articles with unpublished edits, and articles readers keep marking unhelpful — surfaced as one filter, because the alternative is a founder publishing once and never coming back.</p>
+</div></div>
+
+<div class="stage"><div class="stage-in"><div class="app">
+  <div class="top">
+    <span class="logo">Quink</span><span class="slash">/</span>
+    <button class="kbpick"><span class="av">M</span>Memory <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M6 9l6 6 6-6"/></svg></button>
+    <div class="spacer"></div>
+    <a class="ghost" href="#">Sign out</a>
+  </div>
+
+  <div class="shell">
+    <nav class="side">
+      <p class="cap">Content</p>
+      <a href="#" aria-current="page"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg></span>Articles<span class="n">22</span></a>
+      <p class="cap two">Your help center</p>
+      <a href="#"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1.4"/><circle cx="15" cy="9" r="1.4"/><circle cx="9.5" cy="15" r="1.4"/></svg></span>Theming</a>
+      <a href="#"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg></span>Domain</a>
+      <a href="#"><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg></span>View live site</a>
+
+      <div class="trial">
+        <div class="bar"><i></i></div>
+        <p><b>Free trial · 20 days left</b>1 of 3 video runs used. Articles you write by hand don't count.</p>
+        <a href="#">See plans →</a>
+      </div>
+    </nav>
+
+    <div class="main">
+      <div class="hd">
+        <div>
+          <h1>All articles</h1>
+          <p class="sub">22 articles · 14 live · 1 folder</p>
+        </div>
+        <div class="acts">
+          <button class="ghost">New folder</button>
+          <div class="nmenu">
+            <button class="primary">New article <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M6 9l6 6 6-6"/></svg></button>
+            <div class="nm-pop">
+              <p class="rem">2 of 3 free video runs left</p>
+              <button><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l6-3v10l-6-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg></span><span><b>Upload a recording</b><small>Screen recording in, drafted article out. Usually under two minutes.</small></span></button>
+              <button><span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16"/><path d="M14 4l6 6L9 21H3v-6z"/></svg></span><span><b>Write it yourself</b><small>Start from a blank article. Doesn't use a video run.</small></span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><p class="k">Readers · 30 days</p><p class="v">1,284</p><p class="t up">↑ 22% on last month</p></div>
+        <div class="stat"><p class="k">Found it helpful</p><p class="v">81<small>%</small></p><p class="t">of 214 answers</p></div>
+        <div class="stat"><p class="k">Live articles</p><p class="v">14</p><p class="t">8 drafts</p></div>
+        <div class="stat"><p class="k">Needs attention</p><p class="v">5</p><p class="t warn">3 unfiled · 2 no screenshot</p></div>
+      </div>
+
+      <div class="tools">
+        <div class="find">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input placeholder="Search your articles…" aria-label="Search articles">
+        </div>
+        <div class="chips">
+          <button class="chip" aria-pressed="true">All<span class="c">22</span></button>
+          <button class="chip" aria-pressed="false">Live<span class="c">14</span></button>
+          <button class="chip" aria-pressed="false">Drafts<span class="c">8</span></button>
+          <button class="chip attn" aria-pressed="false">Needs attention<span class="c">5</span></button>
+        </div>
+      </div>
+
+      <div class="selbar">
+        <span class="cnt">2 selected</span>
+        <div class="sp"></div>
+        <button>Move to folder</button>
+        <button>Publish</button>
+        <button>Unpublish</button>
+        <button>Delete</button>
+        <button class="x" aria-label="Clear selection">✕</button>
+      </div>
+
+      <div class="grp">
+        <div class="grp-hd">
+          <span class="tw"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M6 9l6 6 6-6"/></svg></span>
+          <h2>Getting started</h2><span class="n">5 articles</span>
+          <span class="ga">
+            <button aria-label="Rename folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16"/><path d="M14 4l6 6L9 21H3v-6z"/></svg></button>
+            <button aria-label="Delete folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+          </span>
+        </div>
+
+        <a class="r sel" href="#">
+          <span class="chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><path d="M5 13l4 4L19 7"/></svg></span>
+          <span class="tx">
+            <span class="ti"><b>Create and fill your Spotify playlist</b><span class="badge live">Published</span></span>
+            <p class="d">Learn how to start a new playlist and add your favourite tracks.</p>
+            <span class="mt"><span>412 readers</span><span class="good">88% helpful</span><span>Updated 2d ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+
+        <a class="r sel" href="#">
+          <span class="chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"><path d="M5 13l4 4L19 7"/></svg></span>
+          <span class="tx">
+            <span class="ti"><b>Invite your team</b><span class="badge dirty">3 unpublished edits</span></span>
+            <p class="d">Add teammates and set what they can do.</p>
+            <span class="mt"><span>196 readers</span><span class="good">84% helpful</span><span>Updated 11h ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+
+        <a class="r" href="#">
+          <span class="chk"></span>
+          <span class="tx">
+            <span class="ti"><b>Billing</b><span class="badge link">Link only</span></span>
+            <p class="d">A guide we haven't listed in the help center yet.</p>
+            <span class="mt"><span>31 readers</span><span>Updated 2d ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+
+        <a class="r" href="#">
+          <span class="chk"></span>
+          <span class="tx">
+            <span class="ti"><b>Export your library</b><span class="badge live">Published</span><span class="flag">⚠ 2 steps have no screenshot</span></span>
+            <p class="d">Download everything you've saved as a CSV.</p>
+            <span class="mt"><span>88 readers</span><span class="poor">42% helpful</span><span>Updated 6d ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+
+        <a class="r" href="#">
+          <span class="chk"></span>
+          <span class="tx">
+            <span class="ti"><b>A work in progress</b><span class="badge">Draft</span></span>
+            <p class="d">Not published yet — nobody can reach this.</p>
+            <span class="mt"><span>Updated 7d ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+      </div>
+
+      <div class="grp unfiled">
+        <div class="grp-hd">
+          <span class="tw"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M6 9l6 6 6-6"/></svg></span>
+          <h2>Unfiled</h2><span class="n">3 articles</span>
+          <span class="hint">These need a folder before they can go live</span>
+        </div>
+        <a class="r" href="#">
+          <span class="chk"></span>
+          <span class="tx">
+            <span class="ti"><b>View form responses</b><span class="badge">Draft</span></span>
+            <p class="d">How to view and review submitted responses to your Google Form.</p>
+            <span class="mt"><span>Updated 2d ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+        <a class="r" href="#">
+          <span class="chk"></span>
+          <span class="tx">
+            <span class="ti"><b>Change your notification settings</b><span class="badge">Draft</span></span>
+            <p class="d">Choose which emails you get and how often.</p>
+            <span class="mt"><span>Updated 3d ago</span></span>
+          </span>
+          <button class="more" aria-label="More">⋯</button>
+        </a>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+
+<!-- ============ DOMAIN ============ -->
+<div class="plate"><div class="plate-in">
+  <p class="eyebrow">02 — <span>Domain</span></p>
+  <p class="d">Two identical cards both stamped LIVE, neither one clickable, and nothing saying which of them readers actually land on. Now the addresses are <strong>links that open in a new tab</strong> with copy beside them, and one card is marked as the one serving traffic while the other is labelled as the fallback that keeps old links working. The states that were missing are the ones that matter most — a domain waiting on DNS with the exact record to paste, and one that failed with the reason.</p>
+</div></div>
+
+<div class="stage"><div class="stage-in"><div class="app">
+  <div class="top">
+    <a class="ghost" href="#">← Help center</a>
+  </div>
+  <div style="padding:0 30px">
+    <div class="dwrap">
+      <h1>Domain</h1>
+      <p class="lede">Your help center is always reachable at its free address. Add your own domain whenever you're ready.</p>
+
+      <div class="dcard primary-d">
+        <div class="row1">
+          <a class="addr" href="#" target="_blank" rel="noopener">help.aceacred.online
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+          </a>
+          <span class="tagp serving">Serving readers</span>
+          <span class="tools2">
+            <button><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>Copy</button>
+          </span>
+        </div>
+        <p class="n">This is the address readers reach. Certificate issued and renewing automatically.</p>
+        <button class="danger">Remove this domain</button>
+      </div>
+
+      <div class="dcard">
+        <div class="row1">
+          <a class="addr" href="#" target="_blank" rel="noopener">memory.quink.online
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+          </a>
+          <span class="tagp backup">Redirects</span>
+          <span class="tools2">
+            <button><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>Copy</button>
+          </span>
+        </div>
+        <p class="n">Your free address. Old links sent here land on your domain automatically, so nothing you've shared breaks. It never goes away.</p>
+      </div>
+    </div>
+  </div>
+</div></div></div>
+
+<div class="stage"><div class="stage-in">
+  <p class="eyebrow" style="margin-bottom:16px">Domain states</p>
+  <div class="cards">
+    <div class="mini"><div class="tag">Waiting on DNS</div><div class="in">
+      <div class="dcard" style="margin:0;border:0;padding:0">
+        <div class="row1">
+          <span class="addr" style="color:var(--ink-soft)">help.aceacred.online</span>
+          <span class="tagp wait">Waiting on DNS</span>
+        </div>
+        <p class="n">Add this record with whoever manages your domain, then we'll take it from here.</p>
+        <div class="dns">
+          <div class="h"><span>Type</span><span>Name</span><span>Value</span></div>
+          <div class="rw"><span>CNAME</span><span>help</span><span>cname.quink.online</span><button>Copy</button></div>
+        </div>
+        <div class="dcheck"><span class="sp2"></span>Checking every 30 seconds. DNS can take up to an hour.</div>
+      </div>
+      <p class="cap2">The record is right there and copyable. Nobody should have to go looking for it in an email.</p>
+    </div></div>
+
+    <div class="mini"><div class="tag">Couldn't verify</div><div class="in">
+      <div class="dcard" style="margin:0;border:0;padding:0">
+        <div class="row1">
+          <span class="addr" style="color:var(--ink-soft)">help.aceacred.online</span>
+          <span class="tagp" style="background:var(--bad-tint);color:#8E2F2F;border:1px solid color-mix(in oklab,var(--bad) 28%,var(--border))">Not connected</span>
+        </div>
+        <p class="n">We found a CNAME for <b>help.aceacred.online</b>, but it points at <b>ghs.googlehosted.com</b> instead of ours. Update it to the value below and we'll pick it up.</p>
+        <div class="dns">
+          <div class="h"><span>Type</span><span>Name</span><span>Value</span></div>
+          <div class="rw"><span>CNAME</span><span>help</span><span>cname.quink.online</span><button>Copy</button></div>
+        </div>
+      </div>
+      <p class="cap2">The failure says what it found, not just that something went wrong.</p>
+    </div></div>
+
+    <div class="mini"><div class="tag">No custom domain yet</div><div class="in">
+      <div class="dcard" style="margin:0 0 12px">
+        <div class="row1">
+          <a class="addr" href="#" target="_blank" rel="noopener">memory.quink.online
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>
+          </a>
+          <span class="tagp serving">Serving readers</span>
+        </div>
+        <p class="n">Your free address. It never goes away.</p>
+      </div>
+      <button class="addbtn">+ Use your own domain</button>
+      <p class="cap2">The free address is the primary until a custom one takes over. No dead "add a domain" copy floating above nothing.</p>
+    </div></div>
+  </div>
+</div></div>
+
+</body>
+</html>

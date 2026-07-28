@@ -1,6 +1,8 @@
 import { supabase } from './supabase'
 import { STORAGE_BUCKET_FRAMES, STORAGE_BUCKET_VIDEOS } from './config'
-import type { ArticleRow } from './types'
+import { uniqueArticleSlug } from './slug'
+import type { StepLite } from './pendingEdits'
+import type { Article, ArticleRow } from './types'
 
 // Delete an article. The DB row is the source of truth (its steps cascade via FK); Storage
 // cleanup is best-effort afterwards — it closes the orphaned-frames gap the README noted,
@@ -39,6 +41,100 @@ export async function collectSourceVideo(
   const { error } = await supabase.storage.from(STORAGE_BUCKET_VIDEOS).remove([videoPath])
   if (error) return
   await supabase.from('articles').update({ source_video_path: null }).eq('id', articleId)
+}
+
+// Publish from the article list (bulk, or the row menu). Same three writes the editor's
+// doPublish makes — snapshot, frozen slug, visibility — and the same source-video
+// collection afterwards. It deliberately does NOT touch folder_id: an article without one
+// cannot be published at all (the category IS the folder), and the caller names the ones it
+// skipped rather than filing them somewhere on the user's behalf.
+export async function publishArticle(article: ArticleRow, steps: StepLite[]): Promise<void> {
+  if (!article.folder_id) throw new Error('Needs a folder before it can go live')
+  const slug =
+    article.slug ||
+    (await uniqueArticleSlug(article.kb_id, article.title || 'article', article.id))
+  const snapshot: Article = {
+    title: article.title,
+    subtitle: article.subtitle,
+    steps: steps.map((s) => ({
+      step_number: s.step_number,
+      heading: s.heading,
+      body_text: s.body_text,
+      screenshot_url: s.screenshot_url,
+    })),
+  }
+  const { error } = await supabase
+    .from('articles')
+    .update({
+      published_content: snapshot,
+      published_at: new Date().toISOString(),
+      visibility: 'listed',
+      slug,
+    })
+    .eq('id', article.id)
+  if (error) throw error
+  // Keeps the upload screen's promise on the first publish; a no-op on every one after.
+  if (article.source_video_path) {
+    await collectSourceVideo(article.id, article.source_video_path)
+  }
+}
+
+// Take an article off the help center. `visibility` is the only thing that moves —
+// published_content and the slug stay, so republishing restores the same URL.
+export async function unpublishArticle(id: string): Promise<void> {
+  const { error } = await supabase.from('articles').update({ visibility: 'draft' }).eq('id', id)
+  if (error) throw error
+}
+
+// Duplicate an article as a fresh draft.
+//
+// The frame objects are COPIED, not referenced. Two articles pointing at one object means
+// deleting either one takes the other's screenshots with it — removeFrames() sweeps by
+// {kb_id}/{article_id} prefix and cannot know the object is shared. A copy that fails
+// leaves that step text-only, which the editor already handles; it never fails the whole
+// duplicate.
+export async function duplicateArticle(
+  article: ArticleRow,
+  steps: StepLite[],
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('articles')
+    .insert({
+      kb_id: article.kb_id,
+      title: article.title ? `${article.title} (copy)` : '',
+      subtitle: article.subtitle,
+      status: 'ready',
+      folder_id: article.folder_id,
+    })
+    .select()
+    .single()
+  if (error || !data) throw error ?? new Error('Could not create the copy')
+  const copy = data as ArticleRow
+
+  const shots = await Promise.all(
+    steps.map(async (s) => {
+      if (!s.screenshot_url) return null
+      const to = `${article.kb_id}/${copy.id}/step-${s.step_number}-${crypto.randomUUID()}.webp`
+      const { error: e } = await supabase.storage
+        .from(STORAGE_BUCKET_FRAMES)
+        .copy(s.screenshot_url, to)
+      return e ? null : to
+    }),
+  )
+
+  if (steps.length) {
+    const { error: se } = await supabase.from('steps').insert(
+      steps.map((s, i) => ({
+        article_id: copy.id,
+        step_number: s.step_number,
+        heading: s.heading,
+        body_text: s.body_text,
+        screenshot_url: shots[i],
+      })),
+    )
+    if (se) throw se
+  }
+  return copy.id
 }
 
 export async function deleteArticle(article: ArticleRow): Promise<void> {

@@ -4,6 +4,7 @@ import { signedFrameUrl, signedFrameUrls } from '../lib/storage'
 import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
 import { collectSourceVideo, deleteArticle } from '../lib/articles'
+import { pendingEditCount } from '../lib/pendingEdits'
 import { createFolder, listFolders } from '../lib/folders'
 import { helpCenterUrl } from '../lib/config'
 import { limitsFor } from '../lib/plans'
@@ -737,28 +738,20 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
   }, [mode, steps])
 
   // How far the draft is ahead of what readers see. A real count, not a boolean dressed up
-  // as one: it compares the working steps against the published snapshot.
-  const pendingEdits = useMemo(() => {
-    const pub = article?.published_content
-    if (!article || !pub) return 0
-    let n = 0
-    if ((pub.title ?? '') !== article.title) n += 1
-    if ((pub.subtitle ?? '') !== article.subtitle) n += 1
-    const byNum = new Map(pub.steps.map((s) => [s.step_number, s]))
-    for (const s of steps) {
-      const p = byNum.get(s.step_number)
-      if (
-        !p ||
-        p.heading !== s.heading ||
-        p.body_text !== s.body_text ||
-        p.screenshot_url !== s.screenshot_url
-      ) {
-        n += 1
-      }
-    }
-    n += Math.max(0, pub.steps.length - steps.length)
-    return n
-  }, [article, steps])
+  // as one: it compares the working steps against the published snapshot. Lives in
+  // lib/articles so the article list's "N unpublished edits" badge is the SAME number.
+  const pendingEdits = useMemo(
+    () =>
+      article
+        ? pendingEditCount(
+            article.published_content,
+            article.title,
+            article.subtitle,
+            steps,
+          )
+        : 0,
+    [article, steps],
+  )
 
   // The draft, shaped as the reader's own article type, for in-place preview.
   const previewArticle: Article | null = article

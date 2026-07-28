@@ -54,19 +54,10 @@ export const STORAGE_BUCKET_BRANDING = 'branding'
 // migration 0005 — if they drift, a fresh KB previews a different colour than it saves.
 export const DEFAULT_PRIMARY_COLOR = '#1F6E6B'
 
-// Common, recognizable brand primaries — the colours real companies actually pick, readable
-// on white and as a hero. Most users take one; the swatch is the affordance, the hex picker
-// covers the rest.
-export const COLOR_PRESETS = [
-  '#2563EB', // blue
-  '#4F46E5', // indigo
-  '#7C3AED', // violet
-  '#0D9488', // teal
-  '#059669', // emerald
-  '#EA580C', // orange
-  '#DC2626', // red
-  '#334155', // slate
-] as const
+// The pickable brand colours moved to lib/palette.ts and are now GENERATED at a constant
+// OKLCH lightness rather than listed as hex. A hand-picked list cannot hold the one
+// property that matters — equal contrast behind masthead text — and this one did not:
+// its amber sat far lighter than the rest and washed the band out.
 
 // Font pairings named by FEEL, never by font name (build spec §1). Each maps to a
 // heading + body stack built only from already-loaded fonts (Hanken Grotesk) + web-safe
