@@ -49,14 +49,11 @@ const HEADER_STYLES: { id: HeaderStyle; name: string }[] = [
 const DESKTOP_W = 1280
 const MOBILE_W = 390
 
-// The header image has to survive being stretched across a 1600px+ band. Anything smaller
-// is upscaled and looks it, so it is refused at the point of choosing rather than after the
-// customer has published a blurry masthead.
-//
-// This check is CLIENT-SIDE and there is no server-side counterpart — the worker never sees
-// a branding upload, and Storage does not measure images. It is enforced here, before the
-// object is uploaded, which is why the message has to render here too.
-const MIN_HEADER_WIDTH = 1600
+// The band is ~1600px at its widest, so this is the working width. Nothing is REFUSED for
+// being smaller — a rejection at the point of choosing is the worst moment to be told no,
+// and a slightly soft band beats no band. Anything larger is scaled down and re-encoded
+// here, which is also what keeps a 6MB phone photo off the reader's first paint.
+const HEADER_MAX_WIDTH = 1600
 
 // Stand-ins so the preview is never empty before anything is published. They are LABELLED
 // wherever they appear — previously they rendered silently and stayed if the fetch came
@@ -115,20 +112,33 @@ async function deriveFavicon(file: File): Promise<Blob | null> {
   }
 }
 
-function measure(file: File): Promise<{ w: number; h: number } | null> {
+// Take whatever they picked and make it usable: scale to the working width, re-encode to
+// WebP. Deliberately NOT cropped to a fixed aspect here — the band renders at two different
+// heights (hero and compact) and crops with object-fit: cover, so a crop baked in at upload
+// would only fight it and could not be right for both.
+async function normalizeHeader(file: File): Promise<Blob | null> {
   const url = URL.createObjectURL(file)
-  return new Promise((res) => {
-    const i = new Image()
-    i.onload = () => {
-      res({ w: i.naturalWidth, h: i.naturalHeight })
-      URL.revokeObjectURL(url)
-    }
-    i.onerror = () => {
-      res(null)
-      URL.revokeObjectURL(url)
-    }
-    i.src = url
-  })
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image()
+      i.onload = () => res(i)
+      i.onerror = rej
+      i.src = url
+    })
+    if (!img.naturalWidth || !img.naturalHeight) return null
+    const w = Math.min(img.naturalWidth, HEADER_MAX_WIDTH)
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = Math.round((img.naturalHeight * w) / img.naturalWidth)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return await new Promise((res) => canvas.toBlob((b) => res(b), 'image/webp', 0.85))
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 // Customer-supplied, rendered on a page we host. Default the scheme to https and refuse
@@ -288,21 +298,13 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     setUploading('header')
     setHeaderError(null)
     touch()
-    const dim = await measure(file)
-    if (!dim) {
+    const blob = await normalizeHeader(file)
+    if (!blob) {
       setHeaderError(`${file.name} couldn’t be read as an image. Try a JPG or PNG.`)
       setUploading(null)
       return
     }
-    if (dim.w < MIN_HEADER_WIDTH) {
-      setHeaderError(
-        `That image is ${dim.w}px wide. Header images need to be at least ${MIN_HEADER_WIDTH}px wide so they stay sharp on large screens.`,
-      )
-      setUploading(null)
-      return
-    }
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    const { path: hp, error: upErr } = await uploadBranding(kb.id, 'header', file, ext)
+    const { path: hp, error: upErr } = await uploadBranding(kb.id, 'header', blob, 'webp')
     if (!hp) {
       setHeaderError(`${file.name} didn’t upload. ${upErr ?? 'Try again.'}`)
       setUploading(null)
@@ -474,7 +476,63 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                 </p>
               </div>
 
-              {/* Colour sits directly under the tiles: it is what makes them mean
+              {/* The logo sits immediately ABOVE Colour, because the colour row's first
+                  option is pulled out of it — "From your logo" offering swatches while the
+                  upload button was a section further down read as an empty promise. */}
+              <div className="th-fld">
+                <label>Logo</label>
+                {logoError ? (
+                  <div className="th-drop bad">
+                    <p className="th-droperr">
+                      <AlertIcon />
+                      {logoError}
+                    </p>
+                    <button
+                      disabled={uploading === 'logo'}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      Choose another file
+                    </button>
+                  </div>
+                ) : logoPath ? (
+                  <div className="th-hasfile">
+                    <span>Logo added.</span>
+                    <button className="linklike" onClick={() => logoInputRef.current?.click()}>
+                      Replace
+                    </button>
+                    <button
+                      className="linklike"
+                      onClick={() => {
+                        setLogoPath(null)
+                        setFaviconPath(null)
+                        setLogoColors([])
+                        touch()
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="th-drop">
+                    <p>Square works best. Your favicon is made from it.</p>
+                    <button
+                      disabled={uploading === 'logo'}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      {uploading === 'logo' ? 'Uploading…' : 'Upload a logo'}
+                    </button>
+                  </div>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  hidden
+                  onChange={(e) => pickFile(e, onLogo)}
+                />
+              </div>
+
+              {/* Colour sits under the tiles and the logo: it is what makes the tiles mean
                   anything. Two rows — what you already use, then a set to pick from. */}
               <div className="th-fld">
                 <label id="colour-label">Colour</label>
@@ -569,7 +627,7 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                   </div>
                 ) : (
                   <div className="th-drop">
-                    <p>JPG or PNG, at least {MIN_HEADER_WIDTH}px wide.</p>
+                    <p>Any JPG or PNG. We resize it and crop it to fit the band.</p>
                     <button disabled={uploading === 'header'} onClick={() => headerInputRef.current?.click()}>
                       {uploading === 'header' ? 'Uploading…' : 'Choose an image'}
                     </button>
@@ -594,59 +652,6 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
             {/* ---- Brand ---- */}
             <section className="th-grp">
               <p className="th-gt">Brand</p>
-              <div className="th-fld">
-                <label>Logo</label>
-                {logoError ? (
-                  <div className="th-drop bad">
-                    <p className="th-droperr">
-                      <AlertIcon />
-                      {logoError}
-                    </p>
-                    <button
-                      disabled={uploading === 'logo'}
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      Choose another file
-                    </button>
-                  </div>
-                ) : logoPath ? (
-                  <div className="th-hasfile">
-                    <span>Logo added.</span>
-                    <button className="linklike" onClick={() => logoInputRef.current?.click()}>
-                      Replace
-                    </button>
-                    <button
-                      className="linklike"
-                      onClick={() => {
-                        setLogoPath(null)
-                        setFaviconPath(null)
-                        setLogoColors([])
-                        touch()
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <div className="th-drop">
-                    <p>Square works best. Your favicon is made from it.</p>
-                    <button
-                      disabled={uploading === 'logo'}
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      {uploading === 'logo' ? 'Uploading…' : 'Upload a logo'}
-                    </button>
-                  </div>
-                )}
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                  hidden
-                  onChange={(e) => pickFile(e, onLogo)}
-                />
-              </div>
-
               <div className="th-fld">
                 <label>Typeface</label>
                 <div className="th-fonts">

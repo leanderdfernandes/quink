@@ -56,13 +56,8 @@ type Props = {
   onDismissWelcome?: () => void
 }
 
-// "Below this rate, on at least this many answers, the article needs looking at."
-//
-// The sample floor is the important half. A 0% helpful rate off two answers is two people
-// having a bad afternoon, and surfacing it as a defect sends someone to rewrite an article
-// that is fine. Five is the smallest number where a majority verdict is not one person, and
-// half is the point where the article is failing more readers than it serves.
-const HELPFUL_MIN_ANSWERS = 5
+// Below this rate the helpful figure on a row reads as poor rather than good — half is the
+// point where the article is failing more readers than it serves.
 const HELPFUL_FLOOR = 0.5
 
 type Feedback = { helpful: number; total: number }
@@ -74,7 +69,6 @@ type Meta = {
   // Steps with nothing to show. Only counted on GENERATED articles: a hand-written article
   // with no images is a choice, not a gap.
   missingShots: number
-  attention: string[]
 }
 
 type StatusBadge = { label: string; cls: 'gen' | 'draft' | 'unlisted' | 'listed' | 'dirty' }
@@ -127,7 +121,7 @@ export default function KnowledgeBase({
   const [feedback, setFeedback] = useState<Record<string, Feedback>>({})
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<'all' | 'live' | 'drafts' | 'attention'>('all')
+  const [filter, setFilter] = useState<'all' | 'live' | 'drafts'>('all')
   const [menuOpen, setMenuOpen] = useState(false)
 
   // Row menu, and the folder picker nested inside it.
@@ -218,9 +212,8 @@ export default function KnowledgeBase({
     }
   }, [kb.id, kb.owner_id])
 
-  // Everything derived per article, in one place, so the badge, the row meta, the
-  // needs-attention count and the needs-attention FILTER can never disagree about an
-  // article. The filter chip shows exactly the rows this marked.
+  // Everything derived per article, in one place, so the badge and the row meta can never
+  // disagree about an article.
   const meta = useMemo(() => {
     const out: Record<string, Meta> = {}
     for (const a of articles) {
@@ -229,42 +222,13 @@ export default function KnowledgeBase({
       const fb = feedback[a.id] ?? null
       const missingShots =
         a.source === 'generated' ? st.filter((s) => !s.screenshot_url).length : 0
-      const attention: string[] = []
-      if (missingShots) {
-        attention.push(`${plural(missingShots, 'step')} with no screenshot`)
-      }
-      if (a.visibility === 'draft' && !a.folder_id) attention.push('draft with no folder')
-      if (pending > 0 && a.visibility !== 'draft') {
-        attention.push(`${plural(pending, 'edit')} readers can't see yet`)
-      }
-      if (fb && fb.total >= HELPFUL_MIN_ANSWERS && fb.helpful / fb.total < HELPFUL_FLOOR) {
-        attention.push(
-          `${Math.round((fb.helpful / fb.total) * 100)}% helpful over ${plural(fb.total, 'answer')}`,
-        )
-      }
-      out[a.id] = { steps: st, pending, fb, missingShots, attention }
+      out[a.id] = { steps: st, pending, fb, missingShots }
     }
     return out
   }, [articles, steps, feedback])
 
   const liveCount = articles.filter((a) => a.visibility === 'listed').length
   const draftCount = articles.filter((a) => a.visibility === 'draft').length
-  const attentionIds = useMemo(
-    () => new Set(articles.filter((a) => meta[a.id]?.attention.length).map((a) => a.id)),
-    [articles, meta],
-  )
-
-  // Help-center-wide feedback. Sums the per-article rows rather than asking for a second
-  // aggregate — the RPC already returned every row this KB has.
-  const totals = useMemo(() => {
-    let helpful = 0
-    let total = 0
-    for (const f of Object.values(feedback)) {
-      helpful += f.helpful
-      total += f.total
-    }
-    return { helpful, total }
-  }, [feedback])
 
   const q = query.trim().toLowerCase()
   const matches = useMemo(
@@ -273,10 +237,9 @@ export default function KnowledgeBase({
         if (q && !(a.title || 'Untitled').toLowerCase().includes(q)) return false
         if (filter === 'live') return a.visibility === 'listed'
         if (filter === 'drafts') return a.visibility === 'draft'
-        if (filter === 'attention') return attentionIds.has(a.id)
         return true
       }),
-    [articles, q, filter, attentionIds],
+    [articles, q, filter],
   )
   const unfiled = matches.filter((a) => !a.folder_id)
 
@@ -863,58 +826,6 @@ export default function KnowledgeBase({
             </div>
           )}
 
-          {/* The value-proof strip. Any figure without real data behind it says so —
-              a zero here would read as a measurement of nothing. */}
-          <div className="al-stats">
-            <div className={`al-stat${kb.reader_views > 0 ? '' : ' empty'}`}>
-              <p className="k">Readers · 30 days</p>
-              {kb.reader_views > 0 ? (
-                <p className="v">{kb.reader_views.toLocaleString()}</p>
-              ) : (
-                <p className="v">Not counted yet</p>
-              )}
-              <p className="t">
-                {kb.reader_views > 0 ? 'Across your help center' : 'Reader visits aren’t recorded'}
-              </p>
-            </div>
-
-            <div className={`al-stat${totals.total > 0 ? '' : ' empty'}`}>
-              <p className="k">Found it helpful</p>
-              {totals.total > 0 ? (
-                <p className="v">
-                  {Math.round((totals.helpful / totals.total) * 100)}
-                  <small>%</small>
-                </p>
-              ) : (
-                <p className="v">No answers yet</p>
-              )}
-              <p className="t">
-                {totals.total > 0
-                  ? `of ${plural(totals.total, 'answer')}`
-                  : 'Readers are asked at the end of each article'}
-              </p>
-            </div>
-
-            <div className="al-stat">
-              <p className="k">Live articles</p>
-              <p className="v">{liveCount}</p>
-              <p className="t">{plural(draftCount, 'draft')}</p>
-            </div>
-
-            {/* Spans, not paragraphs: a <button> may only contain phrasing content. */}
-            <button
-              className={`al-stat as-btn${attentionIds.size ? '' : ' empty'}`}
-              aria-pressed={filter === 'attention'}
-              onClick={() => setFilter((f) => (f === 'attention' ? 'all' : 'attention'))}
-            >
-              <span className="k">Needs attention</span>
-              <span className="v">{attentionIds.size || 'Nothing'}</span>
-              <span className={`t${attentionIds.size ? ' warn' : ''}`}>
-                {attentionIds.size ? 'Show only these' : 'Everything looks fine'}
-              </span>
-            </button>
-          </div>
-
           <div className="al-tools">
             <div className="lib-search">
               <SearchIcon />
@@ -931,12 +842,11 @@ export default function KnowledgeBase({
                   ['all', 'All', articles.length],
                   ['live', 'Live', liveCount],
                   ['drafts', 'Drafts', draftCount],
-                  ['attention', 'Needs attention', attentionIds.size],
                 ] as const
               ).map(([key, label, n]) => (
                 <button
                   key={key}
-                  className={`al-chip${key === 'attention' ? ' attn' : ''}`}
+                  className="al-chip"
                   aria-pressed={filter === key}
                   onClick={() => setFilter(key)}
                 >

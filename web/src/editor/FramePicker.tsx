@@ -16,6 +16,12 @@ type Props = {
   articleId: string
   stepNumber: number
   currentPath: string | null
+  // The second the step's own frame was cut from. The pipeline's frame is its OWN object
+  // ({kb}/{article}/step-N.webp) and is never one of the dense objects, so a path match
+  // alone found nothing until the user had already picked from this strip — the picker
+  // opened at second 0 with nothing marked. The timestamp is what identifies it.
+  // Null when the image is a manual pick or upload, where there is nothing true to mark.
+  currentSecond: number | null
   onPick: (newPath: string) => void
   onRemove: () => void
   onClose: () => void
@@ -33,6 +39,7 @@ export default function FramePicker({
   articleId,
   stepNumber,
   currentPath,
+  currentSecond,
   onPick,
   onRemove,
   onClose,
@@ -65,6 +72,22 @@ export default function FramePicker({
     }
   }, [kbId, articleId])
 
+  // The frame in use. Exact path first — that is the truth once anything has been picked
+  // from this strip. Otherwise the nearest second to the step's timestamp: the dense set is
+  // 1fps and the step's frame was cut at an arbitrary second, so "nearest" is the same
+  // moment, not a guess.
+  const current =
+    frames.find((f) => f.path === currentPath) ??
+    (currentSecond === null
+      ? undefined
+      : frames.reduce<(typeof frames)[number] | undefined>(
+          (best, f) =>
+            !best || Math.abs(f.second - currentSecond) < Math.abs(best.second - currentSecond)
+              ? f
+              : best,
+          undefined,
+        ))
+
   // Start the strip on the frame that's currently in use.
   useEffect(() => {
     currentRef.current?.scrollIntoView({ inline: 'center', block: 'nearest' })
@@ -91,7 +114,13 @@ export default function FramePicker({
   return (
     <div className="ed-picker">
       <div className="ed-picker-hd">
-        <span className="ed-picker-ti">{hasFrames ? 'Pick a frame' : 'Add an image'}</span>
+        <span className="ed-picker-ti">
+          {!hasFrames
+            ? 'Add an image'
+            : current
+              ? `Pick a frame — now using ${clock(current.second)}`
+              : 'Pick a frame'}
+        </span>
         <span className="ed-picker-alt">
           <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
             {busy ? 'Uploading…' : 'Upload an image'}
@@ -112,7 +141,7 @@ export default function FramePicker({
       ) : hasFrames ? (
         <div className="ed-strip">
           {frames.map((f) => {
-            const isCurrent = f.path === currentPath
+            const isCurrent = f === current
             return (
               <button
                 key={f.path}
@@ -123,7 +152,9 @@ export default function FramePicker({
                 title={isCurrent ? 'Current frame' : 'Use this frame'}
               >
                 <img src={f.url} alt="" decoding="async" />
-                <span className="ed-frame-ts">{clock(f.second)}</span>
+                <span className={`ed-frame-ts${isCurrent ? ' now' : ''}`}>
+                  {isCurrent ? 'In use' : clock(f.second)}
+                </span>
               </button>
             )
           })}

@@ -203,6 +203,9 @@ export default function StepCard({
           articleId={articleId}
           stepNumber={step.step_number}
           currentPath={step.screenshot_url}
+          // Null once the image is a human pick or upload: the timestamp still holds the
+          // moment the pipeline chose, and marking that frame "in use" would be a lie.
+          currentSecond={step.is_edited ? null : step.timestamp_seconds}
           onPick={(path) => {
             onPickFrame(path)
             setPickerOpen(false)

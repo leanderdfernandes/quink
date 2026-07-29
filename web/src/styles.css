@@ -2286,6 +2286,12 @@ textarea {
   padding: 1px 0;
   text-align: center;
 }
+/* The frame in use says so in words. The ring alone is legible only while it is on screen,
+   and the strip is long enough that the user scrolls away from it immediately. */
+.ed-frame-ts.now {
+  background: var(--brand);
+  font-weight: 700;
+}
 
 /* --- preview mode --- */
 .ed-pv-note {
@@ -4537,83 +4543,12 @@ a.rs-crumb-link:hover {
   color: var(--muted);
 }
 
-/* Value-proof strip. A seamed row, not a card grid — these are four readings of one
-   help center, not four separate things. */
-.al-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  overflow: hidden;
-  margin: 22px auto;
-}
-.al-stat {
-  background: var(--surface);
-  padding: 14px 16px;
-  text-align: left;
-  border: 0;
-  font: inherit;
-  color: inherit;
-}
-.al-stat > span {
-  display: block;
-}
-.al-stat .k {
-  margin: 0;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.al-stat .v {
-  margin: 6px 0 0;
-  font-size: 23px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-.al-stat .v small {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0;
-}
-.al-stat .t {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-.al-stat .t.warn {
-  color: #8a5c13;
-}
-/* An empty figure is stated as empty. A zero here would read as a measurement. */
-.al-stat.empty .v {
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.35;
-}
-.al-stat.as-btn {
-  cursor: pointer;
-}
-.al-stat.as-btn:hover {
-  background: var(--brand-50);
-}
-.al-stat.as-btn[aria-pressed='true'] {
-  background: var(--brand-50);
-  box-shadow: inset 2px 0 0 var(--brand-600);
-}
-
 .al-tools {
   display: flex;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  margin: 0 auto 16px;
+  margin: 22px auto 16px;
 }
 .al-tools .lib-search {
   flex: 1;
@@ -4655,12 +4590,6 @@ a.rs-crumb-link:hover {
   opacity: 0.7;
   margin-left: 5px;
 }
-.al-chip.attn[aria-pressed='false'] {
-  border-color: #ecd9b3;
-  background: #fbf3e3;
-  color: #8a5c13;
-}
-
 /* Folder groups */
 .al-grp {
   border: 1px solid var(--border);
@@ -5381,9 +5310,6 @@ a.rs-crumb-link:hover {
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  .al-stats {
-    grid-template-columns: 1fr 1fr;
-  }
   .lib-main {
     padding: 22px 18px 60px;
   }
@@ -5394,9 +5320,6 @@ a.rs-crumb-link:hover {
   }
   .lib-kb-tag {
     display: none;
-  }
-  .al-stats {
-    grid-template-columns: 1fr;
   }
   .al-grp-hd,
   .al-row {
