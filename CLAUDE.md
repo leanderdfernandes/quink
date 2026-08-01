@@ -231,8 +231,23 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   One price per plan for everyone; no per-customer price column.
 - **Enforcement happens once, in `POST /api/generate`, before the Gemini call.** Free is a
   hard wall; paid run caps are SOFT (proceed + flag `over_cap`). The hard protection is the
-  global `DAILY_SPEND_CAP_USD` circuit breaker, which applies to `internal` too. The SPA
-  reads counters for display only, never for permission.
+  global `DAILY_SPEND_CAP_USD` circuit breaker, which applies to `internal` too.
+- **The client may REFUSE locally; it may never GRANT.** This supersedes the older, less
+  precise "the SPA reads counters for display only, never for permission", which read as
+  banning both directions. The rule is asymmetric, because the risks are:
+  - **Refusing** locally costs nothing if the client is wrong or tampered with — a user who
+    patches out the check just reaches the worker's wall and is refused there. So the SPA
+    may decline work it can already tell will be rejected, and *should*, whenever declining
+    early avoids pointless or destructive work.
+  - **Granting** locally is the whole vulnerability. The worker remains the ONLY authority
+    for admission. No client check may ever be the reason a run proceeds, and removing one
+    must never widen what the backend allows.
+  - **Worked example (slice 3e, held files):** an over-quota file is refused at the dropzone
+    before a byte moves. That consumes no quota, creates no Storage object, and closes a
+    real leak — `uploadVideo` runs before `/api/generate` and `jobs.video_path` is only
+    written at insert, so a 402 strands an object nothing in the database names (five queued
+    files with three refused stranded three, per attempt). The worker's free-tier wall is
+    untouched and still runs on every request. **Do not "fix" this refusal back out.**
 - **Storage objects are keyed `{kb_id}/…`,** never by owner: a KB changes hands on claim,
   and a purge must be able to delete exactly one KB's objects. Storage RLS resolves that
   first path segment through `knowledge_bases`.

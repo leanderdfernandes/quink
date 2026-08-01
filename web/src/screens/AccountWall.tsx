@@ -16,9 +16,13 @@ import { COPY } from '../lib/config'
 type Props = {
   fileName: string
   fileSize: string
+  // How many OTHER recordings were dropped. Only the first crosses this wall — carrying
+  // several hundred megabytes through an OAuth redirect to save one drag is not a trade
+  // worth making — so say so here rather than let them arrive and notice.
+  extraFiles?: number
 }
 
-export default function AccountWall({ fileName, fileSize }: Props) {
+export default function AccountWall({ fileName, fileSize, extraFiles = 0 }: Props) {
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
@@ -94,6 +98,13 @@ export default function AccountWall({ fileName, fileSize }: Props) {
             {COPY.wallFilePill}
             <span className="size">{fileSize}</span>
           </span>
+          {extraFiles > 0 && (
+            <p className="cap" style={{ marginTop: 8 }}>
+              Your other {extraFiles === 1 ? 'recording' : `${extraFiles} recordings`} stayed
+              on this device — drop {extraFiles === 1 ? 'it' : 'them'} in again once
+              you&rsquo;re signed in.
+            </p>
+          )}
         </div>
 
         <button className="google-btn" onClick={google} disabled={busy}>

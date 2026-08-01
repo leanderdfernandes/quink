@@ -20,3 +20,7 @@ supabase/.temp/
 eval/videos/
 eval/runs/
 eval/results.csv
+
+worker/.env
+web/.env
+

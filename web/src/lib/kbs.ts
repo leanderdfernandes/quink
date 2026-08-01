@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { KnowledgeBase } from './types'
+import type { KnowledgeBase, ProductContext } from './types'
 
 // Authoring resolves a KB from the PATH; the reader resolves one from the HOSTNAME
 // (lib/config.ts readerKeyFromHost). Those two never share a resolver — a single
@@ -47,4 +47,32 @@ export async function resolveDefaultKb(userId: string): Promise<KnowledgeBase | 
 // entitlements, and the UPDATE grant is scoped to this one column (migration 0015).
 export async function setLastKb(userId: string, kbId: string): Promise<void> {
   await supabase.from('profiles').update({ last_kb_id: kbId }).eq('id', userId)
+}
+
+// Remember the product tier on the KB so the next run does not ask for it again
+// (migration 0027). Returns the updated row, because the caller is holding the old one.
+//
+// Deliberately does NOT touch `about`, and DECIDED not to — this is not an oversight.
+// `about` is reader-facing prose on the public help center; `product_description` is
+// model-facing grounding the user wrote for a different purpose. Prefilling one from the
+// other was considered and rejected: someone types a blunt internal description ("the
+// janky admin panel nobody maintains") and finds it published on their help center home
+// page, from a silent write they never saw. If reader copy is ever seeded from this, it
+// has to be a visible, editable step the user confirms — never a side effect of uploading.
+export async function saveProductContext(
+  kbId: string,
+  product: ProductContext,
+): Promise<KnowledgeBase | null> {
+  const { data } = await supabase
+    .from('knowledge_bases')
+    .update({
+      product_name: product.product_name,
+      product_description: product.description,
+      audience: product.audience,
+      tone: product.tone,
+    })
+    .eq('id', kbId)
+    .select()
+    .single()
+  return (data as KnowledgeBase | null) ?? null
 }

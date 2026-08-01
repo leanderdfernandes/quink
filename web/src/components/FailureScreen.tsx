@@ -22,6 +22,13 @@ type Props = {
   // The retention sweep already collected this recording — retry is impossible, don't
   // offer it. Known from the jobs row, so the common case costs no round trip.
   videoPurged?: boolean
+  // The run failed, but it got far enough to leave a populated, editable article. Since the
+  // 2g worker change that article reaches 'ready' on every failure path, so it is a DRAFT,
+  // not wreckage — and "Try again" would fork a SECOND article from the same recording,
+  // duplicating work the user already has. Opening the draft becomes the primary action and
+  // retry is withdrawn; the failure is now about the polish they didn't get, not the article.
+  draftArticleId?: string | null
+  onOpenDraft?: (articleId: string) => void
   onRetryStarted: (jobId: string) => void
   onReupload: () => void
 }
@@ -30,6 +37,8 @@ export default function FailureScreen({
   code,
   jobId,
   videoPurged,
+  draftArticleId,
+  onOpenDraft,
   onRetryStarted,
   onReupload,
 }: Props) {
@@ -40,8 +49,10 @@ export default function FailureScreen({
   const [retryFailed, setRetryFailed] = useState<string | null>(null)
 
   const failure = failureFor(purged ? 'video_purged' : code)
-  // Retry needs both a job to re-run and a recording to re-run it from.
-  const canRetry = failure.recovery === 'retry' && !!jobId && !purged
+  const hasDraft = !!draftArticleId && !!onOpenDraft
+  // Retry needs both a job to re-run and a recording to re-run it from — and it must not be
+  // offered when the article already exists, or one failure becomes two articles.
+  const canRetry = failure.recovery === 'retry' && !!jobId && !purged && !hasDraft
 
   async function retry() {
     if (!jobId) return
@@ -97,6 +108,11 @@ export default function FailureScreen({
         </p>
 
         <div style={{ display: 'flex', gap: 10, marginTop: 22, justifyContent: 'center' }}>
+          {hasDraft && (
+            <button className="btn" onClick={() => onOpenDraft!(draftArticleId!)}>
+              Open your draft
+            </button>
+          )}
           {canRetry && (
             <button className="btn" disabled={busy} onClick={retry}>
               {busy ? 'Starting…' : 'Try again'}
@@ -105,7 +121,7 @@ export default function FailureScreen({
           {/* Always reachable. Even on a retryable failure, some users would simply
               rather start over — refusing them that is not a kindness. */}
           <button className="btn btn-ghost" onClick={onReupload}>
-            {canRetry ? 'Upload a different recording' : 'Upload a recording'}
+            {canRetry || hasDraft ? 'Upload a different recording' : 'Upload a recording'}
           </button>
         </div>
 

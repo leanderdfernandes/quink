@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { signedFrameUrl, signedFrameUrls } from '../lib/storage'
+import { publicFrameUrl, signedFrameUrl, signedFrameUrls } from '../lib/storage'
 import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
 import { collectSourceVideo, deleteArticle } from '../lib/articles'
@@ -13,7 +13,11 @@ import StepThumb from '../components/StepThumb'
 import StepCard from './StepCard'
 import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
+import GenerationStrip, { type GenPhase } from './GenerationStrip'
+import { useGeneration } from './useGeneration'
+import FailureScreen from '../components/FailureScreen'
 import type {
+  Annotation,
   Article,
   ArticleRow,
   Folder,
@@ -31,24 +35,59 @@ import type {
 // Structural vocabulary is the four gestures §4 lists — reorder, merge, split, duplicate —
 // plus delete, plus INSERT, which is a different job from split and says so: split means
 // "this step covers two things", insert means "I missed a step entirely".
+//
+// THIS IS ALSO THE GENERATING SCREEN. There is no other one. A run in flight renders here,
+// in an unfinished state: skeleton steps resolve into headings, screenshots land in their
+// slots, prose tightens in place, and the chrome un-dims. Nothing hands off, because a
+// handoff is the moment the user discovers they were waiting for a different screen than
+// the one they get. `articleId` is therefore nullable — for the first ~15 seconds of a run
+// the article row does not exist yet and this component renders the shell around a job.
 
 type Props = {
-  articleId: string
+  // Null until Stage 1 creates the article. The shell renders either way.
+  articleId: string | null
   kb: KB
   // The OWNER's plan (profiles.plan), not the KB's — entitlements are owner-level.
   plan: string
   onBack: () => void
   // The publish-moment handoff into theming (ux-spec §5). An offer, never a redirect.
   onOpenTheme: () => void
+  // A run this editor should watch. Set on the first-run landing, where the user is put
+  // inside the article before there is an article.
+  jobId?: string | null
+  // 0–1 while the bytes are still moving, from the real upload. Null afterwards.
+  uploadProgress?: number | null
+  // The pipeline created the article: put it in the URL. Fires once, and does NOT remount
+  // this component — that is the whole point.
+  onArticleResolved?: (articleId: string) => void
+  onRetryStarted?: (jobId: string) => void
+  onReupload?: () => void
 }
 
 // An undo checkpoint — content only, no DB ids (a restore reinserts fresh rows).
+//
+// THE FOUR-PLACES RULE. A restore DELETES every step row and re-inserts from this shape, so
+// any step column missing from it is destroyed by one Ctrl+Z — silently, with no error, and
+// only noticed later. The same list has to appear in FOUR places that all rebuild rows:
+//   1. this type          2. snapshotOf()
+//   3. applySnapshot()'s insert                 4. discardChanges()'s insert
+// plus duplicateArticle() in lib/articles.ts and pendingEditCount() in lib/pendingEdits.ts,
+// which rebuild and compare rows for their own reasons.
+//
+// If you add a column to `steps`, add it to all six. This is not hypothetical: is_edited and
+// timestamp_seconds were already being dropped by half of them before annotations existed.
 type Snapshot = {
   title: string
   subtitle: string
   steps: Pick<
     StepRow,
-    'step_number' | 'heading' | 'body_text' | 'screenshot_url' | 'is_edited' | 'timestamp_seconds'
+    | 'step_number'
+    | 'heading'
+    | 'body_text'
+    | 'screenshot_url'
+    | 'is_edited'
+    | 'timestamp_seconds'
+    | 'annotations'
   >[]
 }
 
@@ -62,8 +101,29 @@ const snapshotOf = (article: ArticleRow, steps: StepRow[]): Snapshot => ({
     screenshot_url: s.screenshot_url,
     is_edited: s.is_edited,
     timestamp_seconds: s.timestamp_seconds,
+    annotations: s.annotations ?? [],
   })),
 })
+
+// The article row before Stage 1 has written one. Never rendered as text — every field it
+// carries is behind a skeleton while `live` is true — it exists so the shell has one shape
+// instead of a null-check on every line of the canvas.
+const PENDING_ARTICLE = {
+  id: '',
+  kb_id: '',
+  title: '',
+  subtitle: '',
+  status: 'generating',
+  visibility: 'draft',
+  slug: null,
+  folder_id: null,
+  source: 'generated',
+  source_video_path: null,
+  published_content: null,
+  published_at: null,
+  created_at: '',
+  updated_at: '',
+} as const satisfies ArticleRow
 
 const renumber = (list: StepRow[]) =>
   list.map((s, i) => (s.step_number === i + 1 ? s : { ...s, step_number: i + 1 }))
@@ -94,7 +154,18 @@ const InfoIcon = () => (
   </svg>
 )
 
-export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Props) {
+export default function Editor({
+  articleId,
+  kb,
+  plan,
+  onBack,
+  onOpenTheme,
+  jobId = null,
+  uploadProgress = null,
+  onArticleResolved,
+  onRetryStarted,
+  onReupload,
+}: Props) {
   const [article, setArticle] = useState<ArticleRow | null>(null)
   const [steps, setSteps] = useState<StepRow[]>([])
   const [shotUrls, setShotUrls] = useState<Record<string, string | null>>({})
@@ -149,7 +220,16 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
 
+  // Bumped when a watched run reaches a terminal state, to re-read the finished article
+  // once and hand control back to the normal editing path.
+  const [reloadKey, setReloadKey] = useState(0)
+
   useEffect(() => {
+    // No article yet: the run is still in Stage 1. The shell renders off the job alone.
+    if (!articleId) {
+      setLoading(false)
+      return
+    }
     let cancelled = false
     ;(async () => {
       const [{ data: a }, { data: s }] = await Promise.all([
@@ -181,7 +261,21 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
     return () => {
       cancelled = true
     }
-  }, [articleId, kb.id])
+  }, [articleId, kb.id, reloadKey])
+
+  // --- The run, if there is one ---------------------------------------------------
+  const gen = useGeneration(jobId, articleId, onArticleResolved)
+
+  // `article.status` is the authority once the row exists, and after the 2g worker change
+  // it reaches a terminal value on EVERY path — success, degraded and failure alike. Before
+  // the row exists, a job id is the only evidence a run is happening.
+  const live = article ? article.status === 'generating' : !!jobId
+
+  // The run ended: read the finished article once, then the normal editing path owns it.
+  const jobStatus = gen.job?.status
+  useEffect(() => {
+    if (jobStatus === 'done' || jobStatus === 'error') setReloadKey((k) => k + 1)
+  }, [jobStatus])
 
   const bumpRev = (id: string) => setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }))
 
@@ -222,6 +316,7 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
       const { data, error } = await supabase
         .from('steps')
         .insert(
+          // Four-places rule, site 3. This insert is what an undo restores TO.
           snap.steps.map((s) => ({
             article_id: articleId,
             step_number: s.step_number,
@@ -230,6 +325,7 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
             screenshot_url: s.screenshot_url,
             is_edited: s.is_edited,
             timestamp_seconds: s.timestamp_seconds,
+            annotations: s.annotations ?? [],
           })),
         )
         .select()
@@ -298,6 +394,15 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
     const url = await signedFrameUrl(newPath)
     if (!url) setOpError('Picked the frame, but its preview didn’t load. Reload the page.')
     setShotUrls((m) => ({ ...m, [id]: url }))
+  }
+
+  // 4g: annotating must NOT set is_edited. That flag means "a human chose this FRAME", and
+  // StepCard passes currentSecond = null whenever it is set — so annotating a step whose
+  // underlying frame never changed would blank the frame picker's current-frame marker and
+  // make the strip open at second 0 with nothing highlighted. Annotations are their own
+  // signal; the column's own presence is what pendingEditCount compares.
+  function annotateStep(id: string, annotations: Annotation[]) {
+    saveStep(id, { annotations })
   }
 
   function removeFrame(id: string) {
@@ -443,9 +548,11 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
         body_text: src.body_text,
         screenshot_url: src.screenshot_url,
         // The copy points at the same human-chosen frame, so it inherits the marker that
-        // protects it from a re-run (§8).
+        // protects it from a re-run (§8) — and the shapes drawn on that frame, which are
+        // positioned against the image and are still correct on a copy of it.
         is_edited: src.is_edited,
         timestamp_seconds: src.timestamp_seconds,
+        annotations: src.annotations ?? [],
       })
       .select()
       .single()
@@ -484,7 +591,9 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
     nextVisibility: 'listed' | 'unlisted',
     folderId?: string | null,
   ): Promise<boolean> {
-    if (!article) return false
+    // No article id means the run has not created one yet, and `live` has the whole header
+    // inert anyway — this is the type-level statement of the same rule.
+    if (!article || !articleId) return false
     setPublishing(true)
     setOpError(null)
     await flush()
@@ -498,6 +607,11 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
         heading: s.heading,
         body_text: s.body_text,
         screenshot_url: s.screenshot_url,
+        // Published content: the reader renders annotations from THIS, not from the live
+        // steps rows. There are two publish implementations and they share no helper
+        // (this one and the other in the pair), so a field added to one and not the other
+        // ships annotated in the editor and bare on the live site.
+        annotations: s.annotations ?? [],
       })),
     }
     const now = new Date().toISOString()
@@ -645,12 +759,22 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
       const { data, error } = await supabase
         .from('steps')
         .insert(
+          // Four-places rule, site 4 — and the worst of the four, because "discard my
+          // unpublished edits" is a destructive action the user consented to, so anything
+          // extra it destroys is indistinguishable from what they asked for.
+          //
+          // `pub` is the PUBLISHED snapshot, which carries only the contract fields, so
+          // is_edited and timestamp_seconds are restored to their defaults rather than
+          // preserved: discarding back to the published version genuinely means the
+          // machine-picked state of that version. Annotations DO come from the snapshot,
+          // because they are published content and the reader renders them.
           pub.steps.map((s) => ({
             article_id: articleId,
             step_number: s.step_number,
             heading: s.heading,
             body_text: s.body_text,
             screenshot_url: s.screenshot_url,
+            annotations: s.annotations ?? [],
           })),
         )
         .select()
@@ -763,6 +887,7 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
           heading: s.heading,
           body_text: s.body_text,
           screenshot_url: s.screenshot_url,
+          annotations: s.annotations ?? [],
         })),
       }
     : null
@@ -802,20 +927,67 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
   // (which starts true) stands in.
   const unpublished = article?.published_content ? pendingEdits > 0 : dirty
 
-  if (loading || !article) return <div className="page" />
+  // --- What the run is doing, in numbers that are all real -------------------------
+  // While the run owns the document the rows come from the poll; afterwards from local
+  // editing state. One expression, so the rail, the canvas and the strip cannot disagree.
+  const shownSteps = live ? gen.steps : steps
+  const captured = shownSteps.filter((s) => s.screenshot_url).length
+  const skeleton = live && shownSteps.length === 0
+
+  const phase: GenPhase = !live
+    ? 'ready'
+    : uploadProgress !== null && uploadProgress < 1
+      ? 'uploading'
+      : (gen.job?.stage ?? 'analyzing')
+
+  // A run that died BEFORE producing an article has nothing to show and nothing to edit —
+  // that is the one case still worth a failure screen. Once steps exist the user is looking
+  // at their draft, so the article stays open and editable (2g: the steps exist and are
+  // editable, which is a draft, not a failure).
+  const deadOnArrival =
+    (gen.lost || gen.job?.status === 'error') && shownSteps.length === 0 && !article
+
+  if (deadOnArrival) {
+    return (
+      <FailureScreen
+        code={gen.lost ? null : (gen.job?.failure_code ?? null)}
+        jobId={jobId}
+        videoPurged={!!gen.job?.video_purged_at}
+        onRetryStarted={(id) => onRetryStarted?.(id)}
+        onReupload={() => onReupload?.()}
+      />
+    )
+  }
+
+  if (loading || (!article && !live)) return <div className="page" />
+
+  // Stands in for the ~15 seconds between "the run started" and "Stage 1 wrote the article
+  // row". Everything it holds renders as a skeleton, so no placeholder text is ever visible.
+  const doc: ArticleRow = article ?? PENDING_ARTICLE
 
   return (
-    <div className="ed">
+    <div className={`ed${live ? ' ed-live' : ''}`}>
       <header className="ed-bar">
         <button className="ed-back" onClick={onBack}>
           ← Help center
         </button>
 
+        {/* Everything below is present and INERT while the run writes. Hiding it and
+            revealing it at the end would be a screen change by another name — and the wait
+            is exactly when someone wants to see what they will be able to do. */}
         <div className="ed-seg" role="group" aria-label="Editor mode">
-          <button aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>
+          <button
+            aria-pressed={mode === 'edit'}
+            disabled={live}
+            onClick={() => setMode('edit')}
+          >
             Edit
           </button>
-          <button aria-pressed={mode === 'preview'} onClick={() => setMode('preview')}>
+          <button
+            aria-pressed={mode === 'preview'}
+            disabled={live}
+            onClick={() => setMode('preview')}
+          >
             Preview
           </button>
         </div>
@@ -823,7 +995,7 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
         <button
           className="ed-icbtn"
           onClick={undo}
-          disabled={!canUndo}
+          disabled={live || !canUndo}
           title="Undo (Ctrl+Z)"
           aria-label="Undo"
         >
@@ -832,7 +1004,7 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
         <button
           className="ed-icbtn"
           onClick={redo}
-          disabled={!canRedo}
+          disabled={live || !canRedo}
           title="Redo (Ctrl+Shift+Z)"
           aria-label="Redo"
         >
@@ -843,12 +1015,13 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
         {notice && <span className="ed-notice">{notice}</span>}
 
         <ShareControls
+          locked={live}
           visibility={visibility}
           slug={slug}
           dirty={unpublished}
           pendingEdits={pendingEdits}
           publishing={publishing}
-          everPublished={!!article.published_at}
+          everPublished={!!doc.published_at}
           unpublishing={unpublishing}
           discarding={discarding}
           deleting={deleting}
@@ -870,10 +1043,10 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
 
       {showPublish && (
         <PublishModal
-          articleTitle={article.title}
+          articleTitle={doc.title}
           subdomain={kb.subdomain}
           slug={slug}
-          hasSourceVideo={!!article.source_video_path}
+          hasSourceVideo={!!doc.source_video_path}
           folders={folders}
           selectedFolderId={pubFolderId}
           onSelectFolder={setPubFolderId}
@@ -914,7 +1087,7 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
                 categories={[]}
                 article={previewArticle}
                 activeSlug={slug}
-                articleUpdatedAt={article.updated_at}
+                articleUpdatedAt={doc.updated_at}
                 articleCategory={folderName}
               />
             )}
@@ -926,81 +1099,152 @@ export default function Editor({ articleId, kb, plan, onBack, onOpenTheme }: Pro
           <nav className="ed-rail" aria-label="Steps in this article">
             <p className="ed-rail-cap">Steps</p>
             <ol>
-              {steps.map((s, i) => (
-                <li key={s.id}>
-                  <button
-                    className="ed-rail-item"
-                    aria-current={activeStep === s.step_number ? 'true' : undefined}
-                    draggable
-                    onDragStart={() => (dragFrom.current = i)}
-                    onDragEnter={() => onDragEnter(i)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDragEnd={onDrop}
-                    onDrop={onDrop}
-                    onClick={() =>
-                      document
-                        .getElementById(`step-${s.step_number}`)
-                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }
-                  >
-                    <span className="ed-rail-idx">{s.step_number}</span>
-                    <StepThumb stepNumber={s.step_number} screenshotPath={s.screenshot_url} />
-                    <span className="ed-rail-lb">{s.heading || 'Untitled step'}</span>
-                  </button>
-                </li>
-              ))}
+              {skeleton
+                ? // Three, because the rail's job right now is to say "a list is coming",
+                  // and any count here would be a guess — the real one arrives with Stage 1.
+                  [0, 1, 2].map((i) => (
+                    <li key={i}>
+                      <span className="ed-rail-item ed-rail-sk" aria-hidden>
+                        <span className="ed-rail-idx" />
+                        <span className="sk" style={{ width: `${64 - i * 12}%`, height: 9 }} />
+                      </span>
+                    </li>
+                  ))
+                : shownSteps.map((s, i) => (
+                    <li key={s.id}>
+                      <button
+                        className="ed-rail-item"
+                        aria-current={activeStep === s.step_number ? 'true' : undefined}
+                        draggable={!live}
+                        onDragStart={() => (dragFrom.current = i)}
+                        onDragEnter={() => !live && onDragEnter(i)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnd={live ? undefined : onDrop}
+                        onDrop={live ? undefined : onDrop}
+                        onClick={() =>
+                          document
+                            .getElementById(`step-${s.step_number}`)
+                            ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }
+                      >
+                        <span className="ed-rail-idx">{s.step_number}</span>
+                        <StepThumb
+                          stepNumber={s.step_number}
+                          screenshotPath={s.screenshot_url}
+                        />
+                        <span className="ed-rail-lb">{s.heading || 'Untitled step'}</span>
+                      </button>
+                    </li>
+                  ))}
             </ol>
           </nav>
 
           <main className="ed-canvas" ref={canvasRef}>
             <div className="ed-canvas-in">
-              <input
-                className="ed-title"
-                value={article.title}
-                placeholder="Article title"
-                onChange={(e) => saveArticle({ title: e.target.value })}
-                aria-label="Article title"
-              />
-              <input
-                className="ed-sub"
-                value={article.subtitle}
-                placeholder="A one-line summary"
-                onChange={(e) => saveArticle({ subtitle: e.target.value })}
-                aria-label="One-line summary"
-              />
+              {skeleton ? (
+                <>
+                  <div className="sk ed-title-sk" />
+                  <div className="sk ed-sub-sk" />
+                </>
+              ) : (
+                <>
+                  <input
+                    className="ed-title"
+                    value={doc.title}
+                    readOnly={live}
+                    placeholder="Article title"
+                    onChange={(e) => saveArticle({ title: e.target.value })}
+                    aria-label="Article title"
+                  />
+                  <input
+                    className="ed-sub"
+                    value={doc.subtitle}
+                    readOnly={live}
+                    placeholder="A one-line summary"
+                    onChange={(e) => saveArticle({ subtitle: e.target.value })}
+                    aria-label="One-line summary"
+                  />
+                </>
+              )}
               <div className="ed-divider" />
 
-              <InsertHere at={0} onInsert={insertStep} first />
+              {/* One line, above the first step, for the whole wait. */}
+              {(live || gen.job) && (
+                <GenerationStrip
+                  phase={phase}
+                  uploadProgress={uploadProgress}
+                  captured={captured}
+                  polished={gen.polished}
+                  total={shownSteps.length}
+                />
+              )}
 
-              {steps.map((s, i) => (
-                <div key={s.id}>
-                  <StepCard
-                    key={`${s.id}:${revs[s.id] ?? 0}`}
-                    step={s}
-                    index={i}
-                    isFirst={i === 0}
-                    screenshotUrl={shotUrls[s.id] ?? null}
-                    kbId={kb.id}
-                    articleId={articleId}
-                    hasVideo={article.source === 'generated'}
-                    onHeading={(heading) => saveStep(s.id, { heading })}
-                    onBody={(body_text) => saveStep(s.id, { body_text })}
-                    onMergeUp={() => mergeUp(i)}
-                    onSplit={(before, after) => split(i, before, after)}
-                    onDuplicate={() => duplicateStep(i)}
-                    onDelete={() => deleteStep(i)}
-                    onPickFrame={(path) => pickFrame(s.id, path)}
-                    onRemoveFrame={() => removeFrame(s.id)}
-                    onError={setOpError}
-                    onDragStart={() => (dragFrom.current = i)}
-                    onDragEnterCard={() => onDragEnter(i)}
-                    onDrop={onDrop}
-                  />
-                  <InsertHere at={i + 1} onInsert={insertStep} />
-                </div>
-              ))}
+              {!live && <InsertHere at={0} onInsert={insertStep} first />}
 
-              <button className="ed-addstep" onClick={() => insertStep(steps.length)}>
+              {skeleton
+                ? [0, 1, 2].map((i) => (
+                    <div className="ed-card ed-card-sk" key={i} aria-hidden>
+                      <div className="ed-card-hd">
+                        <span className="ed-num-sk" />
+                        <span className="sk" style={{ height: 17, width: `${58 - i * 8}%` }} />
+                      </div>
+                      <div className="sk ed-line-sk" style={{ width: '92%' }} />
+                      <div className="sk ed-line-sk" style={{ width: '71%' }} />
+                      <div className="ed-shot-wait">
+                        <span className="ed-shot-wait-sheen" />
+                      </div>
+                    </div>
+                  ))
+                : shownSteps.map((s, i) => (
+                    <div key={s.id}>
+                      <StepCard
+                        key={`${s.id}:${revs[s.id] ?? 0}`}
+                        step={s}
+                        index={i}
+                        isFirst={i === 0}
+                        screenshotUrl={
+                          // The frames bucket is public (migration 0007), so a live step
+                          // costs no round trip to show. Signed URLs stay on the settled
+                          // path where the whole article is minted in one pass.
+                          live
+                            ? publicFrameUrl(s.screenshot_url)
+                            : (shotUrls[s.id] ?? null)
+                        }
+                        kbId={kb.id}
+                        articleId={articleId ?? ''}
+                        hasVideo={doc.source === 'generated'}
+                        readOnly={live}
+                        // Only while the frame pass is still running or yet to start. Once
+                        // the run is past `capturing`, an empty slot is a real gap and says
+                        // so instead of pretending something is still coming.
+                        awaitingFrame={
+                          live && !s.screenshot_url && phase !== 'writing' && phase !== 'ready'
+                        }
+                        settling={gen.settling.has(s.id)}
+                        onHeading={(heading) => saveStep(s.id, { heading })}
+                        onBody={(body_text) => saveStep(s.id, { body_text })}
+                        onMergeUp={() => mergeUp(i)}
+                        onSplit={(before, after) => split(i, before, after)}
+                        onDuplicate={() => duplicateStep(i)}
+                        onDelete={() => deleteStep(i)}
+                        onPickFrame={(path) => pickFrame(s.id, path)}
+                        onRemoveFrame={() => removeFrame(s.id)}
+                        onAnnotate={(annotations) => annotateStep(s.id, annotations)}
+                        brandColor={kb.primary_color}
+                        onError={setOpError}
+                        onDragStart={() => (dragFrom.current = i)}
+                        onDragEnterCard={() => onDragEnter(i)}
+                        onDrop={onDrop}
+                      />
+                      {!live && <InsertHere at={i + 1} onInsert={insertStep} />}
+                    </div>
+                  ))}
+
+              <button
+                className="ed-addstep"
+                disabled={live}
+                onClick={() => insertStep(steps.length)}
+              >
                 + Add a step <kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} ⏎</kbd>
               </button>
             </div>

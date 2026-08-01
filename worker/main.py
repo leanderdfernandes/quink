@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import config
 import domain
 import failures
+import lanes
 import mailer
 import pipeline
 import prompts
@@ -123,14 +124,18 @@ def _require_owner(authorization: str | None, kb_id: str) -> str:
 # --- Entitlements (mvp-dev-plan §4) -----------------------------------------
 # One resolver, one config table. Plan is owner-level, so everything keys on the uid the
 # auth guard above already established — never on the KB.
-def _limits(user_id: str) -> dict:
+def _plan(user_id: str) -> str:
     res = (
         pipeline.db().table("profiles").select("plan").eq("id", user_id).maybe_single().execute()
     )
     plan = (res.data or {}).get("plan") if res else None
     # An unknown plan string falls back to the most restrictive tier rather than crashing
     # or, worse, defaulting open.
-    return config.PLANS.get(plan or config.DEFAULT_PLAN, config.PLANS[config.DEFAULT_PLAN])
+    return plan if plan in config.PLANS else config.DEFAULT_PLAN
+
+
+def _limits(user_id: str) -> dict:
+    return config.PLANS[_plan(user_id)]
 
 
 def _spend_today_usd() -> float:
@@ -306,7 +311,17 @@ def generate(
     uid = _require_owner(authorization, req.kb_id)
     context = req.context()
     job_id = _start_run(uid, req.kb_id, req.video_path, context)
-    background.add_task(pipeline.run, job_id, req.kb_id, req.video_path, context)
+    # user_id + lanes: the background task queues behind this account's other runs rather
+    # than joining anyio's 40-wide pool unbounded (lanes.py).
+    background.add_task(
+        pipeline.run,
+        job_id,
+        req.kb_id,
+        req.video_path,
+        context,
+        uid,
+        lanes.lanes_for(_plan(uid)),
+    )
     return GenerateResponse(job_id=job_id)
 
 
@@ -374,7 +389,15 @@ def retry(
 
     context = j.get("context") or {}
     job_id = _start_run(uid, j["kb_id"], j["video_path"], context, retry_of=j["id"])
-    background.add_task(pipeline.run, job_id, j["kb_id"], j["video_path"], context)
+    background.add_task(
+        pipeline.run,
+        job_id,
+        j["kb_id"],
+        j["video_path"],
+        context,
+        uid,
+        lanes.lanes_for(_plan(uid)),
+    )
     return GenerateResponse(job_id=job_id)
 
 

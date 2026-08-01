@@ -1,24 +1,29 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
-import { STORAGE_BUCKET_VIDEOS, WORKER_URL } from './lib/config'
-import { DEFAULT_PLAN, fetchPlan, limitsFor, runsUsed, type PlanId } from './lib/plans'
-import { fetchKb, listKbs, resolveDefaultKb, setLastKb } from './lib/kbs'
-import { QUOTA_EXCEEDED } from './lib/failures'
+import { useQueue } from './lib/queue'
+import QueueDock from './components/QueueDock'
+import { DEFAULT_PLAN, fetchPlan, lanesFor, limitsFor, runsUsed, type PlanId } from './lib/plans'
+import {
+  fetchKb,
+  listKbs,
+  resolveDefaultKb,
+  saveProductContext,
+  setLastKb,
+} from './lib/kbs'
 import { clearJustClaimed, isJustClaimed, takeClaimToken } from './lib/claim'
 import { trialFor } from './lib/trial'
 import AdminBanner from './components/AdminBanner'
 import FailureScreen from './components/FailureScreen'
 import RestoreScreen from './components/RestoreScreen'
 import UpgradeModal from './components/UpgradeModal'
-import type { KnowledgeBase as KB, VideoContext } from './lib/types'
+import type { KnowledgeBase as KB, ProductContext, VideoContext } from './lib/types'
 import Home from './screens/Home'
 import Upload from './screens/Upload'
 import Login from './screens/Login'
 import AccountWall from './screens/AccountWall'
-import Generating from './screens/Generating'
 import KnowledgeBaseScreen from './screens/KnowledgeBase'
 import ThemeSettings from './screens/ThemeSettings'
 import DomainSettings from './screens/DomainSettings'
@@ -43,10 +48,13 @@ type Phase =
   | 'login'
   | 'wall'
   | 'working'
+  // Not a screen. The editor renders the run; this only records that App is holding a job
+  // the editor should watch, and which of the two landings we came in through.
   | 'generating'
   // A generation that failed before a job row existed (the spend-cap breaker, an upload
-  // that died). Once a job row exists, Generating owns the failure screen instead — it
-  // is already polling the row that carries the code.
+  // that died). Once a job row exists the editor owns the failure instead — it is already
+  // polling the row that carries the code, and if the run got as far as making an article
+  // there is a draft to open rather than a screen to apologise on.
   | 'failed'
   | 'kb'
   | 'theme'
@@ -74,7 +82,17 @@ export default function App() {
   // rather than on the KB — a KB's tier would be the wrong thing to read the moment a KB
   // can change hands.
   const [plan, setPlan] = useState<PlanId>(DEFAULT_PLAN)
-  const [jobId, setJobId] = useState<string | null>(null)
+  // The context the user typed on the upload screen, kept so the queue can ground every
+  // file in the drop with it — and so the post-auth resume grounds identically.
+  const [pendingContext, setPendingContext] = useState<VideoContext | null>(null)
+  // Recordings dropped alongside the one that crossed the account wall. Reported there, so
+  // nobody signs up and then wonders where the other four went.
+  const [wallExtras, setWallExtras] = useState(0)
+  // Where this run puts the user (2f). First run has nothing else to look at, so it lands
+  // INSIDE the article and watches it assemble. A run started from a populated KB leaves
+  // them where they were — the dock reports it, and the article row is already in the list
+  // wearing the Generating pill. Same component either way; only the landing differs.
+  const [landing, setLanding] = useState<'article' | 'kb'>('article')
   const [error, setError] = useState<string | null>(null)
   // Runs spent, off the append-only jobs ledger. Held here so the dropzone can refuse a
   // capped user at file selection instead of after a 90-second upload.
@@ -91,9 +109,43 @@ export default function App() {
   // when a KB is actually offline, so the normal path pays nothing for it.
   const [offlineArticles, setOfflineArticles] = useState(0)
 
+  // Product context for every run this session starts: whatever they just typed, else the
+  // KB's saved defaults (migration 0027). Second run onward this is why the form is a
+  // header with a Change link instead of four fields again.
+  const product: ProductContext = pendingContext?.product ?? {
+    product_name: kb?.product_name ?? '',
+    description: kb?.product_description ?? '',
+    audience: kb?.audience ?? '',
+    tone: kb?.tone ?? '',
+  }
+
   // The stable identity across token refresh / focus / INITIAL_SESSION. The post-auth
   // effect keys on this, not the session object, so a refresh doesn't kick the user out.
   const userId = session?.user.id ?? null
+
+  const queue = useQueue({
+    kbId: kb?.id ?? null,
+    ownerId: userId,
+    product,
+    lanes: lanesFor(plan),
+    // Display + the client-side hold only. The worker enforces the real wall before the
+    // Gemini call — the SPA reads counters for display, never for permission (§10b).
+    runsLeft:
+      limitsFor(plan).lifetime_runs === null || runs === null
+        ? null
+        : Math.max(limitsFor(plan).lifetime_runs! - runs, 0),
+    onQuotaBlocked: () => setShowUpgrade(true),
+  })
+  // The post-auth effect must not re-run every time the queue changes — it is keyed on the
+  // user id precisely so a token refresh cannot restart it (see its own comment).
+  const queueRef = useRef(queue)
+  queueRef.current = queue
+
+  // The run this editor landing is watching: the first thing the queue has in flight.
+  const activeItem =
+    queue.items.find(
+      (i) => i.state === 'uploading' || i.state === 'running' || i.state === 'queued',
+    ) ?? null
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -178,18 +230,14 @@ export default function App() {
       }
 
       setFile(pending.file)
-      setPhase('working')
-      try {
-        const path = await uploadVideo(found.id, pending.file)
-        const id = await startJob(found.id, path, pending.context as VideoContext)
-        await clearPending()
-        if (cancelled) return
-        setJobId(id)
-        setPhase('generating')
-      } catch (e) {
-        if (cancelled) return
-        handleStartFailure(e)
-      }
+      setPendingContext(pending.context as VideoContext)
+      setLanding('article')
+      setPhase('generating')
+      queueRef.current?.add([pending.file])
+      void saveProductContext(found.id, (pending.context as VideoContext).product)
+        .then(setKb)
+        .catch(() => {})
+      await clearPending()
     })()
 
     return () => {
@@ -197,104 +245,45 @@ export default function App() {
     }
   }, [userId, loadKb, routeKbId, navigate])
 
-  async function uploadVideo(kbId: string, f: File) {
-    // Objects are keyed by KB (migration 0014): storage RLS resolves the first path
-    // segment through knowledge_bases, and the worker pins uploads to the KB it just
-    // proved you own.
-    const ext = f.name.toLowerCase().endsWith('.mov') ? 'mov' : 'mp4'
-    const path = `${kbId}/${crypto.randomUUID()}.${ext}`
-    const { error } = await supabase.storage
-      .from(STORAGE_BUCKET_VIDEOS)
-      .upload(path, f, { contentType: f.type || 'video/mp4' })
-    if (error) throw error
-    return path
-  }
+  // uploadVideo / startJob / the quota-refusal branch all moved into lib/queue.ts. There is
+  // exactly ONE place that puts a recording into Storage and creates a job now, and both
+  // landings go through it — a second copy is how the two paths drift on the day the
+  // request shape changes (it changed with 0027, and would have).
 
-  // Carries the worker's structured `code` so the caller can tell the three outcomes
-  // apart: quota_exceeded is the upgrade modal, a taxonomy code is a failure screen, and
-  // anything else is a plain message.
-  class StartJobError extends Error {
-    constructor(
-      readonly code: string | null,
-      message: string,
-    ) {
-      super(message)
-    }
-  }
-
-  async function startJob(kbId: string, videoPath: string, context: VideoContext) {
-    // Returns a job_id immediately; we poll the Postgres jobs row from here on, so the
-    // worker needs no poll endpoint (LEARNINGS #3).
-    // The worker validates this token and checks KB ownership — without it every
-    // generate request is anonymous and would drive the pipeline against any KB.
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const res = await fetch(`${WORKER_URL}/api/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session?.access_token ?? ''}`,
-      },
-      body: JSON.stringify({ kb_id: kbId, video_path: videoPath, ...context }),
-    })
-    if (!res.ok) {
-      // The worker refuses over-quota and over-spend BEFORE the Gemini call, and says why
-      // in a structured detail. Keep the CODE, not just the message: quota_exceeded has to
-      // become the upgrade modal, and spend_cap has to become a failure screen that says
-      // the fault is ours.
-      const detail = await res.json().catch(() => null)
-      throw new StartJobError(
-        detail?.detail?.code ?? null,
-        detail?.detail?.message ?? `Could not start the job (${res.status}).`,
-      )
-    }
-    return (await res.json()).job_id as string
-  }
-
-  // One place decides what a failed start looks like, so the upload-on-signin path and the
-  // already-signed-in path can never disagree about it.
-  function handleStartFailure(e: unknown) {
-    if (e instanceof StartJobError && e.code === QUOTA_EXCEEDED) {
-      // Never a failure screen — nothing went wrong (pricing-spec §7).
-      setShowUpgrade(true)
-      setPhase('kb')
-      return
-    }
-    // Anything else — the spend-cap breaker, a dead upload — is a real failure with no job
-    // row behind it, so App renders the screen instead of the polling screen.
-    setFailureCode(e instanceof StartJobError ? e.code : null)
-    setPhase('failed')
-  }
-
-  const onGenerated = useCallback(async () => {
-    // Re-read the KB so anything derived from it is fresh, and the run count with it: the
-    // run just charged is what decides whether the NEXT file selection hits the cap.
+  // Re-read the KB and the run count. There is no longer a "your guide is ready" moment to
+  // hang this on — the editor just becomes editable — so it runs when the user leaves the
+  // article, which is the next time either number is used for anything.
+  const refreshAfterRun = useCallback(async () => {
     if (kb) setKb(await fetchKb(kb.id))
     if (userId) setRuns(await runsUsed(userId))
-    setPhase('kb')
   }, [kb, userId])
 
-  async function handleSubmit(f: File, context: VideoContext) {
-    setFile(f)
+  async function handleSubmit(chosen: File[], context: VideoContext) {
+    const [first, ...rest] = chosen
+    if (!first) return
+    setFile(first)
+    setPendingContext(context)
 
     // Already signed in (making article #2+)? The wall exists to stop the pipeline
     // running for an UNVERIFIED session — this one is verified, so showing it again
     // would be a gate with nothing behind it. Go straight to generating.
     if (session && kb) {
-      setPhase('working')
-      try {
-        const path = await uploadVideo(kb.id, f)
-        setJobId(await startJob(kb.id, path, context))
-        setPhase('generating')
-      } catch (e) {
-        handleStartFailure(e)
-      }
+      // Article #2 onward. They already have a help center to look at, so the run reports
+      // from the dock and the list rather than taking the screen over.
+      setLanding('kb')
+      setPhase('kb')
+      queue.add(chosen)
+      void saveProductContext(kb.id, context.product).then(setKb).catch(() => {})
       return
     }
 
+    setLanding('article')
     // Persist before the wall: Google OAuth is a full redirect and would drop the File.
-    await savePending({ file: f, context })
+    // Only the FIRST file crosses the wall — the rest are re-dropped after, because
+    // holding several hundred megabytes through an OAuth round trip to save one drag is
+    // not a trade worth making.
+    setWallExtras(rest.length)
+    await savePending({ file: first, context, extra: rest.length })
     setPhase('wall')
   }
 
@@ -328,8 +317,10 @@ export default function App() {
   )
 
   const closeArticle = useCallback(() => {
+    setPhase('kb')
+    void refreshAfterRun()
     if (kb) navigate(`/app/${kb.id}`)
-  }, [kb, navigate])
+  }, [kb, navigate, refreshAfterRun])
 
   // Switching KBs is a navigation. The effect above re-resolves from the new :kbId and
   // records it as the last one used.
@@ -347,7 +338,6 @@ export default function App() {
     await supabase.auth.signOut()
     setFile(null)
     setKb(null)
-    setJobId(null)
     setPhase('home')
   }
 
@@ -372,10 +362,10 @@ export default function App() {
       .then(({ count }) => setOfflineArticles(count ?? 0))
   }, [kb, trial?.stage])
 
-  // Back to the dropzone from a failure. Clears the dead job so a stale id can't resurrect
-  // the old failure screen behind the new upload.
+  // Back to the dropzone from a failure. The dead run is dropped from the queue too, so a
+  // stale row can't resurrect the old failure screen behind the new upload.
   function startOver() {
-    setJobId(null)
+    queue.dismiss()
     setFailureCode(null)
     setError(null)
     setPhase('upload')
@@ -421,6 +411,7 @@ export default function App() {
           onHome={() => setPhase('home')}
           runsLeft={runsLeft}
           onCapped={() => setShowUpgrade(true)}
+          saved={kb?.product_name ? product : null}
         />
         {/* A capped user is stopped at the dropzone and can still leave with an article —
             blocking generation is not blocking the product. */}
@@ -437,32 +428,13 @@ export default function App() {
     )
   if (phase === 'login') return <Login onBack={() => setPhase('home')} />
   if (phase === 'wall' && file)
-    return <AccountWall fileName={file.name} fileSize={mb(file.size)} />
-
-  if (phase === 'working') {
     return (
-      <div className="page" style={{ justifyContent: 'center' }}>
-        <div className="card generating">
-          <h2>Uploading your recording…</h2>
-          <p className="cap" style={{ marginTop: 8 }}>
-            Hang tight — you can’t lose this.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  if (phase === 'generating' && jobId) {
-    return (
-      <Generating
-        jobId={jobId}
-        onDone={onGenerated}
-        // A retry is a new job row; point the progress bar at the attempt actually running.
-        onRetryStarted={setJobId}
-        onReupload={startOver}
+      <AccountWall
+        fileName={file.name}
+        fileSize={mb(file.size)}
+        extraFiles={wallExtras}
       />
     )
-  }
 
   // Refused before a job row existed, so there is nothing to poll and nothing to retry.
   if (phase === 'failed') {
@@ -470,24 +442,37 @@ export default function App() {
       <FailureScreen
         code={failureCode}
         jobId={null}
-        onRetryStarted={(id) => {
-          setJobId(id)
-          setPhase('generating')
-        }}
+        onRetryStarted={() => setPhase('kb')}
         onReupload={startOver}
       />
     )
   }
 
-  // The article is a route, so it is checked before the KB shell and survives a refresh.
-  if (routeArticleId && kb) {
+  // The editor, which is ALSO the generating screen — there is no other one (2a). Three
+  // ways in, one component, deliberately in one branch so React keeps the same instance
+  // when the URL gains the article id mid-run:
+  //   · an article route (the normal case, and a refresh)
+  //   · uploading, on the first-run landing — no job row yet
+  //   · a job in flight on the first-run landing — no article row yet either
+  const watchingRun = landing === 'article' && (phase === 'working' || phase === 'generating')
+  if ((routeArticleId || watchingRun) && kb) {
     return (
       <>
         {adminBar}
         <Editor
-          articleId={routeArticleId}
+          articleId={routeArticleId ?? null}
           kb={kb}
           plan={plan}
+          jobId={watchingRun ? (activeItem?.jobId ?? null) : null}
+          uploadProgress={
+            watchingRun && activeItem?.state === 'uploading' ? activeItem.progress : null
+          }
+          onArticleResolved={(id) => {
+            // The URL catches up with the run. `replace`, because the article-less URL is
+            // not somewhere the back button should be able to return to.
+            navigate(`/app/${kb.id}/article/${id}`, { replace: true })
+          }}
+          onReupload={startOver}
           onBack={closeArticle}
           onOpenTheme={() => setPhase('theme')}
         />
@@ -540,11 +525,27 @@ export default function App() {
           onSignOut={signOut}
           onUpgrade={() => setShowUpgrade(true)}
           justClaimed={justClaimed}
+          runInFlight={queue.activeCount > 0}
           onDismissWelcome={() => {
             clearJustClaimed()
             setJustClaimed(false)
           }}
         />
+        <QueueDock
+          items={queue.items}
+          productName={product.product_name}
+          productSummary={[product.audience, product.tone].filter(Boolean).join(' · ')}
+          onChangeProduct={() => setPhase('upload')}
+          onSetRecording={queue.setRecording}
+          onRemove={queue.remove}
+          onUndoRemove={queue.undoRemove}
+          canUndo={!!queue.lastRemoved}
+          onOpenArticle={openArticle}
+          onUpgrade={() => setShowUpgrade(true)}
+          onDismiss={queue.dismiss}
+          onAddMore={() => setPhase('upload')}
+        />
+
         {/* The proactive path (pricing-spec §6): they tapped the countdown rather than
             hitting a wall. Same modal either way — one place decides what upgrading looks
             like, so the two paths cannot drift apart. */}

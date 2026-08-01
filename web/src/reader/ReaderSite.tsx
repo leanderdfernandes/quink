@@ -7,6 +7,7 @@ import {
 } from 'react'
 import DOMPurify from 'dompurify'
 import { useNavigate, useParams } from 'react-router-dom'
+import AnnotationLayer from '../components/AnnotationLayer'
 import { publicBrandingUrl, publicFrameUrl } from '../lib/storage'
 import { DEFAULT_HEADER_STYLE, headerStyleOf, themeVars } from './theme'
 import {
@@ -609,6 +610,11 @@ export function ReaderChrome({
                                 )
                               }}
                             />
+                            {/* The published overlay, drawn by the SAME component the editor draws with.
+                                Two renderers would be two ways for a live page to differ from
+                                the draft its author checked. It reads from published_content,
+                                so an unpublished annotation does not leak to readers. */}
+                            <AnnotationLayer annotations={s.annotations} />
                           </div>
                         </figure>
                       )}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { listDenseFrames, signedFrameUrl, uploadStepFrame } from '../lib/storage'
+import { listDenseFrames, publicFrameUrl, uploadStepFrame } from '../lib/storage'
+import { fetchArticleJob } from '../lib/jobs'
 
 // The image picker (ux-spec §4, simplified). Originally four tiers; collapsed to one frame
 // browser + upload, because the pipeline already extracts a 1fps dense set for the WHOLE
@@ -28,7 +29,15 @@ type Props = {
   // Upload used to fail silently: a null path from storage just did nothing. Now it goes to
   // the one status surface in the header.
   onError: (msg: string) => void
+  // Whether this article came from a recording at all. An empty strip means something
+  // completely different for a manual article than for a generated one.
+  hasVideo: boolean
 }
+
+// Why an empty strip is empty. The dense 1fps pass now runs AFTER the article is
+// deliverable, so "no frames yet" is a real and common state — and telling someone whose
+// extraction actually failed to check back shortly is a lie with a deadline on it.
+type Empty = 'manual' | 'extracting' | 'failed'
 
 // Frames are named "{second}.webp"; the strip labels them so a long video is navigable.
 const clock = (s: number) =>
@@ -44,9 +53,11 @@ export default function FramePicker({
   onRemove,
   onClose,
   onError,
+  hasVideo,
 }: Props) {
   const [frames, setFrames] = useState<{ second: number; path: string; url: string }[]>([])
   const [loading, setLoading] = useState(true)
+  const [empty, setEmpty] = useState<Empty>(hasVideo ? 'extracting' : 'manual')
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const currentRef = useRef<HTMLButtonElement>(null)
@@ -54,18 +65,27 @@ export default function FramePicker({
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      // getPublicUrl is a string build, not a request. Signing these cost one round trip
+      // PER FRAME — ~360 of them on a six-minute recording, before the strip could paint —
+      // on a bucket that has been public since migration 0007.
       const dense = await listDenseFrames(kbId, articleId)
-      const withUrls = await Promise.all(
-        dense.map(async (f) => ({
-          second: f.second,
-          path: f.path,
-          url: (await signedFrameUrl(f.path)) ?? '',
-        })),
+      if (cancelled) return
+      setFrames(
+        dense
+          .map((f) => ({ second: f.second, path: f.path, url: publicFrameUrl(f.path) ?? '' }))
+          .filter((f) => f.url),
       )
-      if (!cancelled) {
-        setFrames(withUrls.filter((f) => f.url))
-        setLoading(false)
+
+      // Only when there is nothing to show and there should have been. A run still going is
+      // still pulling them; a run that ENDED with nothing is never going to produce any,
+      // whether it failed outright or degraded to frames_partial.
+      if (!dense.length && hasVideo) {
+        const job = await fetchArticleJob(articleId)
+        if (cancelled) return
+        const running = job?.status === 'queued' || job?.status === 'running'
+        setEmpty(running ? 'extracting' : 'failed')
       }
+      setLoading(false)
     })()
     return () => {
       cancelled = true
@@ -161,7 +181,11 @@ export default function FramePicker({
         </div>
       ) : (
         <p className="ed-picker-msg">
-          This article has no video. Upload an image to illustrate the step.
+          {empty === 'manual'
+            ? 'This article has no video. Upload an image to illustrate the step.'
+            : empty === 'extracting'
+              ? 'Still pulling frames from your recording. This finishes shortly — or upload your own image.'
+              : 'We couldn’t pull the frames from this recording. Upload your own image instead.'}
         </p>
       )}
 

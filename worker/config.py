@@ -80,6 +80,17 @@ PLANS: dict[str, dict] = {
 
 DEFAULT_PLAN = "free"
 
+# How many generations one ACCOUNT may have running at once (slice 3c). See lanes.py for
+# why this exists: the real reason is the read-then-act window in the daily spend breaker,
+# not tiering. Kept small on every plan, `internal` included.
+LANES: dict[str, int] = {
+    "free": 1,
+    "founding": 2,
+    "starter": 2,
+    "growth": 2,
+    "internal": 3,
+}
+
 # Global, plan-independent kill switch on a day's Gemini spend — `internal` included.
 # Deliberate: a bug in the reverse-demo loop running against an unlimited account is
 # exactly how a runaway bill happens. $5 is ~250 articles/day, far above legitimate use.
@@ -193,11 +204,15 @@ EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "").lower() in ("1", "true", "ye
 # truncating (CLAUDE.md §5).
 MAX_INLINE_BYTES = 100 * 1024 * 1024
 
-# Duration ceiling, checked after ffprobe. The 100MB size cap the SPA enforces is a proxy
-# for this and a bad one — a low-bitrate 40-minute screen recording sails under it and then
-# produces a Stage 1 prompt that costs real money to get a mediocre 60-step article from.
-# Mirrored by MAX_VIDEO_MINUTES in web/src/lib/config.ts, which only renders the number.
-MAX_VIDEO_MINUTES = 20
+# Duration ceiling, checked after ffprobe (pipeline.py raises `video_too_long` above it).
+# The 100MB size cap the SPA enforces is a proxy for this and a bad one — a low-bitrate
+# 40-minute screen recording sails under it and then produces a Stage 1 prompt that costs
+# real money to get a mediocre 60-step article from.
+#
+# This is the ENFORCED number. web/src/lib/config.ts MAX_VIDEO_MINUTES only renders it and
+# is verified 6 to match — it was 6 there against 20 here, so every user who saw "up to 6
+# minutes" was reading a limit that did not exist.
+MAX_VIDEO_MINUTES = 6
 
 # Wall clock ceiling on one run. A ~90s job that has been going 15 minutes is wedged, not
 # slow. Checked at every stage boundary inside the pipeline (so the worker STOPS rather than
@@ -207,6 +222,13 @@ JOB_TIMEOUT_MIN = 15
 # The sweep waits this much longer than the in-process check, so under normal operation the
 # pipeline always classifies its own timeout and the sweep only ever catches dead processes.
 JOB_TIMEOUT_GRACE_MIN = 5
+
+# A job that never got a LANE is a different animal from a job that hung, and must not share
+# a threshold with one (slice 3i). Waiting behind other runs is a capacity problem: nothing
+# is wrong, the work simply has not started. On one lane, four dropped recordings put the
+# last one ~6 minutes out; two hours is far past any legitimate queue and still catches a
+# job orphaned by a worker that died holding the semaphore.
+QUEUE_TIMEOUT_MIN = 120
 
 # Dense frame set for the Tier-1 filmstrip: 1 frame per second across the whole
 # video. Pure ffmpeg, no model call — "code does everything deterministic".

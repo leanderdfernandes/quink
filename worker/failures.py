@@ -23,7 +23,13 @@ MODEL_UNAVAILABLE = "model_unavailable"        # Gemini 5xx / 429 / dropped tran
 MODEL_BAD_OUTPUT = "model_bad_output"          # unparseable JSON after the retry
 MODEL_BLOCKED = "model_blocked"                # safety filter
 FRAME_EXTRACTION_FAILED = "frame_extraction_failed"   # TOTAL ffmpeg failure only
-TIMEOUT = "timeout"                            # exceeded JOB_TIMEOUT_MIN
+TIMEOUT = "timeout"                            # exceeded JOB_TIMEOUT_MIN *while running*
+# Waited for a lane and never got one (slice 3i). NOT a timeout and NOT internal_error: no
+# work was attempted, nothing was spent, and the recovery differs — a hung job may have
+# burned Gemini budget before it wedged, while this one provably did not, so retrying it is
+# free and is simply the right answer. Reusing internal_error would tell the user something
+# went wrong on our end when the honest statement is "it never ran".
+NEVER_STARTED = "never_started"
 SPEND_CAP = "spend_cap"                        # global circuit breaker
 # Not in the spec's table, and deliberately added: without it an unexpected exception
 # (Storage down, a bad insert) lands with NO code and the SPA has nothing to render but a

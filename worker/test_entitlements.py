@@ -102,9 +102,16 @@ ran: list = []
 
 
 def _generate(c):
+    # Two-tier context since 0027: the product half is the KB's, the recording half is this
+    # file's. Both go into jobs.context so a retry re-grounds on what the run actually used.
     return c.post(
         "/api/generate",
-        json={"kb_id": KB_ID, "video_path": VIDEO, "product_name": "Acme"},
+        json={
+            "kb_id": KB_ID,
+            "video_path": VIDEO,
+            "product": {"product_name": "Acme"},
+            "recording": "",
+        },
     )
 
 
@@ -159,7 +166,11 @@ def run() -> None:
     with TestClient(main.app) as c:
         r = c.post(
             "/api/generate",
-            json={"kb_id": KB_ID, "video_path": "other-kb/steal.mp4", "product_name": "Acme"},
+            json={
+                "kb_id": KB_ID,
+                "video_path": "other-kb/steal.mp4",
+                "product": {"product_name": "Acme"},
+            },
         )
         assert r.status_code == 403, r.status_code
     assert db.inserted == []

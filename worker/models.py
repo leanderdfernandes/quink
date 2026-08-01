@@ -43,12 +43,20 @@ class Blueprint(BaseModel):
 
 
 class Step(BaseModel):
-    """A step as the product stores and serves it."""
+    """A step as the product stores and serves it.
+
+    The JSON contract (CLAUDE.md §6), mirrored by web/src/lib/types.ts and public.steps.
+    The pipeline itself writes Blueprint rows, not these — this is the shape of the finished
+    article, and it is kept in step with the other two so §6 stays true.
+    """
 
     step_number: int
     heading: str
     body_text: str
     screenshot_url: str | None = None
+    # Non-destructive SVG overlay in normalized 0-1 coordinates (migration 0029). The
+    # pipeline never writes any: generated steps start bare and the column defaults to [].
+    annotations: list[dict] = Field(default_factory=list)
 
 
 class Article(BaseModel):
@@ -57,21 +65,27 @@ class Article(BaseModel):
     steps: list[Step]
 
 
+class ProductContext(BaseModel):
+    """What the help center documents. Reused by every run in a KB — it is stored on
+    knowledge_bases (migration 0027) and sent per request so the JOB keeps a copy of what
+    it was actually grounded on. Re-reading the KB at retry time would re-ground the retry
+    on whatever the product context says LATER, which is not the same article."""
+
+    product_name: str
+    description: str = ""
+    audience: str = ""
+    tone: str = ""
+
+
 class GenerateRequest(BaseModel):
     kb_id: str
     video_path: str = Field(description="Storage path in the videos bucket")
-    product_name: str
-    audience: str = ""
-    tone: str = ""
-    description: str = ""
+    product: ProductContext
+    # What THIS recording shows. Optional, per file, never stored on the KB.
+    recording: str = ""
 
     def context(self) -> dict:
-        return {
-            "product_name": self.product_name,
-            "audience": self.audience,
-            "tone": self.tone,
-            "description": self.description,
-        }
+        return {"product": self.product.model_dump(), "recording": self.recording}
 
 
 class GenerateResponse(BaseModel):

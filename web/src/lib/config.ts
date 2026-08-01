@@ -103,9 +103,11 @@ export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/quicktime'] as const
 export const ACCEPTED_VIDEO_EXTENSIONS = ['.mp4', '.mov'] as const
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024
 
-// Duration ceiling, enforced by the worker after ffprobe (MAX_VIDEO_MINUTES in
-// worker/config.py — if the two drift the failure copy quotes the wrong number). The SPA
-// only renders it: the browser can't be trusted to measure a file it also chose.
+// Duration ceiling. ENFORCED by the worker after ffprobe — worker/config.py
+// MAX_VIDEO_MINUTES, verified 6, and pipeline.py raises `video_too_long` above it. The SPA
+// only RENDERS this number (the dropzone hint and the video_too_long screen): the browser
+// can't be trusted to measure a file it also chose. If the two drift, the failure copy
+// quotes a limit nobody enforces — which is exactly what it did at 6 here against 20 there.
 export const MAX_VIDEO_MINUTES = 6
 
 // Where a stuck user writes to us. A real, monitored, forwarding mailbox on the verified
@@ -164,6 +166,17 @@ export const COPY = {
   wallFootnote: 'Keeps the free tier free for everyone.',
   wallNoCard: `Free accounts include ${PLANS.free.lifetime_runs} video guides, no card needed.`,
   generatingReassurance: "Hang tight — you can't lose this.",
+  // Teaches granularity by example. "Describe this recording" on its own gets the product
+  // description a second time; a specific, technical example gets a specific answer.
+  recordingPlaceholder: 'e.g. Connecting a Postgres read replica and running the first sync',
+  // Quota surface 3 of 3 (3f). The last run has to be a KNOWN moment — finding out
+  // afterwards that that was the last one is the version of this that loses trust.
+  lastRunWarning: 'This is your last free article. Writing by hand stays unlimited.',
+  // Held files (3e). Leads with the constraint, then closes both worries in one sentence,
+  // then says where it lives — someone who upgrades on their phone and finds an empty dock
+  // stops trusting the product at the exact moment they paid.
+  heldFileNote:
+    'No free articles left. Nothing was uploaded and no run was used — this recording is waiting on this device.',
   generatingTip:
     "You'll be able to swap any screenshot and edit every step before publishing.",
 } as const

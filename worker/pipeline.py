@@ -21,6 +21,7 @@ import config
 import failures
 import frames as frames_mod
 import gemini
+import lanes as lanes_mod
 import prompts
 from models import Blueprint, format_mmss, parse_mmss
 
@@ -64,14 +65,34 @@ def fail(job_id: str, code: str, detail: str) -> None:
     SPA renders copy chosen by `failure_code` alone.
     """
     log.error("job %s failed [%s]: %s", job_id, code, detail)
-    db().table("jobs").update(
-        {
-            "status": "error",
-            "failure_code": code,
-            "failure_detail": detail[:2000],
-            "finished_at": _now(),
-        }
-    ).eq("id", job_id).execute()
+    res = (
+        db()
+        .table("jobs")
+        .update(
+            {
+                "status": "error",
+                "failure_code": code,
+                "failure_detail": detail[:2000],
+                "finished_at": _now(),
+            }
+        )
+        .eq("id", job_id)
+        .execute()
+    )
+
+    # Bring the article to a terminal state too, if this run got far enough to make one.
+    #
+    # Only the success path used to write 'ready', so any failure after Stage 1 stranded a
+    # fully populated, editable article wearing the "Generating" badge forever — nothing
+    # anywhere else in the system writes this column. The steps exist and they are editable:
+    # that is a DRAFT, not a failure, and degrade-before-fail (CLAUDE.md §10g) already says
+    # so for every other partial result.
+    #
+    # It lives in fail() rather than at the raise sites because there are five of those and
+    # a sixth will be added by someone who does not read this comment.
+    article_id = (res.data or [{}])[0].get("article_id")
+    if article_id:
+        db().table("articles").update({"status": "ready"}).eq("id", article_id).execute()
 
 
 def _now() -> str:
@@ -102,11 +123,30 @@ def _upload_frame(local: Path, storage_path: str) -> str:
     return storage_path  # unreachable; keeps the type checker happy
 
 
-def run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
+def run(
+    job_id: str,
+    kb_id: str,
+    video_path: str,
+    context: dict,
+    user_id: str | None = None,
+    lanes: int = 1,
+) -> None:
     """Execute the pipeline. Any raised error is classified onto the job row and re-raised
-    for the server log — a job must never silently sit at 'running' forever."""
+    for the server log — a job must never silently sit at 'running' forever.
+
+    The lane is acquired OUTSIDE _run so the queueing time does not count against
+    JOB_TIMEOUT_MIN: `started` is stamped inside, once this job is actually running. A job
+    waiting for a lane sits at 'queued', which is what the dock renders as "in line".
+    """
     try:
-        _run(job_id, kb_id, video_path, context)
+        with lanes_mod.Lane(user_id, lanes):
+            # Queue time ends HERE. The timeout sweep measures a running job from this
+            # stamp, never from created_at — otherwise a job that waited its turn behind
+            # other runs gets failed as "hung" for the crime of being in the queue (3i).
+            # Written in the same `with` that takes the semaphore because that is the one
+            # place that already knows the difference.
+            db().table("jobs").update({"started_at": _now()}).eq("id", job_id).execute()
+            _run(job_id, kb_id, video_path, context)
     except failures.Failed as e:
         fail(job_id, e.code, str(e))
         raise
@@ -190,8 +230,23 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
                 failures.MODEL_BAD_OUTPUT, "Stage 1 returned an article with no steps."
             )
 
+        # Clamp: a model timestamp past the end would make ffmpeg emit nothing.
+        seconds_by_step = {
+            s.step_number: min(parse_mmss(s.timestamp), max(duration - 0.1, 0))
+            for s in blueprint.steps
+        }
+
         article_id = _create_article(kb_id, blueprint, video_path)
         db().table("jobs").update({"article_id": article_id}).eq("id", job_id).execute()
+
+        # The steps land NOW, from Stage 1, with no screenshots yet — not after Stage 2.
+        # Between Stage 1 and the end of a run there used to be no row, no jsonb and no
+        # cache holding the step array, so a process that died in the middle left an
+        # articles row with a title, zero steps and status='generating' that nothing
+        # cleaned up. These rows are also the channel the client watches the article
+        # assemble through: frames fill in during `capturing`, text is polished in place
+        # during `writing`, and the row IDS survive the whole run.
+        step_ids = _insert_steps(article_id, blueprint, seconds_by_step)
 
         # --- Stage: capturing (FFmpeg — deterministic, not a model) ------------
         set_stage(job_id, config.STAGE_CAPTURING, started)
@@ -201,19 +256,22 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         # So one bad frame costs the user one click, while failing the whole run costs
         # them the article. Only a TOTAL wipeout is a real failure.
         screenshots: dict[int, str] = {}
-        seconds_by_step: dict[int, float] = {}
         for step in blueprint.steps:
-            seconds = parse_mmss(step.timestamp)
-            # Clamp: a model timestamp past the end would make ffmpeg emit nothing.
-            seconds = min(seconds, max(duration - 0.1, 0))
-            seconds_by_step[step.step_number] = seconds
+            seconds = seconds_by_step[step.step_number]
             try:
                 local = frames_mod.extract_frame(
                     local_video, seconds, tmpdir / f"step-{step.step_number}.webp"
                 )
-                screenshots[step.step_number] = _upload_frame(
+                path = _upload_frame(
                     local, f"{kb_id}/{article_id}/step-{step.step_number}.webp"
                 )
+                # One write per frame, as it lands, so the step stops being text-only the
+                # moment its screenshot exists rather than at the end of the run. Recorded
+                # in `screenshots` only AFTER the row has it: this dict decides both the
+                # total-wipeout failure and the frames_partial degrade, so a step whose
+                # write failed has to count as missing, not as done.
+                _set_screenshot(step_ids, step.step_number, path)
+                screenshots[step.step_number] = path
             except Exception as e:
                 log.warning("job %s: step %s frame failed: %s", job_id, step.step_number, e)
 
@@ -226,17 +284,6 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
                 f"all {len(blueprint.steps)} step frames failed to extract",
             )
         if len(screenshots) < len(blueprint.steps):
-            degraded.append(failures.DEGRADED_FRAMES)
-
-        # The 1fps dense set backing the Tier-1 filmstrip (±3s candidates). Non-fatal on
-        # its own: without it the frame picker degrades to upload-only, which FramePicker
-        # already renders for manual articles. Losing the filmstrip is not losing the
-        # article.
-        try:
-            for second, local in frames_mod.extract_dense_set(local_video, tmpdir / "dense"):
-                _upload_frame(local, f"{kb_id}/{article_id}/dense/{second:05d}.webp")
-        except Exception as e:
-            log.warning("job %s: dense frame set failed, picker degrades to upload: %s", job_id, e)
             degraded.append(failures.DEGRADED_FRAMES)
 
         # --- Stage: writing (Stage 2 — the cheap model polishes) ---------------
@@ -261,23 +308,32 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
             polished = blueprint
             degraded.append(failures.DEGRADED_STAGE2)
 
-        # Stage 2 is blind to the video. If it dropped or added a step despite being
-        # told not to, trust Stage 1's structure over Stage 2's text — silently
+        # Stage 2 is blind to the video. If it dropped, added or RENUMBERED a step despite
+        # being told not to, trust Stage 1's structure over Stage 2's text — silently
         # shipping a merged/invented step is the exact failure the collapse rule and
         # the faithfulness fix exist to prevent.
-        if len(polished.steps) != len(blueprint.steps):
+        #
+        # This compares the step numbers themselves, not just how many there are: the polish
+        # is now applied to existing rows MATCHED ON step_number, so a Stage 2 that returned
+        # the right count under different numbers would write step 3's prose onto step 4's
+        # screenshot. A count check cannot see that.
+        if [s.step_number for s in polished.steps] != [s.step_number for s in blueprint.steps]:
             polished = blueprint
 
-        _write_steps(article_id, polished, screenshots, seconds_by_step)
+        # In place, on the rows Stage 1 already created — never delete-and-reinsert. The row
+        # ids have to survive the run: they are what the client is holding.
+        _polish_steps(step_ids, polished)
 
         db().table("articles").update(
             {
                 "title": polished.title,
                 "subtitle": polished.subtitle,
                 "status": "ready",
-                # Written once, here, and never updated. It is the only passive measure of
-                # how far a published article drifts from what we generated — uncapturable
-                # after the fact, which is why it ships ahead of the rest of the metrics.
+                # Written at Stage 1 too (see _create_article), then overwritten here with
+                # the polished text. It is the only passive measure of how far a published
+                # article drifts from what we generated — and if Stage 2 dies, the Stage 1
+                # baseline is exactly what "discard changes" needs to restore to, for the
+                # articles most likely to need editing.
                 "generated_snapshot": polished.model_dump(),
             }
         ).eq("id", article_id).execute()
@@ -296,6 +352,29 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
             }
         ).eq("id", job_id).execute()
 
+        # --- After the finish line: the 1fps dense set --------------------------
+        # This backs the frame picker and NOTHING the user sees on arrival. It used to run
+        # inside `capturing` — the longest stretch of the run — for a feature that is opened
+        # later and rarely, which meant every user waited on it and most never used it.
+        #
+        # It runs here, past `done`, so the article is deliverable first. The cost of that is
+        # a real window where a generated article has no filmstrip, and CLAUDE.md §10f is
+        # explicit that a timing change like this ships with its degradation in the same
+        # commit: FramePicker now asks the job whether frames are still coming ("Still
+        # pulling frames…") or never will ("We couldn't pull the frames…") instead of
+        # claiming the article has no video.
+        try:
+            for second, local in frames_mod.extract_dense_set(local_video, tmpdir / "dense"):
+                _upload_frame(local, f"{kb_id}/{article_id}/dense/{second:05d}.webp")
+        except Exception as e:
+            log.warning("job %s: dense frame set failed, picker degrades to upload: %s", job_id, e)
+            degraded.append(failures.DEGRADED_FRAMES)
+            # A second write, because the row was already closed out above. The run stays a
+            # success — losing the filmstrip is not losing the article.
+            db().table("jobs").update(
+                {"degraded": ",".join(sorted(set(degraded))) or None}
+            ).eq("id", job_id).execute()
+
 
 def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:
     res = (
@@ -311,6 +390,11 @@ def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:
                 # frame-picker scrubs this during editing. No publish flow yet, so
                 # videos persist. Wire the delete-on-publish hook when publishing ships.
                 "source_video_path": video_path,
+                # The Stage 1 baseline, written before Stage 2 can fail. Left null until
+                # after Stage 2 (as it was), a run whose polish pass died gave
+                # discardChanges nothing to restore to — on exactly the articles whose
+                # text is roughest and most likely to be edited.
+                "generated_snapshot": blueprint.model_dump(),
             }
         )
         .execute()
@@ -321,19 +405,24 @@ def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:
     return res.data[0]["id"]
 
 
-def _write_steps(
+def _insert_steps(
     article_id: str,
     article: Blueprint,
-    screenshots: dict[int, str],
     seconds_by_step: dict[int, float],
-) -> None:
+) -> dict[int, str]:
+    """Insert Stage 1's steps and return {step_number: row id}.
+
+    Screenshots are null here and filled in one at a time as ffmpeg produces them. The
+    returned ids are how the rest of the run addresses these rows — keyed by step_number
+    from the response rather than by position, because nothing guarantees the order rows
+    come back in.
+    """
     rows = [
         {
             "article_id": article_id,
             "step_number": s.step_number,
             "heading": s.heading,
             "body_text": s.body_text,
-            "screenshot_url": screenshots.get(s.step_number),
             # Centres the Tier-1 filmstrip and lets the eval judge score alignment.
             "timestamp_seconds": seconds_by_step.get(s.step_number),
             # is_edited stays false: this frame was machine-picked. A human pick flips
@@ -341,4 +430,29 @@ def _write_steps(
         }
         for s in article.steps
     ]
-    db().table("steps").insert(rows).execute()
+    res = db().table("steps").insert(rows).execute()
+    ids = {int(r["step_number"]): r["id"] for r in (res.data or [])}
+    if len(ids) != len(rows):
+        # Without every id, the frame pass and the polish pass would silently no-op and
+        # ship an article of unpolished, image-less steps marked 'ready'. Fail loudly —
+        # `internal_error` says it is on us and offers the retry.
+        raise RuntimeError(f"steps insert returned {len(ids)} ids for {len(rows)} rows")
+    return ids
+
+
+def _set_screenshot(step_ids: dict[int, str], step_number: int, path: str) -> None:
+    sid = step_ids.get(step_number)
+    if sid:
+        db().table("steps").update({"screenshot_url": path}).eq("id", sid).execute()
+
+
+def _polish_steps(step_ids: dict[int, str], article: Blueprint) -> None:
+    """Stage 2's text onto the rows Stage 1 created. Prose only — screenshot_url,
+    timestamp_seconds and is_edited belong to the frame pass and are not Stage 2's to
+    touch."""
+    for s in article.steps:
+        sid = step_ids.get(s.step_number)
+        if sid:
+            db().table("steps").update(
+                {"heading": s.heading, "body_text": s.body_text}
+            ).eq("id", sid).execute()

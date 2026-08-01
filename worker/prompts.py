@@ -232,13 +232,26 @@ def build_context_block(context: dict) -> str:
     EVAL-PLAN V7 probes weak/absent context, so absent optional fields must degrade
     quietly rather than become a hallucinated value.
     """
-    lines = [f"Product name: {context.get('product_name') or 'Unknown'}"]
-    if context.get("audience"):
-        lines.append(f"Who reads this: {context['audience']}")
-    if context.get("tone"):
-        lines.append(f"Tone to write in: {context['tone']}")
-    if context.get("description"):
-        lines.append(f"Extra notes from the author: {context['description']}")
+    # Two tiers since slice 3b: {"product": {...}, "recording": "..."}. The product half is
+    # the KB's, reused by every run; the recording half describes THIS video. Rows written
+    # before that change are flat, and a retry re-runs from the STORED context — so the flat
+    # shape is read as the product tier rather than migrated. jobs.context is the grounding
+    # a retry has to reproduce exactly (CLAUDE.md §10g), which is why it lives on the job
+    # instead of being re-read from the KB at retry time.
+    product = context.get("product") or context
+    recording = context.get("recording") or ""
+
+    lines = [f"Product name: {product.get('product_name') or 'Unknown'}"]
+    if product.get("audience"):
+        lines.append(f"Who reads this: {product['audience']}")
+    if product.get("tone"):
+        lines.append(f"Tone to write in: {product['tone']}")
+    if product.get("description"):
+        lines.append(f"About the product: {product['description']}")
+    # Last, and named as being about the video, so the model reads it as the specific thing
+    # it is watching rather than as more background about the product.
+    if recording:
+        lines.append(f"What this recording shows: {recording}")
     return "\n".join(lines)
 
 

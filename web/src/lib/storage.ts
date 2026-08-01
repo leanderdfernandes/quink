@@ -42,8 +42,11 @@ export async function uploadBranding(
   return { path, error: null }
 }
 
-// Frames and videos live in PRIVATE buckets (frames can contain on-screen PII —
-// EVAL-PLAN V6), so they are never public URLs. Displaying one needs a signed URL.
+// The `frames` bucket is PUBLIC (migration 0007) — signing buys nothing there, and anyone
+// holding a frame URL keeps it after a transfer or an unpublish (CLAUDE.md §10e.3). Prefer
+// publicFrameUrl above. These remain because the editor still loads a whole article's
+// screenshots through signedFrameUrls, and switching that is a separate question (it is
+// tangled with the blur/bucket-split decision). `videos` IS private and has no helper here.
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1h — long enough for an editing session
 

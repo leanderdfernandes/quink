@@ -17,6 +17,10 @@ import type { Visibility } from '../lib/types'
 // `visibility` values are unchanged.
 
 type Props = {
+  // A run is still writing this article. Publishing half an article, or opening the menu
+  // that can delete it mid-write, is not something to leave reachable — but the controls
+  // stay VISIBLE, because the wait is when someone reads what they will be able to do.
+  locked?: boolean
   visibility: Visibility
   slug: string | null
   dirty: boolean
@@ -129,6 +133,7 @@ function StatusPill({
 }
 
 export default function ShareControls({
+  locked = false,
   visibility,
   slug,
   dirty,
@@ -250,7 +255,7 @@ export default function ShareControls({
         <button
           className={`pubx-go${primary.quiet ? ' quiet' : ''}`}
           onClick={primary.act}
-          disabled={publishing}
+          disabled={publishing || locked}
         >
           {publishing ? 'Publishing…' : primary.label}
         </button>
@@ -259,6 +264,7 @@ export default function ShareControls({
           aria-label="More publishing options"
           aria-expanded={open}
           aria-haspopup="menu"
+          disabled={locked}
           onClick={() => setOpen((o) => !o)}
         >
           <CaretIcon />

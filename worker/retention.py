@@ -23,28 +23,54 @@ log = logging.getLogger("quink.retention")
 def sweep_timeouts() -> int:
     """Fail jobs that have been in flight far too long. Returns how many were closed.
 
-    The pipeline checks its own deadline at every stage boundary, so under normal
-    operation this never fires. It exists for the case that check cannot cover: the worker
-    process died — a deploy, an idle-instance recycle, an OOM — leaving the row at
-    'running' with nobody left to write to it. That row is the stuck spinner: the SPA
-    polls it forever and the user watches a progress bar that will never finish.
+    TWO cases, two clocks, two codes — because they are two different things (slice 3i):
 
-    Same shape as the video sweep: a STATE query ("in flight, older than the ceiling"),
-    never a scheduled event, so a missed tick self-heals and running it twice is harmless.
-    `counted_against_quota` is untouched — a timeout never burns a run.
+      HUNG      status='running', measured from `started_at`. The pipeline checks its own
+                deadline at every stage boundary, so this only fires when that check could
+                not run: the worker process died mid-run — a deploy, an idle-instance
+                recycle, an OOM — leaving the row at 'running' with nobody to write to it.
+                That row is the stuck spinner the SPA polls forever.
+
+      NEVER RAN status='queued', measured from `created_at`, against a much longer ceiling.
+                A job waiting on a lane (slice 3c) is a capacity problem, not a hung
+                process. Sharing JOB_TIMEOUT_MIN with the case above meant that on the free
+                tier's single lane, the fourth of four dropped recordings was failed as a
+                TIMEOUT for waiting its turn — and told "no worker progress", which is not
+                what happened.
+
+    Both are STATE queries ("in this state, older than this ceiling"), never scheduled
+    events, so a missed tick self-heals and running it twice is harmless.
+    `counted_against_quota` is untouched by either — neither ever burns a run.
     """
+    return _sweep_hung() + _sweep_never_started()
+
+
+def _close(job_id: str, code: str, detail: str) -> bool:
     import pipeline
 
-    cutoff = datetime.now(timezone.utc) - timedelta(
-        minutes=config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN
-    )
+    try:
+        pipeline.fail(job_id, code, detail)
+        return True
+    except Exception:
+        log.exception("could not close in-flight job %s", job_id)
+        return False
+
+
+def _sweep_hung() -> int:
+    """Running, but nothing has moved it for JOB_TIMEOUT_MIN + grace."""
+    import pipeline
+
+    ceiling = config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=ceiling)).isoformat()
     try:
         res = (
             pipeline.db()
             .table("jobs")
             .select("id")
-            .in_("status", ["queued", "running"])
-            .lt("created_at", cutoff.isoformat())
+            .eq("status", "running")
+            # started_at is null on rows written before migration 0028; fall back to
+            # created_at for those rather than leaving them un-sweepable forever.
+            .or_(f"started_at.lt.{cutoff},and(started_at.is.null,created_at.lt.{cutoff})")
             .limit(200)
             .execute()
         )
@@ -52,23 +78,52 @@ def sweep_timeouts() -> int:
         log.exception("job timeout sweep query failed")
         return 0
 
-    closed = 0
-    for job in res.data or []:
-        try:
-            pipeline.fail(
-                job["id"],
-                failures.TIMEOUT,
-                f"no worker progress for {config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN} "
-                "min - swept (the worker process most likely died mid-run)",
-            )
-            closed += 1
-        except Exception:
-            log.exception("could not close timed-out job %s", job["id"])
-
+    closed = sum(
+        _close(
+            job["id"],
+            failures.TIMEOUT,
+            f"no worker progress for {ceiling} min since started_at - swept "
+            "(the worker process most likely died mid-run)",
+        )
+        for job in res.data or []
+    )
     if closed:
-        log.warning("closed %s stuck job(s) as timeout", closed)
+        log.warning("timeout sweep closed %s hung job(s)", closed)
     return closed
 
+
+def _sweep_never_started() -> int:
+    """Queued far past any legitimate wait for a lane. No work was attempted, so this is
+    NOT a timeout: the copy on the other side says it never ran and offers a plain retry."""
+    import pipeline
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=config.QUEUE_TIMEOUT_MIN)
+    try:
+        res = (
+            pipeline.db()
+            .table("jobs")
+            .select("id")
+            .eq("status", "queued")
+            .lt("created_at", cutoff.isoformat())
+            .limit(200)
+            .execute()
+        )
+    except Exception:
+        log.exception("queued-job sweep query failed")
+        return 0
+
+    closed = sum(
+        _close(
+            job["id"],
+            failures.NEVER_STARTED,
+            f"queued for over {config.QUEUE_TIMEOUT_MIN} min without acquiring a lane - "
+            "swept (no work was attempted and nothing was spent)",
+        )
+        for job in res.data or []
+    )
+    if closed:
+        log.warning("queue sweep closed %s job(s) that never started", closed)
+    return closed
 
 def sweep() -> int:
     """Purge recordings from long-dead jobs. Returns how many were collected."""
@@ -151,6 +206,10 @@ def demo() -> None:
             calls.append(("in", k, tuple(v)))
             return self
 
+        def or_(self, expr):
+            calls.append(("or", expr))
+            return self
+
         @property
         def not_(self):
             calls.append(("not",))
@@ -211,31 +270,52 @@ def demo() -> None:
     ][0], "must delete the object BEFORE marking it purged"
     assert purged == 1
 
-    # --- the timeout sweep: the stuck-spinner guard --------------------------
-    # Its correctness is entirely in which rows it picks. Too broad and it kills healthy
+    # --- the timeout sweep: two clocks, two codes (slice 3i) -----------------
+    # Correctness is entirely in which rows each half picks. Too broad and it kills healthy
     # in-flight runs; too narrow and the abandoned row nobody is working on stays at
-    # 'running' forever, which is the single worst state the product can be in.
+    # 'running' forever, which is the single worst state the product can be in. And since
+    # lanes, a third way to get it wrong: measuring a queued job's WAIT as if it were WORK.
     calls.clear()
     closed = sweep_timeouts()
 
-    status = [c for c in calls if c[0] == "in" and c[1] == "status"]
-    assert status and set(status[0][2]) == {"queued", "running"}, (
-        f"must only consider IN-FLIGHT jobs, got {status}"
-    )
-    lt = [c for c in calls if c[0] == "lt" and c[1] == "created_at"]
-    assert lt, "must filter on age, not fire on a schedule"
-    age = (datetime.now(timezone.utc) - datetime.fromisoformat(lt[0][2])).total_seconds() / 60
-    ceiling = config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN
-    assert abs(age - ceiling) < 1, f"cutoff should be ~{ceiling}min ago, got {age:.1f}min"
-    assert age > config.JOB_TIMEOUT_MIN, (
-        "the sweep must wait LONGER than the pipeline's own deadline check, or it races the "
-        "worker and fails a run that was about to classify its own timeout"
+    # HUNG — running only, measured from started_at.
+    assert ("eq", "status", "running") in calls, "the hung sweep considers RUNNING jobs only"
+    ors = [c for c in calls if c[0] == "or"]
+    assert ors, "hung jobs must be selected on started_at, not created_at"
+    assert "started_at.lt." in ors[0][1], f"measure work from started_at: {ors[0][1]}"
+    assert "created_at.lt." in ors[0][1], (
+        "rows written before migration 0028 have no started_at and must still be sweepable"
     )
 
+    # NEVER RAN — queued only, on its own much longer clock.
+    assert ("eq", "status", "queued") in calls, "the queue sweep considers QUEUED jobs only"
+    lt = [c for c in calls if c[0] == "lt" and c[1] == "created_at"]
+    assert lt, "must filter on age, not fire on a schedule"
+    qcut = datetime.fromisoformat(lt[-1][2])
+    qage = (datetime.now(timezone.utc) - qcut).total_seconds() / 60
+    assert abs(qage - config.QUEUE_TIMEOUT_MIN) < 1, (
+        f"queue cutoff should be ~{config.QUEUE_TIMEOUT_MIN}min ago, got {qage:.1f}min"
+    )
+
+    # THE BUG THIS FIXES. On one lane, four dropped recordings put the last one well past
+    # the RUNNING ceiling before it starts. It must not be swept for waiting its turn.
+    waited = config.JOB_TIMEOUT_MIN + config.JOB_TIMEOUT_GRACE_MIN + 5
+    assert waited < config.QUEUE_TIMEOUT_MIN, "the two ceilings must not overlap"
+    queued_at = datetime.now(timezone.utc) - timedelta(minutes=waited)
+    assert queued_at > qcut, (
+        f"a job queued {waited}min ago — past the hung ceiling, under the queue ceiling — "
+        "must NOT be swept: it is waiting on a lane, not hung"
+    )
+
+    # Two different things get two different codes, because the recovery differs.
     written = [c[1] for c in calls if c[0] == "update"]
-    assert written and written[0]["failure_code"] == failures.TIMEOUT, written
-    assert all("counted_against_quota" not in w for w in written), "a timeout never burns a run"
-    assert closed == 1
+    codes = [w.get("failure_code") for w in written]
+    assert failures.TIMEOUT in codes, codes
+    assert failures.NEVER_STARTED in codes, codes
+    assert all("counted_against_quota" not in w for w in written), (
+        "neither a timeout nor a never-started job ever burns a run"
+    )
+    assert closed == 2, closed
 
     print("retention self-check OK")
 

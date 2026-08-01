@@ -46,6 +46,21 @@ export const PLANS: Record<PlanId, PlanLimits> = {
 
 export const DEFAULT_PLAN: PlanId = 'free'
 
+// How many runs one account may have going at once. MIRRORS `LANES` in worker/config.py,
+// which is the enforcement point — this copy only decides how many files the dock uploads
+// at a time, so five dropped recordings do not saturate the connection. If they drift, the
+// client just queues more conservatively or more eagerly than the server; the server wins.
+export const LANES: Record<PlanId, number> = {
+  free: 1,
+  founding: 2,
+  starter: 2,
+  growth: 2,
+  internal: 3,
+}
+
+export const lanesFor = (plan: string | null | undefined): number =>
+  LANES[(plan ?? DEFAULT_PLAN) as PlanId] ?? LANES[DEFAULT_PLAN]
+
 export function limitsFor(plan: string | null | undefined): PlanLimits {
   return PLANS[(plan ?? DEFAULT_PLAN) as PlanId] ?? PLANS[DEFAULT_PLAN]
 }

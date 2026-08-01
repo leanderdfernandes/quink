@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { DOMSerializer } from '@tiptap/pm/model'
 import FramePicker from './FramePicker'
-import type { StepRow } from '../lib/types'
+import Annotator from './Annotator'
+import AnnotationLayer from '../components/AnnotationLayer'
+import type { Annotation, StepRow } from '../lib/types'
 
 // The step block — the unit of everything (CLAUDE.md §9): { heading, body, image }.
 // Body is TipTap, never a textarea — editability is half the product, and the design file's
@@ -31,11 +33,25 @@ type Props = {
   onDelete: () => void
   onPickFrame: (newPath: string) => void
   onRemoveFrame: () => void
+  onAnnotate: (annotations: Annotation[]) => void
+  // The KB's brand colour, so annotations default to on-brand with zero decisions.
+  brandColor: string
   onError: (msg: string) => void
   hasVideo: boolean
   onDragStart: () => void
   onDragEnterCard: () => void
   onDrop: () => void
+  // The run that is writing this article is still going. Every affordance stays VISIBLE and
+  // goes inert — revealing them at the end would be a screen change by another name, and
+  // the user needs to see what the finished thing will let them do while they wait. It also
+  // closes the race where a heading typed mid-run is overwritten by Stage 2.
+  readOnly?: boolean
+  // Generating, and this step's frame has not landed yet. Distinct from "no screenshot":
+  // one is a slot waiting to be filled, the other is a gap to fix.
+  awaitingFrame?: boolean
+  // The text on this step changed a moment ago — Stage 2 landing. Marks the line as it
+  // settles, then clears itself.
+  settling?: boolean
 }
 
 export default function StepCard({
@@ -53,16 +69,28 @@ export default function StepCard({
   onDelete,
   onPickFrame,
   onRemoveFrame,
+  onAnnotate,
+  brandColor,
   onError,
   hasVideo,
   onDragStart,
   onDragEnterCard,
   onDrop,
+  readOnly = false,
+  awaitingFrame = false,
+  settling = false,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [annotating, setAnnotating] = useState(false)
+  // 4h: a frame swap on an annotated step. Shapes are positioned against a SPECIFIC frame,
+  // so a new one leaves arrows pointing at nothing. Neither answer may be silent — keeping
+  // them silently leaves visible nonsense, clearing them silently destroys work — so the
+  // pick is held here until the user says which.
+  const [pendingFrame, setPendingFrame] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const editor = useEditor({
     immediatelyRender: false,
+    editable: !readOnly,
     extensions: [
       StarterKit.configure({
         heading: false,
@@ -81,6 +109,21 @@ export default function StepCard({
     onUpdate: ({ editor }) => onBody(editor.getHTML()),
   })
 
+  // The run finishing flips this without remounting the editor — a remount would drop the
+  // caret and count as the screen change this whole slice exists to avoid.
+  useEffect(() => {
+    editor?.setEditable(!readOnly)
+  }, [editor, readOnly])
+
+  // While the run owns the text, the document is written from outside TipTap. TipTap owns
+  // its content after mount, so Stage 2's polish has to be pushed in — and only while
+  // read-only, so it can never fight a user's typing.
+  useEffect(() => {
+    if (!editor || !readOnly) return
+    const next = step.body_text || ''
+    if (editor.getHTML() !== next) editor.commands.setContent(next, { emitUpdate: false })
+  }, [editor, readOnly, step.body_text])
+
   // Split at the cursor: serialize the doc before and after the caret to HTML.
   function splitHere() {
     if (!editor) return
@@ -92,12 +135,12 @@ export default function StepCard({
 
   return (
     <article
-      className="ed-card"
+      className={`ed-card${readOnly ? ' ed-card-live' : ''}`}
       id={`step-${step.step_number}`}
       data-index={index}
-      onDragEnter={onDragEnterCard}
+      onDragEnter={readOnly ? undefined : onDragEnterCard}
       onDragOver={(e) => e.preventDefault()}
-      onDrop={onDrop}
+      onDrop={readOnly ? undefined : onDrop}
     >
       {confirmDelete ? (
         <div className="ed-tools ed-tools-confirm">
@@ -118,7 +161,12 @@ export default function StepCard({
       ) : (
         <div className="ed-tools">
           {!isFirst && (
-            <button type="button" onClick={onMergeUp} title="Join this step onto the one above">
+            <button
+              type="button"
+              disabled={readOnly}
+              onClick={onMergeUp}
+              title="Join this step onto the one above"
+            >
               Merge up
             </button>
           )}
@@ -126,18 +174,25 @@ export default function StepCard({
               the real caret position instead of a blurred selection collapsing to 0. */}
           <button
             type="button"
+            disabled={readOnly}
             onMouseDown={(e) => e.preventDefault()}
             onClick={splitHere}
             title="Cut this step in two at the cursor"
           >
             Split here
           </button>
-          <button type="button" onClick={onDuplicate} title="Make a copy of this step">
+          <button
+            type="button"
+            disabled={readOnly}
+            onClick={onDuplicate}
+            title="Make a copy of this step"
+          >
             Duplicate
           </button>
           <button
             type="button"
             className="danger"
+            disabled={readOnly}
             onClick={() => setConfirmDelete(true)}
             title="Delete this step"
           >
@@ -150,9 +205,9 @@ export default function StepCard({
         {/* Only the handle is draggable, so text selection inside the body still works. */}
         <span
           className="ed-grip"
-          draggable
-          onDragStart={onDragStart}
-          onDragEnd={onDrop}
+          draggable={!readOnly}
+          onDragStart={readOnly ? undefined : onDragStart}
+          onDragEnd={readOnly ? undefined : onDrop}
           title="Drag to reorder"
           aria-label="Drag to reorder"
         >
@@ -164,20 +219,38 @@ export default function StepCard({
         <input
           className="ed-h-in"
           value={step.heading}
+          readOnly={readOnly}
           placeholder="What's the first thing they do?"
           onChange={(e) => onHeading(e.target.value)}
           aria-label={`Step ${step.step_number} heading`}
         />
       </div>
 
-      <EditorContent editor={editor} className="ed-prose" />
+      <EditorContent
+        editor={editor}
+        className={`ed-prose${settling ? ' ed-settling' : ''}`}
+      />
 
       {screenshotUrl ? (
         <div className="ed-shotwrap">
-          <div className="ed-shot">
+          <div className="ed-shot ed-shot-landed">
             <img src={screenshotUrl} alt={`Step ${step.step_number}`} />
+            {/* Same component the reader renders from, so the draft and the live page
+                cannot disagree about where an arrow points. */}
+            <AnnotationLayer annotations={step.annotations} />
             <div className="ed-shot-ov">
-              <button type="button" onClick={() => setPickerOpen((o) => !o)}>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => setAnnotating(true)}
+              >
+                {step.annotations?.length ? 'Edit annotations' : 'Annotate'}
+              </button>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => setPickerOpen((o) => !o)}
+              >
                 {hasVideo ? 'Change frame' : 'Change image'}
               </button>
             </div>
@@ -186,12 +259,20 @@ export default function StepCard({
             <p className="ed-edited">✓ Edited — a re-run won’t overwrite this</p>
           )}
         </div>
+      ) : awaitingFrame ? (
+        // The slot, waiting. Frames do NOT arrive evenly — ffmpeg seeks, encodes and uploads
+        // one at a time — so a step that sits empty for six seconds while its neighbours
+        // fill in reads as a hang unless the slot itself says otherwise. Its own resting
+        // animation, per slot, is what makes a slow frame legible as slow rather than dead.
+        <div className="ed-shot-wait" aria-label="Capturing this screenshot">
+          <span className="ed-shot-wait-sheen" aria-hidden />
+        </div>
       ) : (
         // Not a quiet "+ Add image": a step with no screenshot is the visible face of a
         // frames_partial degrade, and the reader navigates by pictures. It says why.
         <div className="ed-noshot">
           <p>No screenshot for this step. Readers follow steps by what the screen looked like.</p>
-          <button type="button" onClick={() => setPickerOpen((o) => !o)}>
+          <button type="button" disabled={readOnly} onClick={() => setPickerOpen((o) => !o)}>
             {hasVideo ? 'Pick a frame' : 'Add an image'}
           </button>
         </div>
@@ -206,9 +287,14 @@ export default function StepCard({
           // Null once the image is a human pick or upload: the timestamp still holds the
           // moment the pipeline chose, and marking that frame "in use" would be a lie.
           currentSecond={step.is_edited ? null : step.timestamp_seconds}
+          hasVideo={hasVideo}
           onPick={(path) => {
-            onPickFrame(path)
             setPickerOpen(false)
+            // 4h. Annotations are positioned against a specific frame, so swapping it
+            // leaves arrows pointing at nothing. Ask — never silently keep (visible
+            // nonsense) and never silently clear (destroyed work).
+            if (step.annotations?.length) setPendingFrame(path)
+            else onPickFrame(path)
           }}
           onRemove={() => {
             onRemoveFrame()
@@ -216,6 +302,53 @@ export default function StepCard({
           }}
           onClose={() => setPickerOpen(false)}
           onError={onError}
+        />
+      )}
+
+      {pendingFrame && (
+        <div className="ed-anno-ask" role="alertdialog" aria-label="Keep your annotations?">
+          <p>Keep your annotations on the new screenshot?</p>
+          <span>
+            They were drawn on the old frame, so they may not line up with the new one.
+          </span>
+          <div className="ed-anno-ask-acts">
+            <button
+              type="button"
+              className="row-confirm"
+              onClick={() => {
+                onPickFrame(pendingFrame)
+                setPendingFrame(null)
+              }}
+            >
+              Keep them
+            </button>
+            <button
+              type="button"
+              className="row-cancel"
+              onClick={() => {
+                onPickFrame(pendingFrame)
+                onAnnotate([])
+                setPendingFrame(null)
+              }}
+            >
+              Clear them
+            </button>
+          </div>
+        </div>
+      )}
+
+      {annotating && screenshotUrl && (
+        <Annotator
+          imageUrl={screenshotUrl}
+          annotations={step.annotations ?? []}
+          brandColor={brandColor}
+          onDone={(next) => {
+            // No Save button (4e): this commits to local state and rides the editor's
+            // existing 700ms autosave. Nothing refetches, nothing remounts.
+            onAnnotate(next)
+            setAnnotating(false)
+          }}
+          onCancel={() => setAnnotating(false)}
         />
       )}
     </article>

@@ -49,6 +49,7 @@ class _Query:
         self.db, self.table = db, table
         self._op = None
         self._payload = None
+        self._target = None  # the id an update is filtered to
 
     def insert(self, payload):
         self._op, self._payload = "insert", payload
@@ -58,13 +59,29 @@ class _Query:
         self._op, self._payload = "update", payload
         return self
 
-    def eq(self, *_a):
+    def eq(self, col=None, value=None):
+        if col == "id":
+            self._target = value
         return self
 
     def execute(self):
-        self.db.calls.append((self.table, self._op, self._payload))
+        self.db.calls.append((self.table, self._op, self._payload, self._target))
         if self.table == "articles" and self._op == "insert":
+            self.db.article_id = "article-1"
             return _Result([{"id": "article-1"}])
+        if self.table == "jobs" and self._op == "update":
+            # Supabase returns the updated row; fail() reads article_id back off it to
+            # bring the article to a terminal state.
+            return _Result([{"article_id": self.db.article_id}])
+        if self.table == "steps" and self._op == "insert":
+            # Supabase returns the inserted rows; the pipeline keys its step ids off
+            # step_number in that response, deliberately not off the row order.
+            return _Result(
+                [
+                    {"id": f"step-{r['step_number']}", "step_number": r["step_number"]}
+                    for r in reversed(self._payload)
+                ]
+            )
         return _Result([])
 
 
@@ -80,13 +97,14 @@ class _Db:
     def __init__(self):
         self.calls: list[tuple] = []
         self.storage = _Storage()
+        self.article_id = None
 
     def table(self, name):
         return _Query(self, name)
 
     # --- assertions the tests read the recording through -------------------
     def job_updates(self) -> list[dict]:
-        return [p for t, op, p in self.calls if t == "jobs" and op == "update"]
+        return [p for t, op, p, _ in self.calls if t == "jobs" and op == "update"]
 
     def final_job(self) -> dict:
         """The merged view of what landed on the job row."""
@@ -96,13 +114,37 @@ class _Db:
         return merged
 
     def steps_inserted(self) -> list[dict]:
-        for t, op, p in self.calls:
+        for t, op, p, _ in self.calls:
             if t == "steps" and op == "insert":
                 return p
         return []
 
+    def steps_final(self) -> dict[int, dict]:
+        """The rows as they end up: Stage 1's insert with every later update applied.
+        Keyed by step number, which is how the fake mints its ids."""
+        rows = {r["step_number"]: dict(r) for r in self.steps_inserted()}
+        for t, op, p, target in self.calls:
+            if t == "steps" and op == "update" and target:
+                rows[int(str(target).split("-")[1])].update(p)
+        return rows
+
     def article_created(self) -> bool:
-        return any(t == "articles" and op == "insert" for t, op, _ in self.calls)
+        return any(t == "articles" and op == "insert" for t, op, _, _ in self.calls)
+
+    def article_status(self) -> str | None:
+        """The last status written to the article — insert included."""
+        status = None
+        for t, op, p, _ in self.calls:
+            if t == "articles" and op in ("insert", "update") and "status" in p:
+                status = p["status"]
+        return status
+
+    def index_of(self, table: str, op: str, where=lambda payload: True) -> int:
+        """Where a call landed in the recording, so ORDER can be asserted."""
+        for i, (t, o, p, _) in enumerate(self.calls):
+            if t == table and o == op and where(p):
+                return i
+        return -1
 
 
 class _Frames:
@@ -196,7 +238,7 @@ def test_partial_frame_failure_ships_text_only_steps():
     assert job["counted_against_quota"] is True
     assert failures.DEGRADED_FRAMES in (job["degraded"] or ""), job["degraded"]
 
-    shots = {s["step_number"]: s["screenshot_url"] for s in db.steps_inserted()}
+    shots = {n: r.get("screenshot_url") for n, r in db.steps_final().items()}
     assert shots[2] is None, "the failed step renders text-only, with '+ Add image'"
     assert shots[1] and shots[3], "the steps that worked keep their screenshots"
 
@@ -213,6 +255,76 @@ def test_dense_set_failure_only_costs_the_filmstrip():
 
 
 # ---------------------------------------------------------------------------
+# The streaming spine: the steps table is what the client watches
+# ---------------------------------------------------------------------------
+def test_steps_land_after_stage_1_not_after_stage_2():
+    """The whole point of the ordering. If the insert waits for Stage 2 again, a process
+    that dies mid-run leaves a title, zero steps and status='generating' forever."""
+    bp = _blueprint(3)
+    db = _run(_Frames(), _Gemini(stage1=bp, stage2=bp))
+
+    inserted = db.index_of("steps", "insert")
+    writing = db.index_of("jobs", "update", lambda p: p.get("stage") == "writing")
+    assert inserted >= 0 and writing >= 0
+    assert inserted < writing, "steps must exist before Stage 2 starts"
+    assert all(
+        "screenshot_url" not in r for r in db.steps_inserted()
+    ), "screenshots arrive later, one update per frame"
+
+    # Frames filled in during `capturing` — before Stage 2, not at the end.
+    first_shot = db.index_of("steps", "update", lambda p: "screenshot_url" in p)
+    assert 0 <= first_shot < writing, "frames must fill in as they land"
+
+    # And the Stage 1 baseline is on the article from the moment it exists.
+    art = db.steps_inserted() and [
+        p for t, op, p, _ in db.calls if t == "articles" and op == "insert"
+    ][0]
+    assert art["generated_snapshot"]["steps"], "Stage 1 baseline written at creation"
+
+
+def test_polish_updates_rows_in_place():
+    """Row ids must survive the run — the client is holding them. Delete-and-reinsert
+    would swap every id out from under it."""
+    bp = _blueprint(2)
+    polished = Blueprint(
+        title="T2",
+        subtitle="S2",
+        steps=[
+            BlueprintStep(step_number=1, heading="P1", body_text="Q1", timestamp="00:01"),
+            BlueprintStep(step_number=2, heading="P2", body_text="Q2", timestamp="00:02"),
+        ],
+    )
+    db = _run(_Frames(), _Gemini(stage1=bp, stage2=polished))
+
+    assert not any(op == "delete" for _, op, _, _ in db.calls), "never delete-and-reinsert"
+    assert len([1 for t, op, _, _ in db.calls if t == "steps" and op == "insert"]) == 1
+    rows = db.steps_final()
+    assert [rows[1]["body_text"], rows[2]["body_text"]] == ["Q1", "Q2"]
+    assert rows[1]["screenshot_url"], "polishing must not clear the frame"
+
+
+def test_stage2_renumbering_is_ignored():
+    """Same count, different numbers. Matched on step_number, this would write step 2's
+    prose onto step 1's screenshot — a count check cannot see it."""
+    bp = _blueprint(2)
+    renumbered = Blueprint(
+        title="T",
+        subtitle="S",
+        steps=[
+            BlueprintStep(step_number=2, heading="P2", body_text="Q2", timestamp="00:01"),
+            BlueprintStep(step_number=3, heading="P3", body_text="Q3", timestamp="00:02"),
+        ],
+    )
+    db = _run(_Frames(), _Gemini(stage1=bp, stage2=renumbered))
+
+    rows = db.steps_final()
+    assert [rows[1]["body_text"], rows[2]["body_text"]] == ["B1", "B2"], (
+        "Stage 1's structure wins; Stage 2's text is dropped whole"
+    )
+    assert db.final_job()["status"] == "done", "not a failure — the article is fine"
+
+
+# ---------------------------------------------------------------------------
 # Real failures: right code, and never charged
 # ---------------------------------------------------------------------------
 def _assert_failed(db: _Db, code: str):
@@ -222,6 +334,13 @@ def _assert_failed(db: _Db, code: str):
     assert "counted_against_quota" not in job, "a FAILED run must never burn a run"
     assert job.get("failure_detail"), "the detail is logged, even though it is never shown"
     assert "error" not in job, "the `error` column was dropped in 0020 — do not resurrect it"
+    # Whatever else happened, the article must not be left mid-flight. Nothing else in the
+    # system ever writes this column, so 'generating' here means forever.
+    if db.article_created():
+        assert db.article_status() == "ready", (
+            "a failure after the article exists leaves an editable DRAFT, "
+            f"not a permanent 'Generating' badge — got {db.article_status()!r}"
+        )
 
 
 def test_unreadable_video():

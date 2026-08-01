@@ -8,6 +8,7 @@ import {
   unpublishArticle,
 } from '../lib/articles'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
+import { listInFlightJobs } from '../lib/jobs'
 import { limitsFor, runsUsed } from '../lib/plans'
 import { publicBrandingUrl } from '../lib/storage'
 import {
@@ -54,11 +55,19 @@ type Props = {
   // articles — never a modal. The articles ARE the demo.
   justClaimed?: boolean
   onDismissWelcome?: () => void
+  // A run was started from this screen and its article does not exist yet — Stage 1 creates
+  // it about fifteen seconds in. Without this the list has nothing to watch for and the
+  // upload looks like it did nothing at all.
+  runInFlight?: boolean
 }
 
 // Below this rate the helpful figure on a row reads as poor rather than good — half is the
 // point where the article is failing more readers than it serves.
 const HELPFUL_FLOOR = 0.5
+
+// How often to ask whether a run that was going at page load still is. Slower than the
+// generating screen's 2s: nobody is staring at this row waiting for it.
+const GENERATING_POLL_MS = 5000
 
 type Feedback = { helpful: number; total: number }
 
@@ -114,6 +123,7 @@ export default function KnowledgeBase({
   onUpgrade,
   justClaimed,
   onDismissWelcome,
+  runInFlight = false,
 }: Props) {
   const [articles, setArticles] = useState<ArticleRow[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -192,7 +202,9 @@ export default function KnowledgeBase({
         // past that this wants a view or a range query rather than a longer URL.
         const { data: sd } = await supabase
           .from('steps')
-          .select('article_id, step_number, heading, body_text, screenshot_url')
+          .select(
+            'article_id, step_number, heading, body_text, screenshot_url, annotations, is_edited, timestamp_seconds',
+          )
           .in(
             'article_id',
             rows.map((r) => r.id),
@@ -211,6 +223,79 @@ export default function KnowledgeBase({
       cancelled = true
     }
   }, [kb.id, kb.owner_id])
+
+  // A string, not an array, so this only changes when the SET of generating articles does —
+  // an array literal would be a new value every render and restart the poll below forever.
+  // Every article id currently on screen. A ref so the poll can test membership without
+  // being restarted every time the list changes.
+  const knownIds = useRef<Set<string>>(new Set())
+  knownIds.current = new Set(articles.map((a) => a.id))
+
+  const generatingIds = useMemo(
+    () =>
+      articles
+        .filter((a) => a.status === 'generating')
+        .map((a) => a.id)
+        .join(','),
+    [articles],
+  )
+
+  // The "Generating" badge froze at whatever the row said when the page loaded: a run that
+  // finished a second later still read as generating until a manual reload, and closing the
+  // tab mid-run made that permanent. Watch the run ledger instead.
+  //
+  // It runs whenever a run COULD be in flight, not only when a generating row is already on
+  // screen, because a run started from this screen creates its article ~15s later — the row
+  // has to arrive on its own or the upload looks like it did nothing.
+  useEffect(() => {
+    if (!generatingIds && !runInFlight) return
+    let watching = generatingIds ? generatingIds.split(',') : []
+    let stop = false
+    let timer: ReturnType<typeof setTimeout>
+
+    async function tick() {
+      const jobs = await listInFlightJobs(kb.owner_id)
+      if (stop) return
+      const inflight = new Set(jobs.map((j) => j.article_id))
+
+      // An article this KB does not have yet: a run we started has just created it.
+      const unknown = jobs
+        .map((j) => j.article_id)
+        .filter((id): id is string => !!id && !knownIds.current.has(id))
+
+      const settled = watching.filter((id) => !inflight.has(id))
+      // Each id is re-read ONCE after its job leaves the queue. A row still saying
+      // 'generating' with no job behind it (a worker that died mid-run) is not going to
+      // change on its own — keep watching it and this loop never ends.
+      watching = watching.filter((id) => inflight.has(id))
+
+      const wanted = [...new Set([...settled, ...unknown])]
+      if (wanted.length) {
+        const { data } = await supabase.from('articles').select('*').in('id', wanted)
+        if (stop) return
+        const fresh = (data as ArticleRow[] | null) ?? []
+        if (fresh.length) {
+          setArticles((prev) => {
+            const seen = new Set(prev.map((a) => a.id))
+            const added = fresh.filter((f) => !seen.has(f.id))
+            const merged = prev.map((a) => fresh.find((f) => f.id === a.id) ?? a)
+            // Newest first, same order the initial query uses.
+            return [...added, ...merged]
+          })
+        }
+      }
+      // Keep going while anything is still running, or while a watched row is unresolved.
+      if (!stop && (watching.length || jobs.length)) {
+        timer = setTimeout(tick, GENERATING_POLL_MS)
+      }
+    }
+
+    timer = setTimeout(tick, GENERATING_POLL_MS)
+    return () => {
+      stop = true
+      clearTimeout(timer)
+    }
+  }, [generatingIds, runInFlight, kb.owner_id])
 
   // Everything derived per article, in one place, so the badge and the row meta can never
   // disagree about an article.

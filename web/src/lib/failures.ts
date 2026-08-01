@@ -65,6 +65,15 @@ export const FAILURES: Record<string, Failure> = {
     body: 'Your recording is safe.',
     recovery: 'retry',
   },
+  // Waited for a free slot and never got one (slice 3i). Deliberately NOT worded as a
+  // failure, because nothing failed: no work was attempted and nothing was spent. It is
+  // its own code rather than `timeout` or `internal_error` because both of those tell the
+  // user something went wrong on our end, and the honest statement here is "it never ran".
+  never_started: {
+    heading: 'This one never got started',
+    body: 'It was waiting behind your other recordings for too long. Nothing was used up — start it again whenever you like.',
+    recovery: 'retry',
+  },
   spend_cap: {
     heading: "We've hit a temporary processing limit",
     body: "Nothing's wrong with your file — try again shortly.",

@@ -80,8 +80,8 @@ const SAMPLE_ARTICLE: Article = {
   title: 'Create your first collection',
   subtitle: 'Start a collection and add your first few items.',
   steps: [
-    { step_number: 1, heading: 'Open your library', body_text: '<p>Select <b>Library</b> in the sidebar. Everything your team has saved lives here.</p>', screenshot_url: null },
-    { step_number: 2, heading: 'Make a collection', body_text: '<p>Choose <b>New collection</b>, give it a name, and press <b>Create</b>.</p>', screenshot_url: null },
+    { step_number: 1, heading: 'Open your library', body_text: '<p>Select <b>Library</b> in the sidebar. Everything your team has saved lives here.</p>', screenshot_url: null, annotations: [] },
+    { step_number: 2, heading: 'Make a collection', body_text: '<p>Choose <b>New collection</b>, give it a name, and press <b>Create</b>.</p>', screenshot_url: null, annotations: [] },
   ],
 }
 

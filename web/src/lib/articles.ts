@@ -61,6 +61,11 @@ export async function publishArticle(article: ArticleRow, steps: StepLite[]): Pr
       heading: s.heading,
       body_text: s.body_text,
       screenshot_url: s.screenshot_url,
+      // The reader renders annotations from published_content, not from the live rows.
+      // There are TWO publish implementations sharing no helper (this one and
+      // Editor.doPublish) — a field added to one and not the other ships annotated in the
+      // editor and bare on the live site.
+      annotations: s.annotations ?? [],
     })),
   }
   const { error } = await supabase
@@ -124,12 +129,20 @@ export async function duplicateArticle(
 
   if (steps.length) {
     const { error: se } = await supabase.from('steps').insert(
+      // EVERY step column that carries user intent. This list was four fields and silently
+      // dropped is_edited and timestamp_seconds on every duplicate — the first meant a
+      // pipeline re-run could overwrite a frame a human had chosen (CLAUDE.md §8), the
+      // second blanked the frame picker's current-frame marker on the copy. Annotations
+      // would have been the third. If you add a column to `steps`, it goes here too.
       steps.map((s, i) => ({
         article_id: copy.id,
         step_number: s.step_number,
         heading: s.heading,
         body_text: s.body_text,
         screenshot_url: shots[i],
+        is_edited: s.is_edited ?? false,
+        timestamp_seconds: s.timestamp_seconds ?? null,
+        annotations: s.annotations ?? [],
       })),
     )
     if (se) throw se

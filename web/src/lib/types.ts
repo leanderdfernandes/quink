@@ -3,11 +3,30 @@
 //   - public.steps      (DB rows)
 // If any of the three drift, that's a bug.
 
+// One shape in a step's non-destructive overlay (migration 0029). Coordinates are
+// NORMALIZED 0-1 against the image's own box — the same frame renders at three different
+// widths (editor canvas, reader measure, phone) and pixels survive none of them.
+//
+// Field names are short because this is stored per shape, per step, per article. `t` is the
+// tool, `c` the colour. Text shapes carry `text` and no second point.
+export type Annotation = {
+  t: 'arrow' | 'box' | 'ellipse' | 'text'
+  c: string
+  x1: number
+  y1: number
+  x2?: number
+  y2?: number
+  text?: string
+}
+
 export type Step = {
   step_number: number
   heading: string
   body_text: string
   screenshot_url: string | null
+  // Rendered identically by the editor and the reader from one component. Part of the
+  // published payload, so it belongs on the contract type, not only on the DB row.
+  annotations: Annotation[]
 }
 
 export type Article = {
@@ -90,6 +109,12 @@ export type KnowledgeBase = {
   about: string
   headline: string
   search_placeholder: string
+  // Model-facing product grounding (migration 0027), reused as the default for every run
+  // in this KB. NOT `about` above — that is reader-facing prose the public site renders.
+  product_name: string
+  product_description: string
+  audience: string
+  tone: string
   subdomain: string | null
   custom_domain: string | null
   is_published: boolean
@@ -222,11 +247,24 @@ export type Job = {
   retry_of: string | null
 }
 
-// The context form (ux-spec §2). Product name is the only required field; it is
-// injected into the Stage 1 prompt for terminology grounding (EVAL-PLAN V7).
-export type VideoContext = {
+// The context form, in two tiers (slice 3b). Split by WHO IT DESCRIBES, not by how often
+// it changes: the product tier is the thing being documented and lives on the KB
+// (migration 0027), reused by every run; the recording tier describes one video.
+//
+// ProductContext is NOT knowledge_bases.about. `about` is reader-facing prose the public
+// help center renders; this is model-facing grounding nobody ever sees. Prefilling `about`
+// from `description` on a first save is a UI convenience, not the same field.
+export type ProductContext = {
   product_name: string
+  description: string
   audience: string
   tone: string
-  description: string
+}
+
+// What goes into jobs.context, and therefore what a retry re-grounds on. Stored per job
+// rather than re-read from the KB, so a retry reproduces the ORIGINAL run rather than
+// whatever the product context happens to say later (CLAUDE.md §10g).
+export type VideoContext = {
+  product: ProductContext
+  recording: string
 }
