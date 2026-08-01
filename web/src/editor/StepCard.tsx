@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -87,6 +87,9 @@ export default function StepCard({
   // question is "do these shapes still belong on a different frame", and it is answered the
   // first time it is asked.
   const [frameAsked, setFrameAsked] = useState(false)
+  // Guards the one-shot focus of the text field. Reset whenever the field goes away, so the
+  // next placement focuses again.
+  const textMounted = useRef(false)
   // 4h: a frame swap on an annotated step. Shapes are positioned against a SPECIFIC frame,
   // so a new one leaves arrows pointing at nothing. Neither answer may be silent — keeping
   // them silently leaves visible nonsense, clearing them silently destroys work — so the
@@ -273,7 +276,21 @@ export default function StepCard({
               {annotating && anno.typing && (
                 <input
                   className="anb-text-in"
-                  autoFocus
+                  // Focus ONCE, on mount, and never again — a bare ref callback re-runs on
+                  // every render and would yank focus back from wherever the user had moved
+                  // it. autoFocus was worse still: it fires while the placing click is
+                  // still settling, so focus landed and was taken away in the same tick.
+                  ref={(el) => {
+                    // React calls this with null on unmount, which is the natural place to
+                    // arm the next placement.
+                    if (!el) {
+                      textMounted.current = false
+                      return
+                    }
+                    if (textMounted.current) return
+                    textMounted.current = true
+                    el.focus()
+                  }}
                   placeholder="Type…"
                   style={{
                     left: `${anno.typing.x * 100}%`,
@@ -281,18 +298,25 @@ export default function StepCard({
                     color: anno.colour,
                   }}
                   onPointerDown={(e) => e.stopPropagation()}
+                  onFocus={anno.onTextFocus}
                   onKeyDown={(e) => {
+                    // The surface listens for V/A/B/C/T on document — every keystroke here
+                    // has to stop before it reaches that, or typing "box" changes tools.
                     e.stopPropagation()
                     if (e.key === 'Enter') anno.commitText(e.currentTarget.value)
                     if (e.key === 'Escape') anno.cancelText()
                   }}
-                  // Commit only when something was typed. The first blur used to fire as the
-                  // placing click settled and threw the field away before a key landed.
-                  onBlur={(e) =>
-                    e.currentTarget.value.trim()
-                      ? anno.commitText(e.currentTarget.value)
-                      : anno.cancelText()
-                  }
+                  onBlur={(e) => {
+                    const v = e.currentTarget.value
+                    if (v.trim()) {
+                      anno.commitText(v)
+                      return
+                    }
+                    // Empty AND never actually focused = the browser moving focus during
+                    // mount, not the user leaving. Cancelling on that is what put the tool
+                    // back to Select the instant the field appeared.
+                    if (anno.textEverFocused()) anno.cancelText()
+                  }}
                 />
               )}
             </AnnotatedImage>

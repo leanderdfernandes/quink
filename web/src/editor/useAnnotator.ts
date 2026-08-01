@@ -127,6 +127,11 @@ export function useAnnotator(
     }
 
     if (tool === 'text') {
+      // preventDefault is load-bearing, not hygiene. Without it the browser's own
+      // mousedown focus handling runs AFTER React has mounted the input, moves focus to the
+      // surface, and fires an immediate empty blur — which cancelled the placement and put
+      // the tool back to Select before a single key could land. That was the whole bug.
+      e.preventDefault()
       setTyping(p)
       return
     }
@@ -197,6 +202,10 @@ export function useAnnotator(
     }
   }
 
+  // Whether the text field has actually held focus. A blur before that is the browser
+  // moving focus around, never the user leaving the field, and must not cancel anything.
+  const textFocused = useRef(false)
+
   function commitText(value: string) {
     const v = value.trim()
     if (v && typing) {
@@ -207,6 +216,7 @@ export function useAnnotator(
     }
     setTyping(null)
     setTool('select')
+    textFocused.current = false
   }
 
   // Escape backs out one layer at a time — selection, then tool, then the mode itself — so
@@ -257,7 +267,14 @@ export function useAnnotator(
     cancelText: () => {
       setTyping(null)
       setTool('select')
+      textFocused.current = false
     },
+    // The text field reports when it genuinely has focus, so a blur can tell "the user
+    // clicked away" from "the browser moved focus during mount".
+    onTextFocus: () => {
+      textFocused.current = true
+    },
+    textEverFocused: () => textFocused.current,
     handlers: { onPointerDown, onPointerMove, onPointerUp },
   }
 }
