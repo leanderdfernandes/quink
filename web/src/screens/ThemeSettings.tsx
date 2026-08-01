@@ -495,8 +495,18 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                     </button>
                   </div>
                 ) : logoPath ? (
+                  // Someone uploading a logo is making a VISUAL decision, and "Logo added."
+                  // is the one thing that cannot help them make it. The thumbnail is sized
+                  // and cropped the way the reader's masthead will render it, on the band's
+                  // own background, so what they are approving is what will ship.
                   <div className="th-hasfile">
-                    <span>Logo added.</span>
+                    <span className="th-logo-prev">
+                      <img src={publicBrandingUrl(logoPath) ?? ''} alt="Your logo" />
+                    </span>
+                    <span className="th-logo-meta">
+                      <b>Your logo</b>
+                      <small>Shown at this size in your help center header</small>
+                    </span>
                     <button className="linklike" onClick={() => logoInputRef.current?.click()}>
                       Replace
                     </button>

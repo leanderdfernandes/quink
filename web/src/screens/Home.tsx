@@ -72,7 +72,10 @@ export default function Home({ onStart, onLogin }: Props) {
           <span className="check" aria-hidden>
             ✓
           </span>{' '}
-          Free to try — {COPY.freeLimitDisclosure.replace(', then top up.', ', no card needed')}
+          {/* The .replace() that used to be here targeted a substring the disclosure has
+              not contained for two rewrites — a dead no-op the landing page rendered
+              straight through (UI-STATE-INVENTORY, Surface F drift list). */}
+          Free to try — {COPY.freeLimitDisclosure}
         </p>
       </section>
 

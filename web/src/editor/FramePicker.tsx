@@ -108,8 +108,13 @@ export default function FramePicker({
           undefined,
         ))
 
-  // Start the strip on the frame that's currently in use.
+  // Start the strip on the frame that's currently in use — ONCE, on load. Re-running this
+  // on every pick would yank the strip back under the user's cursor mid-browse, which is
+  // the opposite of what staying open is for (item 3).
+  const centred = useRef(false)
   useEffect(() => {
+    if (centred.current || !frames.length) return
+    centred.current = true
     currentRef.current?.scrollIntoView({ inline: 'center', block: 'nearest' })
   }, [frames])
 

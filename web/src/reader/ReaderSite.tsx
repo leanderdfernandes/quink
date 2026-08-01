@@ -7,7 +7,7 @@ import {
 } from 'react'
 import DOMPurify from 'dompurify'
 import { useNavigate, useParams } from 'react-router-dom'
-import AnnotationLayer from '../components/AnnotationLayer'
+import AnnotatedImage from '../components/AnnotatedImage'
 import { publicBrandingUrl, publicFrameUrl } from '../lib/storage'
 import { DEFAULT_HEADER_STYLE, headerStyleOf, themeVars } from './theme'
 import {
@@ -589,20 +589,20 @@ export function ReaderChrome({
                       />
                       {shot && (
                         <figure className="rs-fig">
+                          {/* The SAME box the editor draws in (components/AnnotatedImage).
+                              It shrink-wraps the image and puts the overlay on exactly that
+                              rectangle, so a shape drawn in the editor lands in the same
+                              place here. The old frame carried its own aspect-ratio and only
+                              corrected it on load, which meant the overlay was stretched
+                              against a 16:9 box for every recording that was not 16:9 —
+                              circles came out elliptical and arrows pointed off-target. */}
                           <div className={`rs-frame${ratio === 'portrait' ? ' phone' : ''}`}>
-                            <img
+                            <AnnotatedImage
                               src={shot}
                               alt={`Step ${s.step_number}`}
-                              decoding="async"
-                              onLoad={(e) => {
-                                const el = e.currentTarget
-                                const next = ratioOf(el.naturalWidth, el.naturalHeight)
-                                // The image's own ratio becomes the frame's ratio, so there
-                                // is never a leftover box to letterbox.
-                                el.parentElement?.style.setProperty(
-                                  'aspect-ratio',
-                                  `${el.naturalWidth} / ${el.naturalHeight}`,
-                                )
+                              annotations={s.annotations}
+                              onNatural={(n) => {
+                                const next = ratioOf(n.w, n.h)
                                 setRatios((r) =>
                                   r[s.step_number] === next
                                     ? r
@@ -610,11 +610,6 @@ export function ReaderChrome({
                                 )
                               }}
                             />
-                            {/* The published overlay, drawn by the SAME component the editor draws with.
-                                Two renderers would be two ways for a live page to differ from
-                                the draft its author checked. It reads from published_content,
-                                so an unpublished annotation does not leak to readers. */}
-                            <AnnotationLayer annotations={s.annotations} />
                           </div>
                         </figure>
                       )}

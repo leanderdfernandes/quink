@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { publicFrameUrl, signedFrameUrl, signedFrameUrls } from '../lib/storage'
+import { publicFrameUrl, signedFrameUrls } from '../lib/storage'
 import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
 import { collectSourceVideo, deleteArticle } from '../lib/articles'
@@ -388,12 +388,17 @@ export default function Editor({
   }
 
   // A manual frame pick/capture/upload. Sets is_edited so a re-run won't overwrite it
-  // (CLAUDE.md §8), and refreshes the signed URL so the new frame shows immediately.
-  async function pickFrame(id: string, newPath: string) {
+  // (CLAUDE.md §8) and swaps the preview in place.
+  //
+  // SYNCHRONOUS, and public rather than signed (item 3). Minting a signed URL was an await
+  // and a guaranteed cache miss on every pick — the image blanked and repainted, which is
+  // most of what "the picker reloads" actually looked like. The frames bucket has been
+  // public since migration 0007, so getPublicUrl is a string build: the new frame is on
+  // screen in the same frame the user clicked, and browsing five is five instant swaps.
+  // Nothing refetches, nothing remounts, no StepCard key changes.
+  function pickFrame(id: string, newPath: string) {
     saveStep(id, { screenshot_url: newPath, is_edited: true })
-    const url = await signedFrameUrl(newPath)
-    if (!url) setOpError('Picked the frame, but its preview didn’t load. Reload the page.')
-    setShotUrls((m) => ({ ...m, [id]: url }))
+    setShotUrls((m) => ({ ...m, [id]: publicFrameUrl(newPath) }))
   }
 
   // 4g: annotating must NOT set is_edited. That flag means "a human chose this FRAME", and

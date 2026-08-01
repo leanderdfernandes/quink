@@ -142,9 +142,29 @@ export default function QueueDock({
             const locked =
               item.state !== 'queued' && item.state !== 'held' && item.state !== 'error'
             const position = queued.indexOf(item)
+            // 2f: clicking a row goes in and watches it build. Before Stage 1 there is no
+            // article to go to, so the row says so rather than being a dead click.
+            const openable = !!item.articleId
+            const open = () => item.articleId && onOpenArticle(item.articleId)
             return (
               <div className="dock-f" key={item.id}>
-                <div className="dock-f-top">
+                <div
+                  className={`dock-f-top${openable ? ' openable' : ''}`}
+                  role={openable ? 'button' : undefined}
+                  tabIndex={openable ? 0 : undefined}
+                  title={openable ? 'Open this article' : undefined}
+                  onClick={openable ? open : undefined}
+                  onKeyDown={
+                    openable
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            open()
+                          }
+                        }
+                      : undefined
+                  }
+                >
                   <span className={`dock-f-ic ${item.state}`} aria-hidden>
                     {item.state === 'done' ? (
                       <CheckIcon />
@@ -167,7 +187,12 @@ export default function QueueDock({
                       type="button"
                       className="dock-f-x"
                       aria-label={`Remove ${item.name}`}
-                      onClick={() => onRemove(item.id)}
+                      // The row is now a target, so a control inside it has to say it
+                      // handled the click itself.
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onRemove(item.id)
+                      }}
                     >
                       <CloseIcon />
                     </button>
@@ -215,14 +240,13 @@ export default function QueueDock({
                   </div>
                 )}
 
-                {item.state === 'done' && item.articleId && (
-                  <button
-                    type="button"
-                    className="dock-open"
-                    onClick={() => onOpenArticle(item.articleId!)}
-                  >
-                    Open it
-                  </button>
+                {/* No separate "Open it" button: the ROW is the target, for every state
+                    that has an article behind it — including a run still going, which is
+                    the whole point of being able to go and watch it. */}
+                {!openable && (item.state === 'running' || item.state === 'uploading') && (
+                  <p className="dock-f-wait">
+                    You&rsquo;ll be able to open this once the first steps are written.
+                  </p>
                 )}
               </div>
             )

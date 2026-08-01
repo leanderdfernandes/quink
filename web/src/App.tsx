@@ -412,6 +412,8 @@ export default function App() {
           runsLeft={runsLeft}
           onCapped={() => setShowUpgrade(true)}
           saved={kb?.product_name ? product : null}
+          // 4b: only when there is a help center to go back to. Onboarding gets none.
+          onBack={kb ? () => setPhase('kb') : undefined}
         />
         {/* A capped user is stopped at the dropzone and can still leave with an article —
             blocking generation is not blocking the product. */}

@@ -158,7 +158,10 @@ export const COPY = {
   // ux-spec §1). The days half is not optional politeness: free tier includes unlimited
   // manual articles, so someone can hand-build forty of them, and a 30-day expiry
   // discovered afterwards is the exact dark pattern pricing-spec §2 says we must not ship.
-  freeLimitDisclosure: `${PLANS.free.lifetime_runs} free video guides from video · articles kept ${PLANS.free.expiry_days} days. Writing by hand is unlimited.`,
+  // Three facts, each said once. The old wording — "N free video guides from video ·
+  // articles kept 30 days" — named the same object twice ("guides", then "articles") and
+  // left "from video" dangling off a noun that already contained it.
+  freeLimitDisclosure: `${PLANS.free.lifetime_runs} free guides from video, kept ${PLANS.free.expiry_days} days. Writing by hand is unlimited.`,
   videoDeletion: 'We delete the source video once your article is published.',
   buildCta: 'Build my article',
   wallHeading: 'Create a free account to build your guide.',

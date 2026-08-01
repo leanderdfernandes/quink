@@ -4,8 +4,9 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { DOMSerializer } from '@tiptap/pm/model'
 import FramePicker from './FramePicker'
-import Annotator from './Annotator'
-import AnnotationLayer from '../components/AnnotationLayer'
+import AnnotateBar from './AnnotateBar'
+import { useAnnotator } from './useAnnotator'
+import AnnotatedImage, { Shape } from '../components/AnnotatedImage'
 import type { Annotation, StepRow } from '../lib/types'
 
 // The step block — the unit of everything (CLAUDE.md §9): { heading, body, image }.
@@ -82,12 +83,24 @@ export default function StepCard({
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [annotating, setAnnotating] = useState(false)
+  // 4h fires ONCE per step per session. Browsing five frames must not ask five times — the
+  // question is "do these shapes still belong on a different frame", and it is answered the
+  // first time it is asked.
+  const [frameAsked, setFrameAsked] = useState(false)
   // 4h: a frame swap on an annotated step. Shapes are positioned against a SPECIFIC frame,
   // so a new one leaves arrows pointing at nothing. Neither answer may be silent — keeping
   // them silently leaves visible nonsense, clearing them silently destroys work — so the
   // pick is held here until the user says which.
   const [pendingFrame, setPendingFrame] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const anno = useAnnotator(
+    step.annotations ?? [],
+    brandColor,
+    onAnnotate,
+    () => setAnnotating(false),
+  )
+
   const editor = useEditor({
     immediatelyRender: false,
     editable: !readOnly,
@@ -135,7 +148,7 @@ export default function StepCard({
 
   return (
     <article
-      className={`ed-card${readOnly ? ' ed-card-live' : ''}`}
+      className={`ed-card${readOnly ? ' ed-card-live' : ''}${annotating ? ' ed-card-anno' : ''}`}
       id={`step-${step.step_number}`}
       data-index={index}
       onDragEnter={readOnly ? undefined : onDragEnterCard}
@@ -233,28 +246,86 @@ export default function StepCard({
 
       {screenshotUrl ? (
         <div className="ed-shotwrap">
-          <div className="ed-shot ed-shot-landed">
-            <img src={screenshotUrl} alt={`Step ${step.step_number}`} />
-            {/* Same component the reader renders from, so the draft and the live page
-                cannot disagree about where an arrow points. */}
-            <AnnotationLayer annotations={step.annotations} />
-            <div className="ed-shot-ov">
-              <button
-                type="button"
-                disabled={readOnly}
-                onClick={() => setAnnotating(true)}
-              >
-                {step.annotations?.length ? 'Edit annotations' : 'Annotate'}
-              </button>
-              <button
-                type="button"
-                disabled={readOnly}
-                onClick={() => setPickerOpen((o) => !o)}
-              >
-                {hasVideo ? 'Change frame' : 'Change image'}
-              </button>
-            </div>
+          {/* The step card's screenshot IS the drawing surface. There is no second surface:
+              two boxes rendering the same shapes at two sizes was the whole cause of the
+              distortion, and a modal that is no bigger than this bought no precision to
+              justify it. */}
+          <div className={`ed-shot ed-shot-landed${annotating ? ' annotating' : ''}`}>
+            <AnnotatedImage
+              src={screenshotUrl}
+              alt={`Step ${step.step_number}`}
+              annotations={annotating ? anno.items : step.annotations}
+              drawing={annotating}
+              overlay={
+                annotating
+                  ? (nat) => (
+                      <>
+                        {anno.draft && <Shape a={anno.draft} nat={nat} />}
+                        {anno.sel !== null && anno.items[anno.sel] && (
+                          <SelectionBox a={anno.items[anno.sel]} nat={nat} />
+                        )}
+                      </>
+                    )
+                  : undefined
+              }
+              {...(annotating ? anno.handlers : {})}
+            >
+              {annotating && anno.typing && (
+                <input
+                  className="anb-text-in"
+                  autoFocus
+                  placeholder="Type…"
+                  style={{
+                    left: `${anno.typing.x * 100}%`,
+                    top: `${anno.typing.y * 100}%`,
+                    color: anno.colour,
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') anno.commitText(e.currentTarget.value)
+                    if (e.key === 'Escape') anno.cancelText()
+                  }}
+                  // Commit only when something was typed. The first blur used to fire as the
+                  // placing click settled and threw the field away before a key landed.
+                  onBlur={(e) =>
+                    e.currentTarget.value.trim()
+                      ? anno.commitText(e.currentTarget.value)
+                      : anno.cancelText()
+                  }
+                />
+              )}
+            </AnnotatedImage>
+
+            {!annotating && (
+              <div className="ed-shot-ov">
+                <button type="button" disabled={readOnly} onClick={() => setAnnotating(true)}>
+                  {step.annotations?.length ? 'Edit annotations' : 'Annotate'}
+                </button>
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => setPickerOpen((o) => !o)}
+                >
+                  {hasVideo ? 'Change frame' : 'Change image'}
+                </button>
+              </div>
+            )}
           </div>
+
+          {annotating && (
+            <AnnotateBar
+              tool={anno.tool}
+              colour={anno.colour}
+              brandColor={brandColor}
+              canDelete={anno.sel !== null}
+              onPick={anno.pick}
+              onColour={anno.chooseColour}
+              onDelete={anno.remove}
+              onDone={() => setAnnotating(false)}
+            />
+          )}
+
           {step.is_edited && (
             <p className="ed-edited">✓ Edited — a re-run won’t overwrite this</p>
           )}
@@ -289,14 +360,20 @@ export default function StepCard({
           currentSecond={step.is_edited ? null : step.timestamp_seconds}
           hasVideo={hasVideo}
           onPick={(path) => {
-            setPickerOpen(false)
+            // The picker STAYS OPEN (item 3). Choosing a frame is browsing, not committing:
+            // people try several and keep the one that looks right, and closing on every
+            // pick made that a five-step loop of reopening a strip that then reloaded.
+            // Closing is now only ever an explicit action.
+            //
             // 4h. Annotations are positioned against a specific frame, so swapping it
-            // leaves arrows pointing at nothing. Ask — never silently keep (visible
-            // nonsense) and never silently clear (destroyed work).
-            if (step.annotations?.length) setPendingFrame(path)
+            // leaves arrows pointing at nothing. Asked ONCE per step per session — browsing
+            // five frames must not ask five times.
+            if (step.annotations?.length && !frameAsked) setPendingFrame(path)
             else onPickFrame(path)
           }}
           onRemove={() => {
+            // Removing the image is a decision, not browsing — there is nothing left to
+            // compare, so this one does close.
             onRemoveFrame()
             setPickerOpen(false)
           }}
@@ -317,6 +394,7 @@ export default function StepCard({
               className="row-confirm"
               onClick={() => {
                 onPickFrame(pendingFrame)
+                setFrameAsked(true)
                 setPendingFrame(null)
               }}
             >
@@ -328,6 +406,7 @@ export default function StepCard({
               onClick={() => {
                 onPickFrame(pendingFrame)
                 onAnnotate([])
+                setFrameAsked(true)
                 setPendingFrame(null)
               }}
             >
@@ -337,21 +416,37 @@ export default function StepCard({
         </div>
       )}
 
-      {annotating && screenshotUrl && (
-        <Annotator
-          imageUrl={screenshotUrl}
-          annotations={step.annotations ?? []}
-          brandColor={brandColor}
-          onDone={(next) => {
-            // No Save button (4e): this commits to local state and rides the editor's
-            // existing 700ms autosave. Nothing refetches, nothing remounts.
-            onAnnotate(next)
-            setAnnotating(false)
-          }}
-          onCancel={() => setAnnotating(false)}
-        />
-      )}
     </article>
+  )
+}
+
+// The selection affordance. A dashed inset rather than resize handles: there is no resize,
+// and handles would advertise something that does not exist.
+function SelectionBox({ a, nat }: { a: Annotation; nat: { w: number; h: number } }) {
+  const x1 = a.x1 * nat.w
+  const y1 = a.y1 * nat.h
+  const x2 = (a.x2 ?? a.x1) * nat.w
+  const y2 = (a.y2 ?? a.y1) * nat.h
+  const pad = nat.w * 0.009
+  const box =
+    a.t === 'text'
+      ? { x: x1 - pad, y: y1 - pad, w: (a.text?.length ?? 0) * nat.w * 0.015 + pad * 2, h: nat.w * 0.038 }
+      : {
+          x: Math.min(x1, x2) - pad,
+          y: Math.min(y1, y2) - pad,
+          w: Math.abs(x2 - x1) + pad * 2,
+          h: Math.abs(y2 - y1) + pad * 2,
+        }
+  return (
+    <rect
+      className="aimg-sel"
+      x={box.x}
+      y={box.y}
+      width={box.w}
+      height={box.h}
+      rx={6}
+      pointerEvents="none"
+    />
   )
 }
 

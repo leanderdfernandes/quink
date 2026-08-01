@@ -42,6 +42,28 @@
   --sh-lg: 0 12px 40px rgba(33, 31, 27, 0.1);
 
   --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* --- theme variables, AUTHORING-APP DEFAULTS -----------------------------------------
+     These ten are computed per help center by reader/theme.ts themeVars() and injected as
+     inline styles on the READER's root. Nothing injects them in the authoring app — so
+     every rule here that used one was resolving to an invalid value, and an invalid
+     background computes to TRANSPARENT. That is why primary buttons vanished on hover:
+     .pubx-go:hover set `background: var(--brand-press)` and the white label was left on
+     bare paper.
+     Defining them at :root fixes the whole class at once, and the reader still overrides
+     each one per KB because an inline style on a descendant always wins. */
+  --brand-tint: color-mix(in oklab, var(--brand-600) 13%, var(--paper));
+  --brand-edge: color-mix(in oklab, var(--brand-600) 30%, var(--border));
+  --brand-deep: color-mix(in oklab, var(--brand-600) 30%, #17150f);
+  --brand-press: var(--brand-800);
+  --brand-ring: color-mix(in oklab, var(--brand-600) 18%, transparent);
+  --brand-mark: color-mix(in oklab, var(--brand-600) 20%, #fff);
+  --on-brand: #ffffff;
+  --on-deep: #ffffff;
+  --font-heading: var(--font);
+  --font-body: var(--font);
+  --line: var(--border);
+
 }
 
 * {
@@ -3895,19 +3917,26 @@ a.rs-crumb-link:hover {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--rs-sh-2);
-  aspect-ratio: 16 / 10;
+  width: fit-content;
+  max-width: 100%;
 }
+/* NO aspect-ratio and NO object-fit here any more. Both were the bug: the frame forced
+   16/10 and `contain` letterboxed anything else, while the annotation overlay was stretched
+   across the whole frame INCLUDING the bars — so on any recording that was not 16:10 (which
+   is most of them) circles came out elliptical and arrows pointed off-target. The frame now
+   sizes to the image, which is what .aimg already guarantees. */
+.rs-frame .aimg,
 .rs-frame img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 .rs-frame.phone {
   border-radius: var(--rs-r-xl);
   padding: 7px;
   background: var(--subtle);
 }
-.rs-frame.phone img {
+.rs-frame.phone .aimg img {
   border-radius: 20px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -6118,190 +6147,181 @@ a.rs-crumb-link:hover {
   color: var(--muted);
 }
 
-/* ======================================================================================
-   ANNOTATION — a non-destructive overlay (slice 4)
-   ======================================================================================
-   The tool is a repair instrument, so its chrome stays quiet and the SCREENSHOT is the only
-   thing with visual weight. No panel borders, no framed toolbar: the bar is a shift in
-   background against the card, and the surface below it is the picture at full contrast
-   with everything else stepped back. */
 
-/* The overlay itself — shared by the editor and the reader. Absolutely positioned over the
-   image and stretched to it, so a shape drawn at 0.4,0.4 lands at 0.4,0.4 at every size. */
-.anno-layer {
+/* ======================================================================================
+   ANNOTATION — one box, drawn in place (slice 4, revised)
+   ======================================================================================
+   There is no annotation modal. The step card's screenshot IS the drawing surface, because
+   a second surface no larger than this one bought no precision and cost the thing that
+   actually mattered: two boxes rendering the same shapes at two different aspect ratios.
+
+   The whole geometry contract is three rules, and they live here rather than in three
+   components:
+     .aimg      shrink-wraps its image (width:fit-content) — the box IS the picture
+     .aimg img  never cropped, never letterboxed (no object-fit, no aspect-ratio)
+     .aimg-layer  inset:0 on that box — overlay rectangle === rendered image rectangle
+   The viewBox is the image's natural pixel size, set in the component on load. With the box
+   and the image identical, preserveAspectRatio never has anything to correct. */
+
+.aimg {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 0;
+}
+.aimg img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.aimg-layer {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none;
   overflow: visible;
+  /* Decoration everywhere except annotate mode. The reader must never make a screenshot
+     swallow a click, and this default is what guarantees it. */
+  pointer-events: none;
 }
-.rs-frame,
-.ed-shot {
-  position: relative;
+.aimg.drawing {
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.aimg.drawing .aimg-layer {
+  pointer-events: none;
+}
+/* Only committed shapes are targets, and only while drawing. `stroke` on the group makes a
+   4px line clickable without making it look thicker. */
+.aimg.drawing .aimg-hit {
+  cursor: move;
+}
+/* `all` rather than `stroke`: hit-testing on `stroke` still respects paint, and the fat
+   target under each shape is deliberately transparent. `all` is what makes an invisible
+   stroke clickable — which is the entire point of it. Fill stays `none`, so the inside of
+   an empty box is NOT a target and a click there correctly deselects. */
+.aimg.drawing .aimg-hit line,
+.aimg.drawing .aimg-hit rect,
+.aimg.drawing .aimg-hit ellipse,
+.aimg.drawing .aimg-hit text {
+  pointer-events: all;
+}
+.aimg-sel {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 1px rgba(33, 31, 27, 0.7));
 }
 
-/* --- the editor surface -------------------------------------------------------------- */
-.anno {
-  margin-top: 14px;
-  border-radius: var(--r-lg);
-  background: var(--paper);
-  box-shadow: var(--sh-md);
-  overflow: hidden;
-  animation: anno-in 0.24s ease-out both;
+/* --- annotate mode on the card ------------------------------------------------------- */
+.ed-card-anno .ed-prose,
+.ed-card-anno .ed-h-in,
+.ed-card-anno .ed-tools,
+.ed-card-anno .ed-grip {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out;
 }
-@keyframes anno-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.ed-shot.annotating {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 3px;
+  border-radius: var(--r-md);
 }
 
-.anno-bar {
+/* The toolbar: anchored under the image it acts on, not in a rail. Elevation instead of a
+   border, so it reads as sitting above the card rather than being another box on it. */
+.anb {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 10px 14px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px 0 0 34px;
+  padding: 6px 8px;
+  border-radius: var(--r-pill);
   background: var(--surface);
+  box-shadow: var(--sh-md);
 }
-.anno-tools {
+.anb-tools {
   display: flex;
-  gap: 2px;
+  gap: 1px;
 }
-.anno-tool {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 11px;
+.anb-tool {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
   border: 0;
   border-radius: var(--r-sm);
   background: none;
   color: var(--secondary);
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 500;
   cursor: pointer;
   transition:
     background 0.15s ease-out,
     color 0.15s ease-out;
 }
-.anno-tool:hover {
+.anb-tool:hover {
   background: var(--subtle);
   color: var(--ink);
 }
-.anno-tool[aria-pressed='true'] {
+.anb-tool[aria-pressed='true'] {
   background: var(--brand-600);
   color: #fff;
 }
-.anno-tool span {
-  letter-spacing: -0.005em;
+.anb-div {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
 }
-
-/* Colour: five circles, no picker. Five choices that all look intentional on a screenshot
-   beat a spectrum where most points look wrong. */
-.anno-colours {
+.anb-colours {
   display: flex;
-  gap: 7px;
-  align-items: center;
+  gap: 6px;
 }
-.anno-sw {
-  width: 22px;
-  height: 22px;
+.anb-sw {
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 2px solid var(--surface);
   border-radius: 50%;
   cursor: pointer;
   transition: box-shadow 0.15s ease-out;
 }
-.anno-sw[aria-pressed='true'] {
+.anb-sw[aria-pressed='true'] {
   box-shadow: 0 0 0 2px var(--brand-600);
 }
-
-.anno-acts {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-.anno-acts button {
-  padding: 7px 14px;
+.anb-del,
+.anb-done {
+  padding: 6px 13px;
+  border: 0;
   border-radius: var(--r-sm);
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--secondary);
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
 }
-.anno-del {
-  color: var(--danger) !important;
-  border-color: transparent !important;
+.anb-del {
+  background: none;
+  color: var(--danger);
 }
-.anno-del:disabled {
-  color: var(--muted) !important;
+.anb-del:disabled {
+  color: var(--muted);
   opacity: 0.5;
   cursor: default;
 }
-.anno-done {
-  background: var(--brand-600) !important;
-  border-color: var(--brand-600) !important;
-  color: #fff !important;
+.anb-done {
+  background: var(--brand-600);
+  color: #fff;
 }
-.anno-done:hover {
-  background: var(--brand-700) !important;
-}
-
-/* The picture, at full contrast, on the darkest surface in the app — so the thing being
-   worked on is unambiguously the subject. */
-.anno-surface {
-  position: relative;
-  display: block;
-  max-width: 100%;
-  background: var(--brand-900);
-  touch-action: none;
-  user-select: none;
-  line-height: 0;
-}
-.anno-surface.drawing {
-  cursor: crosshair;
-}
-.anno-surface img {
-  display: block;
-  max-width: 100%;
-  max-height: 460px;
-  margin: 0 auto;
-}
-.anno-surface .anno-layer {
-  pointer-events: none;
-}
-/* Only committed shapes are targets, and only in Select — a fat invisible stroke on the
-   arrow line is what makes a 4px line clickable without making it thicker. */
-.anno-hit {
-  pointer-events: stroke;
-}
-.anno-hit text,
-.anno-hit rect,
-.anno-hit ellipse {
-  pointer-events: all;
-}
-.anno-surface:not(.drawing) .anno-hit {
-  cursor: move;
-}
-.anno-sel {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 1.5;
-  stroke-dasharray: 5 4;
-  vector-effect: non-scaling-stroke;
-  opacity: 0.9;
+.anb-done:hover {
+  background: var(--brand-700);
 }
 
-.anno-text-in {
+.anb-text-in {
   position: absolute;
   transform: translateY(-2px);
   min-width: 130px;
@@ -6311,23 +6331,14 @@ a.rs-crumb-link:hover {
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.94);
   font-family: inherit;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.3;
   outline: none;
+  pointer-events: all;
 }
 
-.anno-hint {
-  padding: 9px 14px;
-  background: var(--paper);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-/* --- 4h: the frame-swap prompt -------------------------------------------------------
-   Neither answer may be silent. Keeping leaves arrows pointing at nothing; clearing throws
-   away work. So this is a stop, styled as one — warning tint, not danger: nothing has gone
-   wrong, there is simply a choice only the author can make. */
+/* --- 4h: the frame-swap prompt, asked once ------------------------------------------- */
 .ed-anno-ask {
   margin: 12px 0 0 34px;
   padding: 13px 15px;
@@ -6351,18 +6362,363 @@ a.rs-crumb-link:hover {
   margin-top: 11px;
 }
 
-/* Two buttons on the screenshot now, so they need to sit as a pair rather than one floating
-   control. */
 .ed-shot-ov {
   display: flex;
   gap: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anno,
-  .anno-tool,
-  .anno-sw {
-    animation: none !important;
+  .anb-tool,
+  .anb-sw,
+  .ed-card-anno .ed-prose,
+  .ed-card-anno .ed-h-in {
     transition: none !important;
   }
+}
+
+/* The card's screenshot is now the drawing surface, so it earns more room than it had —
+   item 1's "if it is too small to draw on, make it bigger". Bounded so a tall portrait
+   capture cannot push the next step off the screen. The img's own box is what .aimg wraps,
+   so scaling it here keeps the overlay exactly on it. */
+.ed-shot .aimg img {
+  max-height: 520px;
+}
+
+/* A dock row with an article behind it is a way in (2f). Whole row, not a button in it —
+   the row is already the thing being talked about. */
+.dock-f-top.openable {
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.dock-f-top.openable:hover {
+  background: var(--subtle);
+}
+.dock-f-top.openable:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 1px;
+}
+.dock-f-wait {
+  margin: 8px 0 0 34px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ======================================================================================
+   UPLOAD — one surface, one input (item 4)
+   ======================================================================================
+   This is the screen a founder sees before deciding whether we are serious, and it read as
+   a form: a flat grey dashed rectangle nested inside a bordered card (two containers doing
+   one job), the most consequential sentence on the page set as small grey text, everything
+   at one weight and one size, and an emoji standing in for an icon.
+
+   Rebuilt so the card IS the dropzone. Separation comes from background shift and space;
+   the only remaining rule is the seam between the drop area and the context below it,
+   because that is a genuine boundary between two different acts. */
+
+.up-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 40px;
+}
+.up-mark {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.up-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s ease-out,
+    color 0.15s ease-out,
+    border-color 0.15s ease-out;
+}
+.up-back:hover {
+  background: var(--subtle);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.up-back:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
+}
+
+/* The card and the dropzone are the same element. Drag-over tints the whole surface, which
+   is the honest signal — the whole thing accepts the file. */
+.up-card {
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+  overflow: hidden;
+  transition:
+    box-shadow 0.2s ease-out,
+    background 0.2s ease-out;
+}
+.up-card.over {
+  background: var(--brand-50);
+  box-shadow: 0 0 0 2px var(--brand-400), var(--sh-md);
+}
+
+.up-drop {
+  padding: 44px 28px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--paper);
+}
+.up-card.has-file .up-drop {
+  padding: 20px;
+  text-align: left;
+  cursor: default;
+}
+.up-drop-ic {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  border-radius: var(--r-md);
+  background: var(--brand-50);
+  color: var(--brand-600);
+}
+/* The top of the type scale does the work here, not a border. */
+.up-drop-t {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.up-drop-s {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.up-drop-browse {
+  color: var(--brand-600);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.up-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.up-file {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+}
+.up-file-ic {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--brand-50);
+  color: var(--brand-600);
+}
+.up-file-n {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.up-file-sz {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.up-file-x {
+  flex: none;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.up-file-x:hover {
+  background: var(--subtle);
+  color: var(--danger);
+}
+.up-more {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.up-more:hover {
+  border-color: var(--brand-400);
+  color: var(--brand-700);
+  border-style: solid;
+}
+
+.up-err {
+  padding: 12px 20px;
+  background: #fbeeee;
+  color: var(--danger);
+  font-size: 13px;
+  white-space: pre-line;
+}
+
+/* The quota line carries the most consequential fact on the screen and was 13px grey. */
+.up-quota {
+  padding: 13px 20px;
+  background: var(--brand-50);
+  color: var(--brand-700);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.up-quota.last {
+  background: #fbf3e3;
+  color: #7a5714;
+  font-weight: 600;
+}
+
+.up-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 20px 24px;
+}
+.up-row {
+  display: flex;
+  gap: 14px;
+}
+.up-row .field {
+  flex: 1;
+}
+
+/* The collapsed product tier. One line, and the Change that expands it. */
+.up-known {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 13px 15px;
+  border-radius: var(--r-sm);
+  background: var(--subtle);
+}
+.up-known-t {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.up-known-d {
+  flex: 1;
+  font-size: 13px;
+  color: var(--muted);
+}
+.up-known-a {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-600);
+  border-bottom: 1px solid var(--brand-200);
+  cursor: pointer;
+}
+.up-known-a:hover {
+  color: var(--brand-700);
+  border-color: var(--brand-600);
+}
+.up-scope {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.up-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .up-card,
+  .up-back {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .up-row {
+    flex-direction: column;
+  }
+  .up-drop {
+    padding: 32px 18px;
+  }
+}
+
+/* 6b: the logo, shown rather than described. Rendered on the band's own colour at the size
+   the masthead uses, because the decision being made is "does this look right there". */
+.th-logo-prev {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 40px;
+  flex: none;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--brand-600);
+}
+.th-logo-prev img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.th-logo-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.th-logo-meta b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.th-logo-meta small {
+  font-size: 11.5px;
+  color: var(--muted);
 }

@@ -12,6 +12,7 @@ import {
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
 import Wordmark from '../components/Wordmark'
+
 import type { ProductContext, VideoContext } from '../lib/types'
 
 // Upload + context — reached from the marketing home's "Build my article" CTA.
@@ -21,6 +22,26 @@ import type { ProductContext, VideoContext } from '../lib/types'
 // what makes the account wall land as a next step rather than a barrier (ux-spec §2).
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
+
+// Drawn to the same grid and weight as the existing set (KnowledgeBase.tsx) — no emoji as
+// iconography, including the padlock that used to sit on the deletion note.
+const FilmIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+    <path d="M7.5 5v14M16.5 5v14M2.5 12h19" />
+  </svg>
+)
+const LockIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <rect x="4" y="10" width="16" height="10" rx="2" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+  </svg>
+)
+const BackIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M15 6l-6 6 6 6" />
+  </svg>
+)
 
 // File-type validation is never cut (CLAUDE.md §10). Some browsers report an empty
 // or odd MIME for .mov, so accept either a known MIME or a known extension.
@@ -54,9 +75,20 @@ type Props = {
   // turns this screen from a FORM into a DROP: run two onward, the product half is already
   // known and asking for it again is asking someone to retype what they told us.
   saved?: ProductContext | null
+  // 4b: an escape hatch, present ONLY when this screen was reached from inside a help
+  // center. Onboarding correctly has none — there is nothing to go back to — but a user who
+  // opens "New article" and changes their mind is otherwise trapped on this screen.
+  onBack?: () => void
 }
 
-export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: Props) {
+export default function Upload({
+  onSubmit,
+  onHome,
+  runsLeft,
+  onCapped,
+  saved,
+  onBack,
+}: Props) {
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
@@ -113,16 +145,17 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
   return (
     <div className="page">
       <div className="wrap">
-        <header style={{ marginBottom: 40 }}>
+        <header className="up-head">
           {/* Wordmark returns to the marketing home. */}
-          <button
-            className="home-wordmark"
-            onClick={onHome}
-            aria-label="Back to home"
-            style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
-          >
+          <button className="up-mark" onClick={onHome} aria-label="Back to home">
             <Wordmark height={22} />
           </button>
+          {onBack && (
+            <button type="button" className="up-back" onClick={onBack}>
+              <BackIcon />
+              Back to your help center
+            </button>
+          )}
         </header>
 
         <div className="seam" style={{ marginBottom: 20 }}>
@@ -149,34 +182,36 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
           ninety seconds — no writing, no screenshots to take.
         </p>
 
-        {/* Dropzone + form are one card — one visual unit. */}
-        <form className="card unit" onSubmit={submit}>
-          <div
-            className={`dropzone${over ? ' over' : ''}${files.length ? ' has-file' : ''}`}
-            onClick={() => !files.length && inputRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setOver(true)
-            }}
-            onDragLeave={() => setOver(false)}
-            onDrop={(e) => {
-              e.preventDefault()
-              setOver(false)
-              accept(e.dataTransfer.files)
-            }}
-          >
+        {/* ONE surface. The dropzone was a dashed grey rectangle nested inside a bordered
+            card — two containers doing one job — so the card IS the dropzone now: the whole
+            thing is the target, and the context sits inside it as part of the same act. */}
+        <form
+          className={`up-card${over ? ' over' : ''}${files.length ? ' has-file' : ''}`}
+          onSubmit={submit}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setOver(true)
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setOver(false)
+            accept(e.dataTransfer.files)
+          }}
+        >
+          <div className="up-drop" onClick={() => !files.length && inputRef.current?.click()}>
             {files.length ? (
-              <div className="dz-files">
+              <div className="up-files">
                 {files.map((f, i) => (
-                  <div className="dz-file" key={`${f.name}-${i}`}>
-                    <span className="pill">
-                      {COPY.wallFilePill}
-                      <span className="size">{mb(f.size)}</span>
+                  <div className="up-file" key={`${f.name}-${i}`}>
+                    <span className="up-file-ic" aria-hidden>
+                      <FilmIcon />
                     </span>
-                    <span className="dz-file-n">{f.name}</span>
+                    <span className="up-file-n">{f.name}</span>
+                    <span className="up-file-sz">{mb(f.size)}</span>
                     <button
                       type="button"
-                      className="dz-file-x"
+                      className="up-file-x"
                       aria-label={`Remove ${f.name}`}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -190,7 +225,7 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
                 ))}
                 <button
                   type="button"
-                  className="btn btn-ghost dz-more"
+                  className="up-more"
                   onClick={(e) => {
                     e.stopPropagation()
                     inputRef.current?.click()
@@ -201,10 +236,14 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
               </div>
             ) : (
               <>
-                <div className="big">Drop your recordings here</div>
-                <div className="cap">
-                  MP4 or MOV, up to {mb(MAX_VIDEO_BYTES)} and {MAX_VIDEO_MINUTES} minutes each
-                </div>
+                <span className="up-drop-ic" aria-hidden>
+                  <FilmIcon size={24} />
+                </span>
+                <p className="up-drop-t">Drop your recordings here</p>
+                <p className="up-drop-s">
+                  or <span className="up-drop-browse">browse</span> · MP4 or MOV, up to{' '}
+                  {mb(MAX_VIDEO_BYTES)} and {MAX_VIDEO_MINUTES} minutes each
+                </p>
               </>
             )}
             <input
@@ -217,34 +256,25 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
             />
           </div>
 
-          {error && (
-            <p className="err" style={{ padding: '0 12px', whiteSpace: 'pre-line' }}>
-              {error}
-            </p>
-          )}
+          {error && <p className="up-err">{error}</p>}
 
-          {/* Free-limit disclosure lives at the dropzone, stated BEFORE commitment —
-              never sprung later (ux-spec §6, pricing-spec §6). */}
-          {/* Quota surface 1 of 3 (3f): stated at the dropzone BEFORE a file is chosen, and
-              escalating on the last one — run 3 should be a known moment, not a discovery
-              made afterwards (ux-spec §6, pricing-spec §6). */}
-          {runsLeft === 1 ? (
-            <p className="dz-last" style={{ margin: '10px 12px 0' }}>
-              {COPY.lastRunWarning}
-            </p>
-          ) : (
-            <p className="cap" style={{ padding: '10px 12px 0' }}>
-              {runsLeft === null
-                ? COPY.freeLimitDisclosure
-                : `${runsLeft} of ${PLANS.free.lifetime_runs} free video guides left · ${COPY.freeLimitDisclosure}`}
-            </p>
-          )}
+          {/* Quota surface 1 of 3 (3f), given real weight rather than being small grey text
+              carrying the most consequential fact on the screen. Escalates on the last run:
+              run 3 should be a known moment, not a discovery made afterwards. */}
+          <p className={`up-quota${runsLeft === 1 ? ' last' : ''}`}>
+            {runsLeft === null
+              ? COPY.freeLimitDisclosure
+              : runsLeft === 1
+                ? COPY.lastRunWarning
+                : `${runsLeft} of ${PLANS.free.lifetime_runs} left · ${COPY.freeLimitDisclosure}`}
+          </p>
 
-          <div className="unit-form">
-            {/* Run two onward this is a DROP, not a form: the product context is stated as
-                one line with a way to change it. Asking someone to retype what they already
-                told us is the fastest way to make the second upload feel worse than the
-                first (3b). */}
+          <div className="up-form">
+            {/* THE COLLAPSE (3b). Conditionally rendered, NOT `hidden` — the fields carried
+                an inline display:flex and a .field display rule, and both beat the hidden
+                attribute, so the band said "Spotify · New users · Friendly" and then showed
+                the very fields it was summarising directly underneath. The band IS the
+                collapsed state. */}
             {!showProduct ? (
               <div className="up-known">
                 <span className="up-known-t">{productName}</span>
@@ -259,78 +289,74 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
                   Change
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <>
+                {saved?.product_name && (
+                  /* DECIDED, not deferred: changing product context never re-runs existing
+                     articles. It would burn quota the user did not spend and overwrite edits
+                     they made by hand. This sentence is the whole contract — if a "re-run
+                     with the new context" affordance ever lands, it belongs on one article
+                     at a time, never here. */
+                  <p className="up-scope">
+                    Changing this affects new recordings only — articles you have already
+                    built are untouched.
+                  </p>
+                )}
+                <div className="field">
+                  <label htmlFor="product">What product is this?</label>
+                  <input
+                    id="product"
+                    type="text"
+                    placeholder="Name of the product / feature"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    required
+                  />
+                  <p className="hint">Used so the guide calls things by their real names.</p>
+                </div>
 
-            <div className="field" hidden={!showProduct}>
-              {saved?.product_name && (
-                /* DECIDED, not deferred: changing product context never re-runs existing
-                   articles. Doing so would burn quota the user did not spend and overwrite
-                   edits they made by hand. This sentence is the entire contract, so it has
-                   to stay true — if a "re-run with the new context" affordance is ever
-                   added, it belongs on an article, chosen one at a time, never here. */
-                <p className="up-scope">
-                  Changing this affects new recordings only — articles you have already built
-                  are untouched.
-                </p>
-              )}
-              <label htmlFor="product">What product is this?</label>
-              <input
-                id="product"
-                type="text"
-                placeholder="Name of the product / feature"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                required
-              />
-              <p className="hint">
-                Used so the guide calls things by their real names.
-              </p>
-            </div>
+                <div className="up-row">
+                  <div className="field">
+                    <label htmlFor="audience">
+                      Who reads it? <span className="optional">Optional</span>
+                    </label>
+                    <select
+                      id="audience"
+                      value={audience}
+                      onChange={(e) => setAudience(e.target.value)}
+                    >
+                      {AUDIENCE_OPTIONS.map((o) => (
+                        <option key={o}>{o}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="tone">
+                      Tone <span className="optional">Optional</span>
+                    </label>
+                    <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)}>
+                      {TONE_OPTIONS.map((o) => (
+                        <option key={o}>{o}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', gap: 14 }} hidden={!showProduct}>
-              <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="audience">
-                  Who reads it? <span className="optional">Optional</span>
-                </label>
-                <select
-                  id="audience"
-                  value={audience}
-                  onChange={(e) => setAudience(e.target.value)}
-                >
-                  {AUDIENCE_OPTIONS.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="tone">
-                  Tone <span className="optional">Optional</span>
-                </label>
-                <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)}>
-                  {TONE_OPTIONS.map((o) => (
-                    <option key={o}>{o}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                <div className="field">
+                  <label htmlFor="description">
+                    Anything else we should know? <span className="optional">Optional</span>
+                  </label>
+                  <textarea
+                    id="description"
+                    placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
 
-            <div className="field" hidden={!showProduct}>
-              <label htmlFor="description">
-                Anything else we should know? <span className="optional">Optional</span>
-              </label>
-              <textarea
-                id="description"
-                placeholder="What this workflow is for, terms we should use, anything the recording doesn't say out loud."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            {/* The RECORDING tier (3b). Deliberately last and visually undifferentiated —
-                first run shows ONE form with no visible tiering, and the answers are filed
-                into two places behind the scenes. The placeholder teaches granularity by
-                example, because "describe this recording" gets you the product description
-                again. */}
+            {/* The RECORDING tier (3b) — the ONE visible input once the product is known. */}
             <div className="field">
               <label htmlFor="recording">
                 What does this recording show? <span className="optional">Optional</span>
@@ -342,11 +368,11 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
                 value={recording}
                 onChange={(e) => setRecording(e.target.value)}
               />
-              <p className="hint">
-                {files.length > 1
-                  ? 'Applies to all of these. You can describe each one separately in the queue.'
-                  : 'One line about this specific video.'}
-              </p>
+              {files.length > 1 && (
+                <p className="hint">
+                  Applies to all of these. You can describe each one separately in the queue.
+                </p>
+              )}
             </div>
 
             {/* The CTA is an action on THEIR file — never "sign up" (ux-spec §2). */}
@@ -358,8 +384,8 @@ export default function Upload({ onSubmit, onHome, runsLeft, onCapped, saved }: 
               {files.length > 1 ? `Build ${files.length} articles` : COPY.buildCta}
             </button>
 
-            <p className="note">
-              <span aria-hidden>🔒</span>
+            <p className="up-note">
+              <LockIcon />
               {COPY.videoDeletion}
             </p>
           </div>
