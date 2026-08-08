@@ -3,8 +3,8 @@ import { STORAGE_BUCKET_BRANDING, STORAGE_BUCKET_FRAMES } from './config'
 
 // The public reader site can't sign URLs (it's anon and CDN-cached), so the `frames` and
 // `branding` buckets are public (migration 0007). Reads go through getPublicUrl — no
-// network round-trip, cacheable. The editor still uses signed URLs below; both work on a
-// public bucket, and switching working code buys nothing.
+// network round-trip, cacheable, and the SAME url every time, so the browser can actually
+// hold the image. The editor reads them the same way; there is no second path.
 //
 // Every object is keyed "{kb_id}/…", never by owner (migration 0014). A KB can change
 // hands through the ownership-claim flow, and a trial purge has to delete exactly one KB's
@@ -42,28 +42,17 @@ export async function uploadBranding(
   return { path, error: null }
 }
 
-// The `frames` bucket is PUBLIC (migration 0007) — signing buys nothing there, and anyone
-// holding a frame URL keeps it after a transfer or an unpublish (CLAUDE.md §10e.3). Prefer
-// publicFrameUrl above. These remain because the editor still loads a whole article's
-// screenshots through signedFrameUrls, and switching that is a separate question (it is
-// tangled with the blur/bucket-split decision). `videos` IS private and has no helper here.
-
-const SIGNED_URL_TTL_SECONDS = 60 * 60 // 1h — long enough for an editing session
-
-export async function signedFrameUrl(path: string | null): Promise<string | null> {
-  if (!path) return null
-  const { data, error } = await supabase.storage
-    .from(STORAGE_BUCKET_FRAMES)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS)
-  if (error) return null
-  return data.signedUrl
-}
-
-export async function signedFrameUrls(
-  paths: (string | null)[],
-): Promise<(string | null)[]> {
-  return Promise.all(paths.map(signedFrameUrl))
-}
+// There is deliberately NO signed-URL helper for `frames`, and reintroducing one is a
+// regression, not an option. The bucket is PUBLIC (migration 0007): signing bought nothing
+// but a round trip per object, and because every signed URL is unique it also guaranteed a
+// browser cache MISS on every frame swap — the image blanked and repainted, which read as
+// the picker reloading itself. publicFrameUrl above is a string build.
+//
+// This does mean anyone holding a frame URL keeps it after a transfer, a downgrade or an
+// unpublish (CLAUDE.md §10e.3). That is a known, deliberate reader-performance tradeoff and
+// the reason a future private help center cannot gate articles alone.
+//
+// `videos` IS genuinely private, stays that way, and has no helper here.
 
 // Remove branding objects a KB no longer points at. Called only AFTER the row update has
 // committed: delete first and a failed save leaves the KB referencing an object that is

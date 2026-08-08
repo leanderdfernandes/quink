@@ -182,6 +182,24 @@ export const COPY = {
     'No free articles left. Nothing was uploaded and no run was used — this recording is waiting on this device.',
   generatingTip:
     "You'll be able to swap any screenshot and edit every step before publishing.",
+  // The upgrade modal (pricing-spec §7, reactive variant). Was hardcoded in the component —
+  // the one surface in the funnel where the words decide whether someone pays, and the only
+  // one whose copy lived outside this file.
+  //
+  // The load-bearing sentence is "you can still write articles by hand." Generation is the
+  // only thing that costs us anything, so it is the only thing capped, and a user who
+  // believes the whole product is locked has no reason to come back.
+  upgradePill: `You've used your ${PLANS.free.lifetime_runs} free video guides`,
+  upgradeHeading: 'Keep building your help center',
+  upgradeBody:
+    'You can keep writing articles by hand for free. To make more guides from recordings — and to publish on your own domain without a watermark — pick a plan. Your whole team included, no per-seat fees.',
+  upgradeManualCta: 'Write an article by hand',
+  upgradeDismiss: 'Not now',
+  upgradeNote:
+    "Writing by hand is unlimited on every plan — it costs us nothing, so we don't charge for it.",
+  // There is no checkout yet, so the way to actually buy is to ask us. A pricing surface
+  // with no way to reach a human is where the highest-intent user in the funnel stops.
+  upgradeContact: 'Want a plan now? Email us and we’ll set you up:',
 } as const
 
 export const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? 'http://localhost:8000'

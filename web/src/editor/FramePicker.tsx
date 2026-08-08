@@ -76,14 +76,23 @@ export default function FramePicker({
           .filter((f) => f.url),
       )
 
-      // Only when there is nothing to show and there should have been. A run still going is
-      // still pulling them; a run that ENDED with nothing is never going to produce any,
-      // whether it failed outright or degraded to frames_partial.
+      // Only when there is nothing to show and there should have been.
+      //
+      // The question is "is anything still coming?", and `frames_ready_at` is the only
+      // column that answers it. `status` does NOT: the dense pass runs PAST the finish line
+      // (pipeline.py), so a perfectly healthy run sits at 'done' with an empty prefix for
+      // as long as the pass takes — three and a half minutes and 114 objects on a
+      // six-minute recording — and reading 'done' as "extraction finished" is what put
+      // "We couldn't pull the frames from this recording" on runs that had not failed at
+      // all. That was this whole bug. Migration 0030.
+      //
+      // A job that ERRORED is the one case where a null marker still means never: it died
+      // before the pass could run, so nothing is going to stamp it.
       if (!dense.length && hasVideo) {
         const job = await fetchArticleJob(articleId)
         if (cancelled) return
-        const running = job?.status === 'queued' || job?.status === 'running'
-        setEmpty(running ? 'extracting' : 'failed')
+        const stillComing = !job?.frames_ready_at && job?.status !== 'error'
+        setEmpty(stillComing ? 'extracting' : 'failed')
       }
       setLoading(false)
     })()

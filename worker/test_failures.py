@@ -599,6 +599,18 @@ def test_every_code_has_copy_on_the_other_side():
             "the generic 'this one's on us' screen"
         )
 
+    # The DEGRADED_* codes are excluded above because they are not failures and get no
+    # failure screen — but they DO need words now (the DEGRADED map, rendered as one line
+    # at the top of the editor). They were excluded from this check while they rendered
+    # nowhere at all, which is precisely how a degraded run stayed invisible: the article
+    # opened looking healthy and the user found the missing screenshots themselves.
+    degraded = {v for k, v in vars(failures).items() if k.startswith("DEGRADED")}
+    for code in sorted(degraded):
+        assert f"{code}:" in text, (
+            f"{code} has no copy in web/src/lib/failures.ts DEGRADED — a run that shipped "
+            "without it would render as a perfectly healthy article"
+        )
+
 
 def run():
     for name, fn in sorted(globals().items()):

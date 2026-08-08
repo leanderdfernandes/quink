@@ -8,14 +8,32 @@
 // widths (editor canvas, reader measure, phone) and pixels survive none of them.
 //
 // Field names are short because this is stored per shape, per step, per article. `t` is the
-// tool, `c` the colour. Text shapes carry `text` and no second point.
+// tool, `c` the colour.
+//
+// TWO GEOMETRIES, because the two kinds of shape genuinely are different things:
+//   arrow            two POINTS — x1,y1 to x2,y2. It has no box and no rotation.
+//   box/ellipse/text a RECT — origin x,y plus size w,h, with `rot` about its centre.
+//
+// Older rows stored every shape as two corners (x1..y2), and text as a bare point with no
+// size at all. Nothing migrates them: `annotations` is jsonb, and lib/annotations.ts reads
+// both forms and writes the current one whenever a shape is touched. Do NOT read these
+// fields directly — go through rectOf/endsOf there, or the legacy rows render wrong.
 export type Annotation = {
   t: 'arrow' | 'box' | 'ellipse' | 'text'
   c: string
-  x1: number
-  y1: number
+  // Arrows (and legacy shapes of every kind).
+  x1?: number
+  y1?: number
   x2?: number
   y2?: number
+  // Rect shapes.
+  x?: number
+  y?: number
+  w?: number
+  h?: number
+  // Degrees, clockwise, about the box centre. Text only — a rotated arrow is just an arrow
+  // with different endpoints, and a rotated box would need a rotated hit test for nothing.
+  rot?: number
   text?: string
 }
 
@@ -243,6 +261,12 @@ export type Job = {
   // Set once the retention sweep has collected the recording — after which retry is
   // impossible and the only path is uploading it again.
   video_purged_at: string | null
+  // When the 1fps dense frame pass STOPPED, success or failure (migration 0030). Null means
+  // more frames are still coming — including on a job whose status is already 'done', which
+  // is the normal case: the pass runs past the finish line so the article ships first. The
+  // frame picker must read this and never `status`, or a healthy run reads as a failed one
+  // for as long as the pass takes.
+  frames_ready_at: string | null
   // The failed job this one re-attempts, if any. Each attempt is its own ledger row.
   retry_of: string | null
 }

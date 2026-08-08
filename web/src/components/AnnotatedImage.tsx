@@ -1,4 +1,12 @@
 import { useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import {
+  contrastInk,
+  endsOf,
+  fontSizeFor,
+  rectOf,
+  type Natural,
+  type Rect,
+} from '../lib/annotations'
 import type { Annotation } from '../lib/types'
 
 // A screenshot and the shapes drawn on it, as ONE box. Every surface uses this — the step
@@ -25,20 +33,21 @@ import type { Annotation } from '../lib/types'
 
 export const ARROW_MARKER_ID = 'quink-arrowhead'
 
-// Reference width the shape constants are expressed against. Anything sized in user units
-// is scaled by naturalWidth/REF so it occupies the same fraction of the picture whatever the
-// recording's resolution was.
-const REF_W = 1000
 const STROKE = 4
-const TEXT_SIZE = 27
 
-export type Natural = { w: number; h: number }
+export type { Natural } from '../lib/annotations'
+
+// Geometry lives in lib/annotations — the editor's handles, this renderer and the reader all
+// read a shape through the same two accessors, so a legacy row can never render one way here
+// and another way there.
+function rotAbout(a: Annotation, r: Rect, nat: Natural): string | undefined {
+  if (!a.rot) return undefined
+  const cx = (r.x + r.w / 2) * nat.w
+  const cy = (r.y + r.h / 2) * nat.h
+  return `rotate(${a.rot} ${cx} ${cy})`
+}
 
 export function Shape({ a, nat }: { a: Annotation; nat: Natural }) {
-  const x1 = a.x1 * nat.w
-  const y1 = a.y1 * nat.h
-  const x2 = (a.x2 ?? a.x1) * nat.w
-  const y2 = (a.y2 ?? a.y1) * nat.h
   // vector-effect keeps a stroke the same weight on both axes no matter what the transform
   // does — the belt to the braces above.
   const stroke = {
@@ -48,56 +57,60 @@ export function Shape({ a, nat }: { a: Annotation; nat: Natural }) {
     fill: 'none',
   }
 
+  if (a.t === 'arrow') {
+    const e = endsOf(a)
+    return (
+      <line
+        x1={e.x1 * nat.w}
+        y1={e.y1 * nat.h}
+        x2={e.x2 * nat.w}
+        y2={e.y2 * nat.h}
+        strokeLinecap="round"
+        markerEnd={`url(#${ARROW_MARKER_ID})`}
+        {...stroke}
+      />
+    )
+  }
+
+  const r = rectOf(a, nat)
+  const x = r.x * nat.w
+  const y = r.y * nat.h
+  const w = r.w * nat.w
+  const h = r.h * nat.h
+
   switch (a.t) {
-    case 'arrow':
-      return (
-        <line
-          x1={x1}
-          y1={y1}
-          x2={x2}
-          y2={y2}
-          strokeLinecap="round"
-          markerEnd={`url(#${ARROW_MARKER_ID})`}
-          {...stroke}
-        />
-      )
     case 'box':
-      return (
-        <rect
-          x={Math.min(x1, x2)}
-          y={Math.min(y1, y2)}
-          width={Math.abs(x2 - x1)}
-          height={Math.abs(y2 - y1)}
-          rx={6}
-          {...stroke}
-        />
-      )
+      return <rect x={x} y={y} width={w} height={h} rx={6} {...stroke} />
     case 'ellipse':
       return (
-        <ellipse
-          cx={(x1 + x2) / 2}
-          cy={(y1 + y2) / 2}
-          rx={Math.abs(x2 - x1) / 2}
-          ry={Math.abs(y2 - y1) / 2}
-          {...stroke}
-        />
+        <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} {...stroke} />
       )
-    case 'text':
+    case 'text': {
+      // A SOLID FILL behind the type, and the type flipped to whatever survives on it.
+      // Coloured text alone reads fine on a pale screenshot and vanishes on a dark one, and
+      // which of the two a recording shows is not something the author should have to think
+      // about. See contrastInk.
+      const fs = fontSizeFor(r, nat)
       return (
-        <text
-          x={x1}
-          y={y1}
-          fill={a.c}
-          fontFamily="'Hanken Grotesk', system-ui, sans-serif"
-          // Scaled to the picture, not to the pixel grid: a 27u label on a 1000px-wide
-          // recording and on a 2560px-wide one must cover the same share of the screenshot.
-          fontSize={TEXT_SIZE * (nat.w / REF_W)}
-          fontWeight={700}
-          dominantBaseline="hanging"
-        >
-          {a.text ?? ''}
-        </text>
+        <g transform={rotAbout(a, r, nat)}>
+          <rect x={x} y={y} width={w} height={h} rx={Math.min(h * 0.28, w / 2)} fill={a.c} />
+          <text
+            x={x + w / 2}
+            y={y + h / 2}
+            fill={contrastInk(a.c)}
+            fontFamily="'Hanken Grotesk', system-ui, sans-serif"
+            // Derived from the box height, never set independently — this is what makes a
+            // scale proportional instead of a stretch.
+            fontSize={fs}
+            fontWeight={700}
+            textAnchor="middle"
+            dominantBaseline="central"
+          >
+            {a.text ?? ''}
+          </text>
+        </g>
       )
+    }
     default:
       return null
   }
@@ -106,37 +119,33 @@ export function Shape({ a, nat }: { a: Annotation; nat: Natural }) {
 // The invisible hit target. Same geometry as the shape, drawn with a wide transparent
 // stroke — so the clickable area is generous while the visible line stays 4px.
 function HitArea({ a, nat }: { a: Annotation; nat: Natural }) {
-  const x1 = a.x1 * nat.w
-  const y1 = a.y1 * nat.h
-  const x2 = (a.x2 ?? a.x1) * nat.w
-  const y2 = (a.y2 ?? a.y1) * nat.h
   const hit = {
     stroke: 'transparent',
     strokeWidth: 22,
     vectorEffect: 'non-scaling-stroke' as const,
     fill: 'none',
   }
-  if (a.t === 'arrow') return <line x1={x1} y1={y1} x2={x2} y2={y2} {...hit} />
-  if (a.t === 'box')
+  if (a.t === 'arrow') {
+    const e = endsOf(a)
     return (
-      <rect
-        x={Math.min(x1, x2)}
-        y={Math.min(y1, y2)}
-        width={Math.abs(x2 - x1)}
-        height={Math.abs(y2 - y1)}
-        rx={6}
-        {...hit}
-      />
+      <line x1={e.x1 * nat.w} y1={e.y1 * nat.h} x2={e.x2 * nat.w} y2={e.y2 * nat.h} {...hit} />
     )
-  return (
-    <ellipse
-      cx={(x1 + x2) / 2}
-      cy={(y1 + y2) / 2}
-      rx={Math.abs(x2 - x1) / 2}
-      ry={Math.abs(y2 - y1) / 2}
-      {...hit}
-    />
-  )
+  }
+  const r = rectOf(a, nat)
+  const x = r.x * nat.w
+  const y = r.y * nat.h
+  const w = r.w * nat.w
+  const h = r.h * nat.h
+  // Text is a filled label, so its INSIDE is the target — unlike an open box, where a click
+  // in the middle correctly deselects.
+  if (a.t === 'text')
+    return (
+      <g transform={rotAbout(a, r, nat)}>
+        <rect x={x} y={y} width={w} height={h} fill="transparent" stroke="none" />
+      </g>
+    )
+  if (a.t === 'box') return <rect x={x} y={y} width={w} height={h} rx={6} {...hit} />
+  return <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} {...hit} />
 }
 
 // `context-stroke` makes the head inherit each arrow's own colour, so one definition serves
@@ -225,8 +234,10 @@ export default function AnnotatedImage({
               {/* A 4px line is a 4px hit target, which is not a target. While drawing, an
                   invisible fat stroke sits under each open shape so selecting an arrow is a
                   click rather than a game. Never rendered on the reader, where the overlay
-                  takes no pointers at all. */}
-              {drawing && a.t !== 'text' && <HitArea a={a} nat={nat} />}
+                  takes no pointers at all. Text is included now that it can be moved and
+                  scaled — it used to be unselectable, which was fine when it was also
+                  immovable. */}
+              {drawing && <HitArea a={a} nat={nat} />}
             </g>
           ))}
           {overlay?.(nat)}

@@ -184,11 +184,15 @@ TRIAL_WARN_DAYS = (14, 7)
 # is not called email.py and why every looped send needs a persisted marker.
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 
-# Both addresses are real, monitored mailboxes on the verified domain — this is not a
-# noreply setup, and the copy invites a reply. Replies to hello@ would still reach us, but
-# support@ is where they belong.
-EMAIL_FROM = os.environ.get("EMAIL_FROM", "Quink <hello@quink.online>")
-EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", "support@quink.online")
+# ONE support address in the codebase, mirroring web/src/lib/config.ts SUPPORT_EMAIL. A
+# real, monitored mailbox on the verified domain — this is not a noreply setup and the copy
+# invites a reply, so From and Reply-To are both it. There used to be a second address
+# (hello@) sitting in the From line: replies reached us either way, which is exactly why
+# nobody would have noticed the day one of the two stopped being read.
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "support@quink.online")
+
+EMAIL_FROM = os.environ.get("EMAIL_FROM", f"Quink <{SUPPORT_EMAIL}>")
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", SUPPORT_EMAIL)
 
 # The kill switch, DEFAULT OFF. A real send needs this AND RESEND_API_KEY — the key alone
 # is not consent, because a developer with production secrets in their .env (or a test run

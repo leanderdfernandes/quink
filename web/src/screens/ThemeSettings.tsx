@@ -324,13 +324,40 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     if (f) run(f)
   }
 
-  // Selecting Image opens the file dialog straight away — the style is inert without one,
-  // and making them find a second control to complete the choice is the friction §1 says to
-  // remove. The tile falls through to the ink preview until an image exists.
+  // Style and image are two decisions, and this used to run them together: selecting the
+  // Image tile opened a file dialog on the spot. That gave the header image TWO upload
+  // points — the tile, and the Header image field below it — for one asset and one column,
+  // and a user who uploaded from the tile then found a filled-in field they had never
+  // visited had no way to tell which control owned the picture.
+  //
+  // The tile now only picks the style. The field below it is the single upload point, and it
+  // is the one that stays because it is where the result is reported.
   function pickHeaderStyle(id: HeaderStyle) {
     setHeaderStyle(id)
     touch()
-    if (id === 'image' && !headerImagePath) headerInputRef.current?.click()
+  }
+
+  // Drag-and-drop onto the same target as the button. Only the first file, and only an
+  // image — a dropped PDF should say so at the control rather than fail after the upload.
+  const [headerOver, setHeaderOver] = useState(false)
+  function onHeaderDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setHeaderOver(false)
+    const f = e.dataTransfer.files?.[0]
+    if (!f) return
+    if (!f.type.startsWith('image/')) {
+      setHeaderError(`${f.name} isn’t an image. Try a JPG or PNG.`)
+      return
+    }
+    void onHeaderImage(f)
+  }
+  const headerDrag = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault()
+      setHeaderOver(true)
+    },
+    onDragLeave: () => setHeaderOver(false),
+    onDrop: onHeaderDrop,
   }
 
   async function save() {
@@ -619,7 +646,7 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                     </button>
                   </div>
                 ) : headerImagePath ? (
-                  <div className="th-hasfile">
+                  <div className={`th-hasfile${headerOver ? ' over' : ''}`} {...headerDrag}>
                     <span>Image added.</span>
                     <button className="linklike" onClick={() => headerInputRef.current?.click()}>
                       Replace
@@ -636,8 +663,12 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
                     </button>
                   </div>
                 ) : (
-                  <div className="th-drop">
-                    <p>Any JPG or PNG. We resize it and crop it to fit the band.</p>
+                  // The only place a header image is uploaded. Click or drop, same target.
+                  <div className={`th-drop${headerOver ? ' over' : ''}`} {...headerDrag}>
+                    <p>
+                      Drop an image here, or choose one. {HEADER_MAX_WIDTH}×
+                      {Math.round(HEADER_MAX_WIDTH / 4)} or wider works best — JPG or PNG.
+                    </p>
                     <button disabled={uploading === 'header'} onClick={() => headerInputRef.current?.click()}>
                       {uploading === 'header' ? 'Uploading…' : 'Choose an image'}
                     </button>

@@ -1069,13 +1069,39 @@ function setCanonical(href: string) {
   el.href = href
 }
 
+// The reader is an SPA, so index.html's static icons are what the browser has already
+// committed to by the time a KB resolves. Replace them at runtime.
+//
+// index.html ships TWO icon links — favicon.ico and favicon.svg — and the old version
+// rewrote the href of the FIRST one it found. Browsers prefer the SVG, so the customer's
+// derived PNG was set on a link nothing was reading and the Quink mark stayed in the tab.
+// Every icon link goes, then ours goes in: partially replacing a set of alternates is the
+// bug, not a smaller version of the fix.
+const QUINK_ICONS: [rel: string, href: string, type?: string][] = [
+  ['icon', '/favicon.ico'],
+  ['icon', '/favicon.svg', 'image/svg+xml'],
+]
+
 function setFavicon(href: string | null) {
-  if (!href) return
-  let el = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-  if (!el) {
-    el = document.createElement('link')
-    el.rel = 'icon'
+  document
+    .querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')
+    .forEach((el) => el.remove())
+  // A KB with no logo falls back to ours rather than to whatever happened to be in the head
+  // — the null branch has to RESTORE, not return early, or navigating within the SPA leaves
+  // the previous KB's mark in the tab.
+  const icons: [string, string, string?][] = href
+    ? [
+        ['icon', href, 'image/png'],
+        // Derived at 64×64 (ThemeSettings): small for a home-screen icon, but a customer's
+        // own mark scaled up beats ours at the right size.
+        ['apple-touch-icon', href],
+      ]
+    : QUINK_ICONS
+  for (const [rel, h, type] of icons) {
+    const el = document.createElement('link')
+    el.rel = rel
+    el.href = h
+    if (type) el.setAttribute('type', type)
     document.head.appendChild(el)
   }
-  el.href = href
 }

@@ -43,6 +43,36 @@ export async function collectSourceVideo(
   await supabase.from('articles').update({ source_video_path: null }).eq('id', articleId)
 }
 
+// THE published snapshot. One builder, both publish paths.
+//
+// There used to be two hand-rolled copies of this object — Editor.doPublish and
+// publishArticle below (the row menu AND bulk publish) — sharing nothing. That duplication
+// is the defect, not a symptom of one: whatever the reader renders comes from here, so a
+// field added to one copy and missed in the other ships annotated from the editor and bare
+// from the article list, on the same article, depending on which button was pressed.
+//
+// This is the shape of `Article` (CLAUDE.md §6) and nothing else. is_edited and
+// timestamp_seconds are deliberately NOT in it: they are editing state, not published
+// content, and the reader has no use for either. discardChanges carries them across
+// separately rather than round-tripping them through here.
+export function publishSnapshot(
+  title: string,
+  subtitle: string,
+  steps: StepLite[],
+): Article {
+  return {
+    title,
+    subtitle,
+    steps: steps.map((s) => ({
+      step_number: s.step_number,
+      heading: s.heading,
+      body_text: s.body_text,
+      screenshot_url: s.screenshot_url,
+      annotations: s.annotations ?? [],
+    })),
+  }
+}
+
 // Publish from the article list (bulk, or the row menu). Same three writes the editor's
 // doPublish makes — snapshot, frozen slug, visibility — and the same source-video
 // collection afterwards. It deliberately does NOT touch folder_id: an article without one
@@ -53,21 +83,7 @@ export async function publishArticle(article: ArticleRow, steps: StepLite[]): Pr
   const slug =
     article.slug ||
     (await uniqueArticleSlug(article.kb_id, article.title || 'article', article.id))
-  const snapshot: Article = {
-    title: article.title,
-    subtitle: article.subtitle,
-    steps: steps.map((s) => ({
-      step_number: s.step_number,
-      heading: s.heading,
-      body_text: s.body_text,
-      screenshot_url: s.screenshot_url,
-      // The reader renders annotations from published_content, not from the live rows.
-      // There are TWO publish implementations sharing no helper (this one and
-      // Editor.doPublish) — a field added to one and not the other ships annotated in the
-      // editor and bare on the live site.
-      annotations: s.annotations ?? [],
-    })),
-  }
+  const snapshot = publishSnapshot(article.title, article.subtitle, steps)
   const { error } = await supabase
     .from('articles')
     .update({

@@ -7,6 +7,7 @@ import FramePicker from './FramePicker'
 import AnnotateBar from './AnnotateBar'
 import { useAnnotator } from './useAnnotator'
 import AnnotatedImage, { Shape } from '../components/AnnotatedImage'
+import { handlePoints, rectOf, rotAnchorPx, type Natural } from '../lib/annotations'
 import type { Annotation, StepRow } from '../lib/types'
 
 // The step block — the unit of everything (CLAUDE.md §9): { heading, body, image }.
@@ -271,6 +272,7 @@ export default function StepCard({
                     )
                   : undefined
               }
+              onNatural={anno.setNatural}
               {...(annotating ? anno.handlers : {})}
             >
               {annotating && anno.typing && (
@@ -444,33 +446,66 @@ export default function StepCard({
   )
 }
 
-// The selection affordance. A dashed inset rather than resize handles: there is no resize,
-// and handles would advertise something that does not exist.
-function SelectionBox({ a, nat }: { a: Annotation; nat: { w: number; h: number } }) {
-  const x1 = a.x1 * nat.w
-  const y1 = a.y1 * nat.h
-  const x2 = (a.x2 ?? a.x1) * nat.w
-  const y2 = (a.y2 ?? a.y1) * nat.h
-  const pad = nat.w * 0.009
-  const box =
-    a.t === 'text'
-      ? { x: x1 - pad, y: y1 - pad, w: (a.text?.length ?? 0) * nat.w * 0.015 + pad * 2, h: nat.w * 0.038 }
-      : {
-          x: Math.min(x1, x2) - pad,
-          y: Math.min(y1, y2) - pad,
-          w: Math.abs(x2 - x1) + pad * 2,
-          h: Math.abs(y2 - y1) + pad * 2,
-        }
+// The selection affordance: a frame plus the handles that actually do something.
+//
+// The handles are drawn INSIDE the same <svg>, in natural-pixel space, and their positions
+// come from handlePoints — which rotates each offset about the box centre before placing it.
+// That is the fix for the thing that was wrong: handles used to be laid out axis-aligned
+// while the box turned, so on a rotated label they floated off the corners they belonged to
+// and dragging one resized along the wrong axes.
+function SelectionBox({ a, nat }: { a: Annotation; nat: Natural }) {
+  const pts = handlePoints(a, nat)
+  // Sized as a share of the picture, the same rule the stroke weight and type size already
+  // follow — so a handle covers the same part of the screenshot on a 720p recording and a 4K
+  // one, and nothing here has to measure the rendered box.
+  const r = nat.w * 0.011
+  const isRect = a.t !== 'arrow'
+  const rect = isRect ? rectOf(a, nat) : null
+  const rot = a.rot ?? 0
+  const tether = a.t === 'text' ? rotAnchorPx(a, nat) : null
+  const rotPt = pts.find((p) => p.id === 'rot')
+
   return (
-    <rect
-      className="aimg-sel"
-      x={box.x}
-      y={box.y}
-      width={box.w}
-      height={box.h}
-      rx={6}
-      pointerEvents="none"
-    />
+    <g>
+      {rect && (
+        <rect
+          className="aimg-sel"
+          x={rect.x * nat.w}
+          y={rect.y * nat.h}
+          width={rect.w * nat.w}
+          height={rect.h * nat.h}
+          rx={6}
+          transform={
+            rot
+              ? `rotate(${rot} ${(rect.x + rect.w / 2) * nat.w} ${(rect.y + rect.h / 2) * nat.h})`
+              : undefined
+          }
+          pointerEvents="none"
+        />
+      )}
+      {/* The rotate handle's tether. It leaves the box from the top edge IN THE ROTATED
+          FRAME, so it swings round with the label instead of always pointing north. */}
+      {tether && rotPt && (
+        <line
+          className="aimg-tether"
+          x1={tether.x}
+          y1={tether.y}
+          x2={rotPt.x}
+          y2={rotPt.y}
+          pointerEvents="none"
+        />
+      )}
+      {pts.map((p) => (
+        <circle
+          key={p.id}
+          className={`aimg-grip${p.id === 'rot' ? ' rot' : ''}`}
+          data-handle={p.id}
+          cx={p.x}
+          cy={p.y}
+          r={p.id === 'rot' ? r * 1.05 : r}
+        />
+      ))}
+    </g>
   )
 }
 

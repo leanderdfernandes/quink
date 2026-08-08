@@ -105,3 +105,32 @@ export function failureFor(code: string | null | undefined): Failure {
 // `quota_exceeded` is NOT in the map on purpose. It is not a failure and must never render
 // as one — it is the upgrade modal (pricing-spec §7).
 export const QUOTA_EXCEEDED = 'quota_exceeded'
+
+// --- Degraded runs (CLAUDE.md §10g) ---------------------------------------------
+// A degraded run SHIPPED an article and counted against quota. These are not failures and
+// share nothing with the map above: no heading, no recovery, no screen. One sentence, in a
+// dismissible line at the top of the editor.
+//
+// They existed only in `jobs.degraded` and rendered NOWHERE, so a frames_partial article
+// opened looking perfectly healthy and the user found the gap themselves — usually by
+// opening a frame picker that came back empty.
+//
+// Each sentence names what is missing and what to do about it, in that order, because the
+// second half is the only part that changes what the person does next. Codes mirror
+// worker/failures.py DEGRADED_*.
+export const DEGRADED: Record<string, string> = {
+  frames_partial:
+    "Some screenshots couldn't be captured from this recording. You can upload your own image on any step.",
+  stage2_failed:
+    "The final wording pass didn't run, so some steps may read rougher than usual. Edit any step to fix it.",
+}
+
+// `degraded` is a comma-separated list — a run can lose both. Unknown codes are dropped
+// rather than rendered raw: a column value is not a sentence.
+export function degradedNotice(degraded: string | null | undefined): string | null {
+  const lines = (degraded ?? '')
+    .split(',')
+    .map((c) => DEGRADED[c.trim()])
+    .filter(Boolean)
+  return lines.length ? lines.join(' ') : null
+}

@@ -360,9 +360,16 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         # It runs here, past `done`, so the article is deliverable first. The cost of that is
         # a real window where a generated article has no filmstrip, and CLAUDE.md §10f is
         # explicit that a timing change like this ships with its degradation in the same
-        # commit: FramePicker now asks the job whether frames are still coming ("Still
-        # pulling frames…") or never will ("We couldn't pull the frames…") instead of
-        # claiming the article has no video.
+        # commit: FramePicker asks the job whether frames are still coming ("Still pulling
+        # frames…") or never will ("We couldn't pull the frames…") instead of claiming the
+        # article has no video.
+        #
+        # `frames_ready_at` (migration 0030) is what it asks. It CANNOT ask `status`: status
+        # is already `done` on the line above, so the picker read a healthy run as a failed
+        # extraction for the whole length of this loop — 3.5 minutes and 114 objects on a
+        # six-minute recording. This is the marker that closes that window, so it is stamped
+        # in a `finally`: the question it answers is "is anything still coming?", and the
+        # answer is no either way.
         try:
             for second, local in frames_mod.extract_dense_set(local_video, tmpdir / "dense"):
                 _upload_frame(local, f"{kb_id}/{article_id}/dense/{second:05d}.webp")
@@ -374,6 +381,8 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
             db().table("jobs").update(
                 {"degraded": ",".join(sorted(set(degraded))) or None}
             ).eq("id", job_id).execute()
+        finally:
+            db().table("jobs").update({"frames_ready_at": _now()}).eq("id", job_id).execute()
 
 
 def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:

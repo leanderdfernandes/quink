@@ -533,6 +533,18 @@ textarea {
   gap: 7px;
   margin-top: 14px;
 }
+/* The support mailto in the upgrade modal. Left unstyled it rendered as the browser's
+   default blue underline — the one cold colour nothing else on the site uses, on the
+   highest-intent screen in the funnel. */
+.note a {
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklab, var(--brand) 35%, transparent);
+}
+.note a:hover {
+  border-bottom-color: var(--brand);
+}
 
 /* ---- Account wall ---- */
 .wall {
@@ -2315,6 +2327,37 @@ textarea {
   font-weight: 700;
 }
 
+/* What the run shipped without (CLAUDE.md §10g). Same slot and same weight as the preview
+   note below — one line, hairline rule, no icon — tinted with --warning because it reports
+   something missing, not something broken. */
+.ed-degraded {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  background: color-mix(in oklab, var(--warning) 11%, var(--paper));
+  border-bottom: 1px solid color-mix(in oklab, var(--warning) 26%, var(--border));
+  font-size: 12.5px;
+  color: #7a5010;
+}
+.ed-degraded span {
+  flex: 1;
+}
+.ed-degraded button {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in oklab, var(--warning) 34%, var(--border));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ed-degraded button:hover {
+  background: color-mix(in oklab, var(--warning) 16%, var(--paper));
+}
+
 /* --- preview mode --- */
 .ed-pv-note {
   display: flex;
@@ -2697,6 +2740,14 @@ textarea {
   border-radius: var(--r-sm);
   background: var(--paper);
   flex-wrap: wrap;
+}
+/* A file is over the drop target. The same state on both the empty and the filled control,
+   because both accept a drop — a replace-by-drop that gives no feedback reads as broken. */
+.th-drop.over,
+.th-hasfile.over {
+  border-color: var(--brand-600);
+  border-style: solid;
+  background: var(--brand-50);
 }
 .th-dots {
   display: flex;
@@ -6213,6 +6264,29 @@ a.rs-crumb-link:hover {
   stroke: #fff;
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 1px rgba(33, 31, 27, 0.7));
+}
+/* Resize/rotate handles. A screenshot can be any colour underneath, so they are a white
+   disc with a brand ring rather than a flat fill — the pair reads on a dark UI and a pale
+   one without sampling anything. */
+.aimg-grip {
+  fill: #fff;
+  stroke: var(--brand-600);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 2px rgba(33, 31, 27, 0.35));
+  cursor: pointer;
+  pointer-events: all;
+}
+.aimg-grip.rot {
+  fill: var(--brand-600);
+  stroke: #fff;
+  cursor: grab;
+}
+.aimg-tether {
+  stroke: #fff;
+  stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 0 1px rgba(33, 31, 27, 0.7));
 }

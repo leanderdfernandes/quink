@@ -12,17 +12,22 @@ export type InFlightJob = Pick<Job, 'id' | 'article_id' | 'kb_id' | 'stage' | 's
 // The most recent run that produced this article. Read on demand — the frame picker needs
 // it to tell "the frames are still being pulled" apart from "pulling them failed", and
 // those two states deserve opposite sentences. One extra round trip on opening a modal.
-export async function fetchArticleJob(
-  articleId: string,
-): Promise<Pick<Job, 'status' | 'degraded'> | null> {
+//
+// `frames_ready_at`, NOT `status`, answers that. The dense frame pass runs past the finish
+// line (pipeline.py), so `status` is already 'done' while the frames are still landing —
+// reading it as "the pass finished" is what told users a perfectly healthy run had failed,
+// for the three and a half minutes it took to write 114 objects. Migration 0030.
+export type ArticleJob = Pick<Job, 'status' | 'degraded' | 'frames_ready_at'>
+
+export async function fetchArticleJob(articleId: string): Promise<ArticleJob | null> {
   const { data } = await supabase
     .from('jobs')
-    .select('status,degraded')
+    .select('status,degraded,frames_ready_at')
     .eq('article_id', articleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  return (data as Pick<Job, 'status' | 'degraded'> | null) ?? null
+  return (data as ArticleJob | null) ?? null
 }
 
 export async function listInFlightJobs(userId: string): Promise<InFlightJob[]> {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { publicFrameUrl, signedFrameUrls } from '../lib/storage'
+import { publicFrameUrl } from '../lib/storage'
 import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
-import { collectSourceVideo, deleteArticle } from '../lib/articles'
+import { collectSourceVideo, deleteArticle, publishSnapshot } from '../lib/articles'
 import { pendingEditCount } from '../lib/pendingEdits'
 import { createFolder, listFolders } from '../lib/folders'
 import { helpCenterUrl } from '../lib/config'
@@ -16,6 +16,8 @@ import PublishModal from './PublishModal'
 import GenerationStrip, { type GenPhase } from './GenerationStrip'
 import { useGeneration } from './useGeneration'
 import FailureScreen from '../components/FailureScreen'
+import { degradedNotice } from '../lib/failures'
+import { fetchArticleJob } from '../lib/jobs'
 import type {
   Annotation,
   Article,
@@ -66,16 +68,22 @@ type Props = {
 
 // An undo checkpoint — content only, no DB ids (a restore reinserts fresh rows).
 //
-// THE FOUR-PLACES RULE. A restore DELETES every step row and re-inserts from this shape, so
+// THE FIVE-PLACES RULE. A restore DELETES every step row and re-inserts from this shape, so
 // any step column missing from it is destroyed by one Ctrl+Z — silently, with no error, and
-// only noticed later. The same list has to appear in FOUR places that all rebuild rows:
-//   1. this type          2. snapshotOf()
-//   3. applySnapshot()'s insert                 4. discardChanges()'s insert
-// plus duplicateArticle() in lib/articles.ts and pendingEditCount() in lib/pendingEdits.ts,
-// which rebuild and compare rows for their own reasons.
+// only noticed later. The same list has to appear in five places that rebuild or compare
+// rows:
+//   1. this type          2. snapshotOf()             3. applySnapshot()'s insert
+//   4. discardChanges()'s insert                      5. duplicateArticle() (lib/articles)
+// plus pendingEditCount() in lib/pendingEdits.ts, which compares them.
 //
-// If you add a column to `steps`, add it to all six. This is not hypothetical: is_edited and
-// timestamp_seconds were already being dropped by half of them before annotations existed.
+// If you add a column to `steps`, add it to all of them. This is not hypothetical: is_edited
+// and timestamp_seconds were dropped by half of them before annotations existed, and
+// discardChanges was still dropping both until they were carried across explicitly.
+//
+// PUBLISHING is no longer on this list. Both publish paths go through ONE builder,
+// publishSnapshot() in lib/articles.ts — that is the list of PUBLISHED fields, which is a
+// different (smaller) list, and it is now impossible to update one publish path and miss
+// the other.
 type Snapshot = {
   title: string
   subtitle: string
@@ -124,6 +132,14 @@ const PENDING_ARTICLE = {
   created_at: '',
   updated_at: '',
 } as const satisfies ArticleRow
+
+// One screenshot url per step, keyed by row id.
+//
+// SYNCHRONOUS. This used to be `await signedFrameUrls(...)` — one signing round trip PER
+// STEP, on a bucket that has been public since migration 0007, at three separate points in
+// this file. Now it is a string build, so the map is ready in the same tick the rows are.
+const shotMap = (rows: StepRow[]): Record<string, string | null> =>
+  Object.fromEntries(rows.map((r) => [r.id, publicFrameUrl(r.screenshot_url)]))
 
 const renumber = (list: StepRow[]) =>
   list.map((s, i) => (s.step_number === i + 1 ? s : { ...s, step_number: i + 1 }))
@@ -224,6 +240,17 @@ export default function Editor({
   // once and hand control back to the normal editing path.
   const [reloadKey, setReloadKey] = useState(0)
 
+  // What this article's run shipped WITHOUT (CLAUDE.md §10g). A degraded run is a success —
+  // it produced an editable article and charged a run — but until now it announced itself
+  // nowhere at all, so a frames_partial article opened looking healthy and the gap was
+  // discovered by opening a picker that came back empty.
+  //
+  // Dismissal is per article, for this tab only: sessionStorage, not localStorage. Someone
+  // who dismisses it, comes back next week and finds three steps missing images deserves to
+  // be told why again.
+  const [degradedMsg, setDegradedMsg] = useState<string | null>(null)
+  const dismissKey = articleId ? `degraded-seen:${articleId}` : null
+
   useEffect(() => {
     // No article yet: the run is still in Stage 1. The shell renders off the job alone.
     if (!articleId) {
@@ -251,12 +278,19 @@ export default function Editor({
       )
       setDirty(!art.published_at || lastEdit > Date.parse(art.published_at))
       history.current = { stack: [snapshotOf(art, rows)], pointer: 0 }
+      setShotUrls(shotMap(rows))
       setLoading(false)
-      const urls = await signedFrameUrls(rows.map((r) => r.screenshot_url))
-      if (cancelled) return
-      const map: Record<string, string | null> = {}
-      rows.forEach((r, i) => (map[r.id] = urls[i]))
-      setShotUrls(map)
+
+      // After the article is on screen. It is a note about work that already succeeded, so
+      // nothing waits on it — and a manual article has no run to ask about.
+      if (art.source === 'generated' && art.status !== 'generating') {
+        const job = await fetchArticleJob(articleId)
+        if (cancelled) return
+        const msg = degradedNotice(job?.degraded)
+        if (msg && sessionStorage.getItem(`degraded-seen:${articleId}`) !== '1') {
+          setDegradedMsg(msg)
+        }
+      }
     })()
     return () => {
       cancelled = true
@@ -338,10 +372,7 @@ export default function Editor({
         .from('articles')
         .update({ title: snap.title, subtitle: snap.subtitle })
         .eq('id', articleId)
-      const urls = await signedFrameUrls(rows.map((r) => r.screenshot_url))
-      const map: Record<string, string | null> = {}
-      rows.forEach((r, i) => (map[r.id] = urls[i]))
-      setShotUrls(map)
+      setShotUrls(shotMap(rows))
       setDirty(true)
       clearError()
     } catch {
@@ -604,21 +635,11 @@ export default function Editor({
     await flush()
     const finalSlug =
       slug || (await uniqueArticleSlug(kb.id, article.title || 'article', articleId))
-    const snapshot = {
-      title: article.title,
-      subtitle: article.subtitle,
-      steps: steps.map((s) => ({
-        step_number: s.step_number,
-        heading: s.heading,
-        body_text: s.body_text,
-        screenshot_url: s.screenshot_url,
-        // Published content: the reader renders annotations from THIS, not from the live
-        // steps rows. There are two publish implementations and they share no helper
-        // (this one and the other in the pair), so a field added to one and not the other
-        // ships annotated in the editor and bare on the live site.
-        annotations: s.annotations ?? [],
-      })),
-    }
+    // ONE builder, shared with lib/articles.publishArticle (the row menu and bulk publish).
+    // The reader renders from published_content, so two hand-rolled copies of this object
+    // meant the same article could ship annotated or bare depending on which button was
+    // pressed. Add a published field there, not here.
+    const snapshot = publishSnapshot(article.title, article.subtitle, steps)
     const now = new Date().toISOString()
     const folderPatch = folderId !== undefined ? { folder_id: folderId } : {}
     const { error } = await supabase
@@ -761,26 +782,41 @@ export default function Editor({
     try {
       const del = await supabase.from('steps').delete().eq('article_id', articleId)
       if (del.error) throw del.error
+      // Frame provenance, carried across the rebuild. `pub` is the PUBLISHED snapshot,
+      // which is the Article contract and deliberately holds neither of these — so this
+      // insert used to reset both to their defaults on every discard, silently.
+      //
+      // Neither is published content, and neither is an "unpublished edit" the user asked
+      // to throw away: is_edited means a human chose this FRAME (CLAUDE.md §8, and a
+      // pipeline re-run may overwrite the frame once it is lost), timestamp_seconds is the
+      // second it was cut from (and centres the frame picker's In-use marker). They are
+      // carried over only where the step still points at the SAME object — if the discard
+      // restores a different screenshot_url, the old provenance describes a frame that is
+      // no longer there and the defaults are the honest answer.
+      const before = new Map(steps.map((s) => [s.step_number, s]))
       const { data, error } = await supabase
         .from('steps')
         .insert(
           // Four-places rule, site 4 — and the worst of the four, because "discard my
           // unpublished edits" is a destructive action the user consented to, so anything
           // extra it destroys is indistinguishable from what they asked for.
-          //
-          // `pub` is the PUBLISHED snapshot, which carries only the contract fields, so
-          // is_edited and timestamp_seconds are restored to their defaults rather than
-          // preserved: discarding back to the published version genuinely means the
-          // machine-picked state of that version. Annotations DO come from the snapshot,
-          // because they are published content and the reader renders them.
-          pub.steps.map((s) => ({
-            article_id: articleId,
-            step_number: s.step_number,
-            heading: s.heading,
-            body_text: s.body_text,
-            screenshot_url: s.screenshot_url,
-            annotations: s.annotations ?? [],
-          })),
+          pub.steps.map((s) => {
+            const kept = before.get(s.step_number)
+            const sameFrame = kept?.screenshot_url === s.screenshot_url
+            return {
+              article_id: articleId,
+              step_number: s.step_number,
+              heading: s.heading,
+              body_text: s.body_text,
+              screenshot_url: s.screenshot_url,
+              // Annotations DO come from the snapshot — they are published content and the
+              // reader renders them, so the published version's annotations are the thing
+              // being restored to.
+              annotations: s.annotations ?? [],
+              is_edited: sameFrame ? (kept?.is_edited ?? false) : false,
+              timestamp_seconds: sameFrame ? (kept?.timestamp_seconds ?? null) : null,
+            }
+          }),
         )
         .select()
         .order('step_number')
@@ -794,10 +830,7 @@ export default function Editor({
         .update({ title: pub.title, subtitle: pub.subtitle })
         .eq('id', articleId)
       if (up.error) throw up.error
-      const urls = await signedFrameUrls(rows.map((r) => r.screenshot_url))
-      const map: Record<string, string | null> = {}
-      rows.forEach((r, i) => (map[r.id] = urls[i]))
-      setShotUrls(map)
+      setShotUrls(shotMap(rows))
       setDirty(false)
       history.current = { stack: [snapshotOf(restored, rows)], pointer: 0 }
       refreshUndoFlags()
@@ -826,8 +859,15 @@ export default function Editor({
 
   // Ctrl/Cmd-Z undo, Ctrl/Cmd-Shift-Z or Ctrl-Y redo, Ctrl/Cmd-Enter adds a step.
   // Plain Enter is NOT bound: it is a newline inside a step body and must stay one.
+  //
+  // INERT WHILE THE RUN OWNS THE DOCUMENT. Every button on this screen is disabled during a
+  // run, but these shortcuts bypassed all of them: Ctrl+Enter inserted a step into an
+  // article the pipeline was still writing, and Ctrl+Z ran applySnapshot, which DELETES
+  // every step row and re-inserts it — against rows Stage 1 and the frame pass are still
+  // filling in. A keyboard path is an editing affordance like any other.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (live) return
       const mod = e.metaKey || e.ctrlKey
       if (!mod) return
       const key = e.key.toLowerCase()
@@ -845,7 +885,7 @@ export default function Editor({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps.length, mode])
+  }, [steps.length, mode, live])
 
   // Rail scroll-spy, so the map shows where you are.
   useEffect(() => {
@@ -1045,6 +1085,24 @@ export default function Editor({
           onNotify={notify}
         />
       </header>
+
+      {/* One line, under the header, above everything the run produced. Not a banner: it
+          sits in the same slot as the preview note and pushes the canvas by its own height,
+          once, on an article that genuinely has a gap in it. */}
+      {degradedMsg && (
+        <div className="ed-degraded" role="status">
+          <span>{degradedMsg}</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (dismissKey) sessionStorage.setItem(dismissKey, '1')
+              setDegradedMsg(null)
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {showPublish && (
         <PublishModal
