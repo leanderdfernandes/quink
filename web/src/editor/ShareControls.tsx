@@ -17,6 +17,10 @@ import type { Visibility } from '../lib/types'
 // `visibility` values are unchanged.
 
 type Props = {
+  // The derived article state says a run is in flight (lib/buildState). The PILL is the one
+  // label that can tell "still being written" apart from "finished and waiting for you", and
+  // until now it said "Draft" for both — which is the whole reason nobody could tell.
+  building?: boolean
   // A run is still writing this article. Publishing half an article, or opening the menu
   // that can delete it mid-write, is not something to leave reachable — but the controls
   // stay VISIBLE, because the wait is when someone reads what they will be able to do.
@@ -92,17 +96,26 @@ const TrashIcon = () => (
 
 // The pill. One component, five states, always in the same place.
 function StatusPill({
+  building,
   saveState,
   opError,
   visibility,
   everPublished,
   pendingEdits,
-}: Pick<Props, 'saveState' | 'opError' | 'visibility' | 'everPublished' | 'pendingEdits'>) {
+}: Pick<
+  Props,
+  'building' | 'saveState' | 'opError' | 'visibility' | 'everPublished' | 'pendingEdits'
+>) {
   let cls = ''
   let label = 'Draft'
   let sub: string | null = null
 
-  if (opError) {
+  // First, and ahead of save state: while a run owns the document nothing is being saved
+  // and there is nothing else worth saying here.
+  if (building) {
+    cls = 'bld'
+    label = 'Building'
+  } else if (opError) {
     cls = 'err'
     label = opError
   } else if (saveState === 'error') {
@@ -133,6 +146,7 @@ function StatusPill({
 }
 
 export default function ShareControls({
+  building = false,
   locked = false,
   visibility,
   slug,
@@ -244,6 +258,7 @@ export default function ShareControls({
   return (
     <>
       <StatusPill
+        building={building}
         saveState={saveState}
         opError={opError}
         visibility={visibility}

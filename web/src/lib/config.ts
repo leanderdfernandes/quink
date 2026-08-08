@@ -182,6 +182,17 @@ export const COPY = {
     'No free articles left. Nothing was uploaded and no run was used — this recording is waiting on this device.',
   generatingTip:
     "You'll be able to swap any screenshot and edit every step before publishing.",
+  // The building state (slice: building vs ready). A greyed control on its own tells the
+  // user something is broken; a greyed control with a sentence beside it tells them to
+  // wait. Both say WHEN it opens, never "please wait".
+  buildLockHint: 'Editing opens when your guide is finished.',
+  buildPublishHint: 'Publish opens when your guide is finished.',
+  // Completion is an EVENT, not four things quietly stopping. Dismissed by hand only —
+  // a banner that clears itself on a timer means someone who looked away got no signal
+  // at all, which is the bug this whole slice exists to fix.
+  buildDone: 'Your guide is ready. Every step is editable now, and you can publish.',
+  // On the placeholder itself, not buried in a panel nobody opens.
+  buildShotComing: 'Screenshot coming',
   // The upgrade modal (pricing-spec §7, reactive variant). Was hardcoded in the component —
   // the one surface in the funnel where the words decide whether someone pays, and the only
   // one whose copy lived outside this file.

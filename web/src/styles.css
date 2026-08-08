@@ -1609,6 +1609,29 @@ textarea {
 .ed-status.err .ed-status-dot {
   background: var(--danger);
 }
+/* Building. The one label that tells "still being written" apart from "finished and waiting
+   for you" — "Draft" used to cover both, which is why nobody could. The dot is the only
+   live thing in the pill and it pulses rather than spins. */
+.ed-status.bld {
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  color: var(--brand-700);
+}
+.ed-status.bld .ed-status-dot {
+  background: var(--brand-600);
+  animation: ed-status-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ed-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.65);
+  }
+}
 
 /* --- publish cluster: one button + one menu --- */
 .pubx {
@@ -4868,10 +4891,42 @@ a.rs-crumb-link:hover {
   border-color: var(--brand-200);
 }
 .al-badge.dirty,
+/* Building. Brand, not amber: this is work in progress, not a warning — and it carries the
+   same count the editor's build bar shows, from the same helper. */
 .al-badge.gen {
-  color: #8a5c13;
-  background: #fbf3e3;
-  border-color: #ecd9b3;
+  color: var(--brand-700);
+  background: var(--brand-50);
+  border-color: var(--brand-200);
+  font-variant-numeric: tabular-nums;
+}
+.al-row.bld {
+  background: color-mix(in oklab, var(--brand-50) 55%, var(--surface));
+}
+.al-build {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.al-watch {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-700);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.al-watch:hover {
+  text-decoration: underline;
+}
+@media (max-width: 760px) {
+  /* The bar is the first thing to go: the row's status text already carries the count. */
+  .al-build .bbar-sm {
+    display: none;
+  }
 }
 .al-flag {
   font-size: 11.5px;
@@ -5455,87 +5510,157 @@ a.rs-crumb-link:hover {
    Reduced motion is handled at the bottom of this block, not as an afterthought: with it
    on, every state below is still legible from colour and layout alone. */
 
-/* --- the status strip: one line, above the first step --------------------------------
-   Tinted, not bordered. A grey rule around this would make it a widget; a wash of brand-50
-   makes it part of the page that happens to be talking. */
-.gen-strip {
+/* --- the build bar: directly under the toolbar, only while building ------------------
+   It replaced a strip that sat INSIDE the canvas, above the first step. That position was
+   the quiet half of the bug: the thing announcing a run was in flight had no relationship
+   to the chrome, so Publish sat enabled a few pixels above it for ninety seconds.
+   A full-bleed band, like .ed-degraded and for the same reason — it is about the whole
+   document, not about a paragraph in it. */
+.bbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  position: relative;
-  margin: 0 0 34px;
-  padding: 13px 16px;
-  border-radius: var(--r-md);
+  gap: 16px;
+  padding: 10px 18px;
   background: var(--brand-50);
-  overflow: hidden;
+  border-bottom: 1px solid var(--brand-100);
 }
-.gen-mark {
-  display: grid;
-  place-items: center;
-  width: 14px;
-  height: 14px;
+.bbar-stage {
   flex: none;
-  color: var(--brand-600);
-}
-/* The seam dot from design-system.html section 04, doing its third job. It breathes rather
-   than spins — a spinner asks to be watched, and this is a thing you are told you may
-   walk away from. */
-.gen-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--brand-600);
-  box-shadow: 0 0 0 4px var(--brand-100);
-  animation: gen-breathe 1.9s ease-in-out infinite;
-}
-@keyframes gen-breathe {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-.gen-label {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.005em;
-  color: var(--brand-700);
+  color: var(--brand-800);
 }
-.gen-count {
-  margin-left: auto;
+.bbar-count {
+  flex: none;
   font-size: 12.5px;
-  color: var(--brand-600);
-  opacity: 0.75;
+  color: var(--brand-700);
+  opacity: 0.85;
   font-variant-numeric: tabular-nums;
 }
-/* Only ever drawn for the upload, where a real percentage exists. Sits on the strip's own
-   bottom edge so it reads as the strip filling, not as a second component. */
-.gen-rail {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
+.bbar-track {
+  position: relative;
+  /* Blockified on purpose: it is a <span>, and in the COMPACT variant its parent is not a
+     flex container, so an inline box would drop `width` and collapse the whole track to the
+     bolt. As a flex item (the full-size bar) `flex` still governs and this changes nothing. */
+  display: block;
+  flex: 1;
+  min-width: 110px;
+  height: 6px;
+  border-radius: var(--r-pill);
   background: var(--brand-100);
 }
-.gen-rail i {
-  display: block;
-  height: 100%;
+.bbar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--r-pill);
   background: var(--brand-600);
-  transition: width 0.25s linear;
+  transition: width 0.55s cubic-bezier(0.22, 0.75, 0.3, 1);
 }
-.gen-strip.done {
-  background: #eff6f1;
+/* The bolt rides the leading edge. It is the reason this is not a generic progress bar, so
+   it travels with the fill rather than sitting somewhere static. */
+.bbar-bolt {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--brand-600);
+  border: 2px solid var(--brand-50);
+  color: #fff;
+  transform: translate(-50%, -50%);
+  transition: left 0.55s cubic-bezier(0.22, 0.75, 0.3, 1);
 }
-.gen-strip.done .gen-mark,
-.gen-strip.done .gen-label {
-  color: var(--success);
+/* Before Stage 1 there is no denominator, so there is nothing honest to fill. The bolt
+   walks the track instead — motion that says "working", carried by the brand mark rather
+   than by the shimmer sweep the rest of this system reserves for one placeholder. */
+.bbar-track.idet .bbar-bolt {
+  transition: none;
+  animation: bbar-walk 2.1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
 }
-.gen-strip.done .gen-count {
-  color: var(--success);
-  opacity: 0.7;
+@keyframes bbar-walk {
+  0% {
+    left: 0%;
+  }
+  50% {
+    left: 100%;
+  }
+  100% {
+    left: 0%;
+  }
+}
+/* The article-list row: bar only. The row's status text carries the stage and the count. */
+.bbar-sm {
+  display: block;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.bbar-sm .bbar-track {
+  height: 5px;
+  min-width: 0;
+  width: 110px;
+  background: var(--brand-100);
+}
+.bbar-sm .bbar-bolt {
+  width: 15px;
+  height: 15px;
+  border-color: var(--paper);
+}
+
+/* --- completion, as a single visible beat -------------------------------------------
+   Everything else about finishing is an ABSENCE — the bar stops, the dimming lifts. This
+   is the one thing that arrives, and it is what turns four quiet changes into one moment.
+   It never self-dismisses: a banner on a timer means someone who looked away got nothing. */
+.ed-ready {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  background: #edf6f1;
+  border-bottom: 1px solid #cfe6da;
+  font-size: 13px;
+  color: #1f5c3f;
+  animation: ed-ready-drop 0.38s cubic-bezier(0.16, 0.84, 0.44, 1) both;
+}
+.ed-ready span {
+  flex: 1;
+}
+.ed-ready button {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid #bfdccd;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ed-ready button:hover {
+  background: #e2f0e8;
+}
+@keyframes ed-ready-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The reason, beside the control it explains. */
+.ed-lockwhy {
+  max-width: 190px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+  text-align: right;
 }
 
 /* --- skeletons -----------------------------------------------------------------------
@@ -5659,14 +5784,14 @@ a.rs-crumb-link:hover {
    Not hidden, not removed: dimmed and unclickable, so the wait shows what the finished
    article will let you do. The un-dim on completion is the only transition in the whole
    flow, and it is a fade — no layout moves, because nothing moved to begin with. */
-.ed-live .ed-tools button:disabled,
-.ed-live .ed-icbtn:disabled,
-.ed-live .ed-seg button:disabled,
-.ed-live .ed-addstep:disabled,
-.ed-live .pubx-go:disabled,
-.ed-live .pubx-caret:disabled,
-.ed-live .ed-shot-ov button:disabled,
-.ed-live .ed-noshot button:disabled {
+.ed-building .ed-tools button:disabled,
+.ed-building .ed-icbtn:disabled,
+.ed-building .ed-seg button:disabled,
+.ed-building .ed-addstep:disabled,
+.ed-building .pubx-go:disabled,
+.ed-building .pubx-caret:disabled,
+.ed-building .ed-shot-ov button:disabled,
+.ed-building .ed-noshot button:disabled {
   opacity: 0.4;
   cursor: default;
   filter: saturate(0.25);
@@ -5681,15 +5806,59 @@ a.rs-crumb-link:hover {
     opacity 0.3s ease-out,
     filter 0.3s ease-out;
 }
-.ed-live .ed-grip {
+.ed-building .ed-grip {
   opacity: 0.35;
   cursor: default;
 }
-.ed-live .ed-title[readonly],
-.ed-live .ed-sub[readonly],
-.ed-live .ed-h-in[readonly] {
+.ed-building .ed-title[readonly],
+.ed-building .ed-sub[readonly],
+.ed-building .ed-h-in[readonly] {
   cursor: default;
 }
+/* Hovering a locked step says WHY it is locked and WHEN it opens. Without this a step that
+   refuses the cursor is indistinguishable from a step that is broken — dimming alone tells
+   you something is off and nothing about what to do, which is half of "I can't tell whether
+   this is finished". Drawn from data-locked (StepCard) so the copy stays in lib/config. */
+.ed-card-live::after {
+  content: attr(data-locked);
+  position: absolute;
+  left: 34px;
+  /* Sits in the card's own top padding, clear of the heading. Anchoring it INSIDE the
+     content put it straight over the step title it was explaining. */
+  top: 22px;
+  transform: translateY(-100%);
+  z-index: 5;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+}
+.ed-card-live:hover::after {
+  opacity: 1;
+}
+
+/* Screenshots lag their text by design — frames are seeked, encoded and uploaded one at a
+   time. On the placeholder itself, where the person looking at the empty box is, rather
+   than inside a panel they would have to open to find it. */
+.ed-shot-chip {
+  position: absolute;
+  left: 11px;
+  bottom: 11px;
+  padding: 3px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.94);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+
 /* A step arriving from Stage 1. Same easing as the frame landing, so the document has one
    vocabulary of arrival rather than two. */
 .ed-card-live {
@@ -5711,13 +5880,16 @@ a.rs-crumb-link:hover {
    survives this: the strip still says what it says, the skeleton is still a grey block, the
    waiting slot is still a distinct empty box, and the settle still repaints the text. */
 @media (prefers-reduced-motion: reduce) {
-  .gen-dot,
   .sk,
   .ed-shot-wait-sheen,
   .ed-shot-landed,
   .ed-settling,
   .ed-card-live,
-  .gen-rail i,
+  .ed-ready,
+  .ed-status.bld .ed-status-dot,
+  .bbar-fill,
+  .bbar-bolt,
+  .bbar-track.idet .bbar-bolt,
   .ed .ed-tools button,
   .ed .ed-icbtn,
   .ed .ed-seg button,
@@ -5732,8 +5904,10 @@ a.rs-crumb-link:hover {
   .ed-shot-wait-sheen {
     background: var(--subtle);
   }
-  .gen-dot {
-    opacity: 1;
+  /* The bar is still a bar and the count still counts; only the walk stops. Parked at the
+     start rather than mid-track so a stationary bolt never reads as a stalled fill. */
+  .bbar-track.idet .bbar-bolt {
+    left: 0;
   }
 }
 

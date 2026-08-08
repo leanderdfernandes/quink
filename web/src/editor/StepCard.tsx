@@ -8,6 +8,7 @@ import AnnotateBar from './AnnotateBar'
 import { useAnnotator } from './useAnnotator'
 import AnnotatedImage, { Shape } from '../components/AnnotatedImage'
 import { handlePoints, rectOf, rotAnchorPx, type Natural } from '../lib/annotations'
+import { COPY } from '../lib/config'
 import type { Annotation, StepRow } from '../lib/types'
 
 // The step block — the unit of everything (CLAUDE.md §9): { heading, body, image }.
@@ -153,6 +154,11 @@ export default function StepCard({
   return (
     <article
       className={`ed-card${readOnly ? ' ed-card-live' : ''}${annotating ? ' ed-card-anno' : ''}`}
+      // The tooltip for a locked step, drawn from this attribute in CSS rather than by the
+      // browser's own `title` — a native tooltip waits a second, appears at the cursor and
+      // would duplicate the styled one. Without any tooltip a locked editor just feels
+      // broken, which is most of what the "is it finished?" confusion actually is.
+      data-locked={readOnly ? COPY.buildLockHint : undefined}
       id={`step-${step.step_number}`}
       data-index={index}
       onDragEnter={readOnly ? undefined : onDragEnterCard}
@@ -363,6 +369,10 @@ export default function StepCard({
         // animation, per slot, is what makes a slow frame legible as slow rather than dead.
         <div className="ed-shot-wait" aria-label="Capturing this screenshot">
           <span className="ed-shot-wait-sheen" aria-hidden />
+          {/* On the placeholder itself. Screenshots lag the text by design — frames are
+              seeked, encoded and uploaded one at a time — and saying so here is the
+              difference between "still coming" and "this step has no image". */}
+          <span className="ed-shot-chip">{COPY.buildShotComing}</span>
         </div>
       ) : (
         // Not a quiet "+ Add image": a step with no screenshot is the visible face of a

@@ -6,14 +6,15 @@ import { uniqueArticleSlug } from '../lib/slug'
 import { collectSourceVideo, deleteArticle, publishSnapshot } from '../lib/articles'
 import { pendingEditCount } from '../lib/pendingEdits'
 import { createFolder, listFolders } from '../lib/folders'
-import { helpCenterUrl } from '../lib/config'
+import { COPY, helpCenterUrl } from '../lib/config'
+import { articleState, buildProgress } from '../lib/buildState'
 import { limitsFor } from '../lib/plans'
 import { ReaderChrome } from '../reader/ReaderSite'
 import StepThumb from '../components/StepThumb'
 import StepCard from './StepCard'
 import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
-import GenerationStrip, { type GenPhase } from './GenerationStrip'
+import BuildBar, { type BuildStage } from './BuildBar'
 import { useGeneration } from './useGeneration'
 import FailureScreen from '../components/FailureScreen'
 import { degradedNotice } from '../lib/failures'
@@ -114,7 +115,7 @@ const snapshotOf = (article: ArticleRow, steps: StepRow[]): Snapshot => ({
 })
 
 // The article row before Stage 1 has written one. Never rendered as text — every field it
-// carries is behind a skeleton while `live` is true — it exists so the shell has one shape
+// carries is behind a skeleton while `building` is true — it exists so the shell has one shape
 // instead of a null-check on every line of the canvas.
 const PENDING_ARTICLE = {
   id: '',
@@ -240,6 +241,16 @@ export default function Editor({
   // once and hand control back to the normal editing path.
   const [reloadKey, setReloadKey] = useState(0)
 
+  // The run behind an article we did NOT arrive at from the landing. Opening a
+  // half-written article from the article list gives us an article id and nothing else, so
+  // the job has to be looked up or the build bar has no stage and never ends.
+  const [foundJobId, setFoundJobId] = useState<string | null>(null)
+
+  // A run we watched reach 'done'. Drives the completion line — and it is set from the
+  // POLL, so it can only ever be true for someone who was here while it happened. Opening
+  // a long-finished article never announces anything.
+  const [finished, setFinished] = useState(false)
+
   // What this article's run shipped WITHOUT (CLAUDE.md §10g). A degraded run is a success —
   // it produced an editable article and charged a run — but until now it announced itself
   // nowhere at all, so a frames_partial article opened looking healthy and the gap was
@@ -258,6 +269,10 @@ export default function Editor({
       return
     }
     let cancelled = false
+    // Belongs to the article being loaded, so it is dropped before that article changes —
+    // a job id carried over from the last one would have this editor watching a run that
+    // has nothing to do with what is on screen.
+    setFoundJobId(null)
     ;(async () => {
       const [{ data: a }, { data: s }] = await Promise.all([
         supabase.from('articles').select('*').eq('id', articleId).single(),
@@ -290,25 +305,43 @@ export default function Editor({
         if (msg && sessionStorage.getItem(`degraded-seen:${articleId}`) !== '1') {
           setDegradedMsg(msg)
         }
+      } else if (art.status === 'generating' && !jobId) {
+        // Re-entering a run in flight. Same query, different question — find the job so the
+        // build bar has a real stage and so completion is still an event for someone who
+        // left the tab and came back.
+        const job = await fetchArticleJob(articleId)
+        if (cancelled) return
+        if (job && (job.status === 'queued' || job.status === 'running')) setFoundJobId(job.id)
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [articleId, kb.id, reloadKey])
+  }, [articleId, kb.id, jobId, reloadKey])
 
   // --- The run, if there is one ---------------------------------------------------
-  const gen = useGeneration(jobId, articleId, onArticleResolved)
+  const watchJobId = jobId ?? foundJobId
+  const gen = useGeneration(watchJobId, articleId, onArticleResolved)
 
-  // `article.status` is the authority once the row exists, and after the 2g worker change
-  // it reaches a terminal value on EVERY path — success, degraded and failure alike. Before
-  // the row exists, a job id is the only evidence a run is happening.
-  const live = article ? article.status === 'generating' : !!jobId
+  // THE one derived article state (lib/buildState). Everything below reads `building` —
+  // the lock, the pill, the bar, Publish — so no component gets to decide for itself
+  // whether a run is in flight. `article.status` is the authority once the row exists and
+  // reaches a terminal value on EVERY path, failure included; before it exists, a job id is
+  // the only evidence a run is happening.
+  const docState = articleState(
+    article && { status: article.status, visibility },
+    !!watchJobId,
+  )
+  const building = docState === 'building'
 
   // The run ended: read the finished article once, then the normal editing path owns it.
+  // Success also arms the completion line — the un-dim, the pill flip and Publish coming
+  // back all ride on `building` turning false when that re-read lands, so the four of them
+  // are one moment rather than four quiet changes.
   const jobStatus = gen.job?.status
   useEffect(() => {
     if (jobStatus === 'done' || jobStatus === 'error') setReloadKey((k) => k + 1)
+    if (jobStatus === 'done') setFinished(true)
   }, [jobStatus])
 
   const bumpRev = (id: string) => setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }))
@@ -627,7 +660,7 @@ export default function Editor({
     nextVisibility: 'listed' | 'unlisted',
     folderId?: string | null,
   ): Promise<boolean> {
-    // No article id means the run has not created one yet, and `live` has the whole header
+    // No article id means the run has not created one yet, and `building` has the whole header
     // inert anyway — this is the type-level statement of the same rule.
     if (!article || !articleId) return false
     setPublishing(true)
@@ -867,7 +900,7 @@ export default function Editor({
   // filling in. A keyboard path is an editing affordance like any other.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (live) return
+      if (building) return
       const mod = e.metaKey || e.ctrlKey
       if (!mod) return
       const key = e.key.toLowerCase()
@@ -885,7 +918,7 @@ export default function Editor({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [steps.length, mode, live])
+  }, [steps.length, mode, building])
 
   // Rail scroll-spy, so the map shows where you are.
   useEffect(() => {
@@ -974,14 +1007,19 @@ export default function Editor({
 
   // --- What the run is doing, in numbers that are all real -------------------------
   // While the run owns the document the rows come from the poll; afterwards from local
-  // editing state. One expression, so the rail, the canvas and the strip cannot disagree.
-  const shownSteps = live ? gen.steps : steps
-  const captured = shownSteps.filter((s) => s.screenshot_url).length
-  const skeleton = live && shownSteps.length === 0
+  // editing state. One expression, so the rail, the canvas and the bar cannot disagree.
+  // The poll's rows win once it has any, but the load's rows stand in until then — opening
+  // a half-written article from the list has everything on screen already, and dropping to
+  // the skeleton for one poll interval would be a flash of LESS than we know.
+  const shownSteps = building && gen.steps.length ? gen.steps : steps
+  // Steps done / steps that exist. `total` is 0 until Stage 1 lands, which is what puts the
+  // bar in its indeterminate state — see lib/buildState for why the unit is a step with its
+  // screenshot rather than a step row.
+  const { done: stepsReady, total: stepTotal } = buildProgress(shownSteps)
+  const skeleton = building && shownSteps.length === 0
 
-  const phase: GenPhase = !live
-    ? 'ready'
-    : uploadProgress !== null && uploadProgress < 1
+  const stage: BuildStage =
+    uploadProgress !== null && uploadProgress < 1
       ? 'uploading'
       : (gen.job?.stage ?? 'analyzing')
 
@@ -1004,14 +1042,14 @@ export default function Editor({
     )
   }
 
-  if (loading || (!article && !live)) return <div className="page" />
+  if (loading || (!article && !building)) return <div className="page" />
 
   // Stands in for the ~15 seconds between "the run started" and "Stage 1 wrote the article
   // row". Everything it holds renders as a skeleton, so no placeholder text is ever visible.
   const doc: ArticleRow = article ?? PENDING_ARTICLE
 
   return (
-    <div className={`ed${live ? ' ed-live' : ''}`}>
+    <div className={`ed${building ? ' ed-building' : ''}`}>
       <header className="ed-bar">
         <button className="ed-back" onClick={onBack}>
           ← Help center
@@ -1023,14 +1061,14 @@ export default function Editor({
         <div className="ed-seg" role="group" aria-label="Editor mode">
           <button
             aria-pressed={mode === 'edit'}
-            disabled={live}
+            disabled={building}
             onClick={() => setMode('edit')}
           >
             Edit
           </button>
           <button
             aria-pressed={mode === 'preview'}
-            disabled={live}
+            disabled={building}
             onClick={() => setMode('preview')}
           >
             Preview
@@ -1040,7 +1078,7 @@ export default function Editor({
         <button
           className="ed-icbtn"
           onClick={undo}
-          disabled={live || !canUndo}
+          disabled={building || !canUndo}
           title="Undo (Ctrl+Z)"
           aria-label="Undo"
         >
@@ -1049,7 +1087,7 @@ export default function Editor({
         <button
           className="ed-icbtn"
           onClick={redo}
-          disabled={live || !canRedo}
+          disabled={building || !canRedo}
           title="Redo (Ctrl+Shift+Z)"
           aria-label="Redo"
         >
@@ -1059,8 +1097,13 @@ export default function Editor({
         <div className="ed-spacer" />
         {notice && <span className="ed-notice">{notice}</span>}
 
+        {/* The reason, next to the thing it disables. A grey button on its own says
+            something is broken; a grey button with a sentence says to wait. */}
+        {building && <span className="ed-lockwhy">{COPY.buildPublishHint}</span>}
+
         <ShareControls
-          locked={live}
+          building={building}
+          locked={building}
           visibility={visibility}
           slug={slug}
           dirty={unpublished}
@@ -1085,6 +1128,25 @@ export default function Editor({
           onNotify={notify}
         />
       </header>
+
+      {/* The build bar. Directly under the toolbar, only while building — and it is the ONLY
+          thing on this screen that appears and disappears, because it is the only thing that
+          is genuinely about a run rather than about the article. */}
+      {building && <BuildBar stage={stage} done={stepsReady} total={stepTotal} />}
+
+      {/* Completion, as an event. It drops in at the same moment the bar collapses, the pill
+          flips and Publish comes back — all of them ride on `building` turning false, so
+          they are one transition rather than four things quietly stopping.
+          Dismissed BY HAND only: a self-clearing banner means someone who looked away got
+          no completion signal at all, which is the bug this exists to fix. */}
+      {finished && !building && (
+        <div className="ed-ready" role="status">
+          <span>{COPY.buildDone}</span>
+          <button type="button" onClick={() => setFinished(false)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* One line, under the header, above everything the run produced. Not a banner: it
           sits in the same slot as the preview note and pushes the canvas by its own height,
@@ -1178,12 +1240,12 @@ export default function Editor({
                       <button
                         className="ed-rail-item"
                         aria-current={activeStep === s.step_number ? 'true' : undefined}
-                        draggable={!live}
+                        draggable={!building}
                         onDragStart={() => (dragFrom.current = i)}
-                        onDragEnter={() => !live && onDragEnter(i)}
+                        onDragEnter={() => !building && onDragEnter(i)}
                         onDragOver={(e) => e.preventDefault()}
-                        onDragEnd={live ? undefined : onDrop}
-                        onDrop={live ? undefined : onDrop}
+                        onDragEnd={building ? undefined : onDrop}
+                        onDrop={building ? undefined : onDrop}
                         onClick={() =>
                           document
                             .getElementById(`step-${s.step_number}`)
@@ -1214,7 +1276,7 @@ export default function Editor({
                   <input
                     className="ed-title"
                     value={doc.title}
-                    readOnly={live}
+                    readOnly={building}
                     placeholder="Article title"
                     onChange={(e) => saveArticle({ title: e.target.value })}
                     aria-label="Article title"
@@ -1222,7 +1284,7 @@ export default function Editor({
                   <input
                     className="ed-sub"
                     value={doc.subtitle}
-                    readOnly={live}
+                    readOnly={building}
                     placeholder="A one-line summary"
                     onChange={(e) => saveArticle({ subtitle: e.target.value })}
                     aria-label="One-line summary"
@@ -1231,18 +1293,7 @@ export default function Editor({
               )}
               <div className="ed-divider" />
 
-              {/* One line, above the first step, for the whole wait. */}
-              {(live || gen.job) && (
-                <GenerationStrip
-                  phase={phase}
-                  uploadProgress={uploadProgress}
-                  captured={captured}
-                  polished={gen.polished}
-                  total={shownSteps.length}
-                />
-              )}
-
-              {!live && <InsertHere at={0} onInsert={insertStep} first />}
+              {!building && <InsertHere at={0} onInsert={insertStep} first />}
 
               {skeleton
                 ? [0, 1, 2].map((i) => (
@@ -1266,23 +1317,21 @@ export default function Editor({
                         index={i}
                         isFirst={i === 0}
                         screenshotUrl={
-                          // The frames bucket is public (migration 0007), so a live step
-                          // costs no round trip to show. Signed URLs stay on the settled
-                          // path where the whole article is minted in one pass.
-                          live
+                          // The frames bucket is public (migration 0007), so a step arriving
+                          // mid-run costs no round trip to show. Signed URLs stay on the
+                          // settled path where the whole article is minted in one pass.
+                          building
                             ? publicFrameUrl(s.screenshot_url)
                             : (shotUrls[s.id] ?? null)
                         }
                         kbId={kb.id}
                         articleId={articleId ?? ''}
                         hasVideo={doc.source === 'generated'}
-                        readOnly={live}
+                        readOnly={building}
                         // Only while the frame pass is still running or yet to start. Once
                         // the run is past `capturing`, an empty slot is a real gap and says
                         // so instead of pretending something is still coming.
-                        awaitingFrame={
-                          live && !s.screenshot_url && phase !== 'writing' && phase !== 'ready'
-                        }
+                        awaitingFrame={building && !s.screenshot_url && stage !== 'writing'}
                         settling={gen.settling.has(s.id)}
                         onHeading={(heading) => saveStep(s.id, { heading })}
                         onBody={(body_text) => saveStep(s.id, { body_text })}
@@ -1299,13 +1348,13 @@ export default function Editor({
                         onDragEnterCard={() => onDragEnter(i)}
                         onDrop={onDrop}
                       />
-                      {!live && <InsertHere at={i + 1} onInsert={insertStep} />}
+                      {!building && <InsertHere at={i + 1} onInsert={insertStep} />}
                     </div>
                   ))}
 
               <button
                 className="ed-addstep"
-                disabled={live}
+                disabled={building}
                 onClick={() => insertStep(steps.length)}
               >
                 + Add a step <kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} ⏎</kbd>

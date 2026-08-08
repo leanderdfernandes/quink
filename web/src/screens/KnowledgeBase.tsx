@@ -19,6 +19,8 @@ import {
   renameFolder,
 } from '../lib/folders'
 import { trialBannerLabel, trialFor, trialPillLabel } from '../lib/trial'
+import { articleState, buildProgress } from '../lib/buildState'
+import BuildBar from '../editor/BuildBar'
 import Wordmark from '../components/Wordmark'
 import KbSwitcher from '../components/KbSwitcher'
 import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
@@ -71,6 +73,10 @@ const GENERATING_POLL_MS = 5000
 
 type Feedback = { helpful: number; total: number }
 
+// Steps done / steps that exist, for a row that is still being built. Same numbers, same
+// helper and same component as the editor's build bar.
+type Build = { done: number; total: number }
+
 type Meta = {
   steps: StepLite[]
   pending: number
@@ -78,12 +84,21 @@ type Meta = {
   // Steps with nothing to show. Only counted on GENERATED articles: a hand-written article
   // with no images is a choice, not a gap.
   missingShots: number
+  build: Build
 }
 
 type StatusBadge = { label: string; cls: 'gen' | 'draft' | 'unlisted' | 'listed' | 'dirty' }
 
-function statusBadge(a: ArticleRow, pending: number): StatusBadge {
-  if (a.status === 'generating') return { label: 'Generating', cls: 'gen' }
+function statusBadge(a: ArticleRow, pending: number, build: Build | null): StatusBadge {
+  // Same derived state the editor's pill reads (lib/buildState). An article being written
+  // needs its OWN row state, or someone who leaves the tab opens a half-written article
+  // expecting a finished one — and the count is the same count the editor's bar shows.
+  if (articleState(a) === 'building') {
+    return {
+      label: build?.total ? `Building · ${build.done} of ${build.total}` : 'Building',
+      cls: 'gen',
+    }
+  }
   // The draft is ahead of what readers see — that is the more useful thing to say than
   // repeating that it is published. Same count as the editor's status pill.
   if (pending > 0 && a.visibility !== 'draft') {
@@ -269,6 +284,27 @@ export default function KnowledgeBase({
       // change on its own — keep watching it and this loop never ends.
       watching = watching.filter((id) => inflight.has(id))
 
+      // The row's count has to move, or "Building · 2 of 7" is a number frozen at whatever
+      // it was when the page loaded — which is the article-list version of exactly the bug
+      // this fixes. Steps are re-read for whatever is still running; the initial load
+      // already read them for everything else.
+      const running = jobs
+        .map((j) => j.article_id)
+        .filter((id): id is string => !!id)
+      if (running.length) {
+        const { data: sd } = await supabase
+          .from('steps')
+          .select('article_id, step_number, heading, body_text, screenshot_url, annotations')
+          .in('article_id', running)
+          .order('step_number')
+        if (stop) return
+        const byArticle: Record<string, StepLite[]> = {}
+        for (const s of (sd ?? []) as (StepLite & { article_id: string })[]) {
+          ;(byArticle[s.article_id] ||= []).push(s)
+        }
+        if (Object.keys(byArticle).length) setSteps((prev) => ({ ...prev, ...byArticle }))
+      }
+
       const wanted = [...new Set([...settled, ...unknown])]
       if (wanted.length) {
         const { data } = await supabase.from('articles').select('*').in('id', wanted)
@@ -284,8 +320,17 @@ export default function KnowledgeBase({
           })
         }
       }
-      // Keep going while anything is still running, or while a watched row is unresolved.
-      if (!stop && (watching.length || jobs.length)) {
+      // Keep going while anything is still running, while a watched row is unresolved, or
+      // while the DOCK still has work in flight.
+      //
+      // That last clause is load-bearing and was missing. A run started from this screen
+      // UPLOADS first and only then creates its job row, so the first tick — five seconds
+      // in, mid-upload — asks the ledger and is told nothing is running. Without
+      // `runInFlight` the loop treated that as "nothing to wait for" and stopped for good,
+      // five seconds into a ninety-second run. The article row then never arrived at all:
+      // not as Building, and not as Draft when it finished. `runInFlight` is a dep, so the
+      // effect restarts when the dock empties and this cannot spin forever.
+      if (!stop && (watching.length || jobs.length || runInFlight)) {
         timer = setTimeout(tick, GENERATING_POLL_MS)
       }
     }
@@ -307,7 +352,7 @@ export default function KnowledgeBase({
       const fb = feedback[a.id] ?? null
       const missingShots =
         a.source === 'generated' ? st.filter((s) => !s.screenshot_url).length : 0
-      out[a.id] = { steps: st, pending, fb, missingShots }
+      out[a.id] = { steps: st, pending, fb, missingShots, build: buildProgress(st) }
     }
     return out
   }, [articles, steps, feedback])
@@ -511,7 +556,8 @@ export default function KnowledgeBase({
 
   function renderRow(a: ArticleRow) {
     const m = meta[a.id]
-    const badge = statusBadge(a, m?.pending ?? 0)
+    const building = articleState(a) === 'building'
+    const badge = statusBadge(a, m?.pending ?? 0, m?.build ?? null)
     const fb = m?.fb
     const rate = fb && fb.total ? Math.round((fb.helpful / fb.total) * 100) : null
     const isSelected = selected.has(a.id)
@@ -536,7 +582,7 @@ export default function KnowledgeBase({
     }
 
     return (
-      <div key={a.id} className={`al-row${isSelected ? ' sel' : ''}`}>
+      <div key={a.id} className={`al-row${isSelected ? ' sel' : ''}${building ? ' bld' : ''}`}>
         <input
           type="checkbox"
           className="al-chk"
@@ -567,6 +613,18 @@ export default function KnowledgeBase({
             <span>Updated {timeAgo(a.updated_at)}</span>
           </span>
         </button>
+
+        {/* A run in flight, on the row. "Open to watch" rather than Open, because opening
+            this one lands you in an article that is still being written and the word should
+            say so before the click, not after. */}
+        {building && (
+          <span className="al-build">
+            <BuildBar compact done={m?.build.done ?? 0} total={m?.build.total ?? 0} />
+            <button className="al-watch" onClick={() => onOpenArticle(a.id)}>
+              Open to watch
+            </button>
+          </span>
+        )}
 
         <div className="al-menuwrap">
           <button

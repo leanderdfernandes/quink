@@ -4,6 +4,22 @@
 
 const BOLT = '#2F7D57'
 
+// The bolt's own path, in the wordmark's coordinate space. ONE copy: the wordmark draws it
+// as the "i", and <Bolt> draws it alone (it rides the build bar's leading edge). Two copies
+// of 400 characters of path data is two things to keep in sync for no reason.
+const BOLT_PATH =
+  'M279.364 80.3615C278.99 78.492 277.907 77.1435 276.918 77.2095L262.087 78.2001L268.043 22.3883C268.164 20.4857 267.759 18.1446 266.707 17.2676C265.624 15.9191 264.667 16.4567 263.741 17.4658L225.815 81.5702C225.167 83.0343 224.799 84.9534 225.419 86.8065C226.04 88.6595 227.123 90.0081 228.112 89.942L242.943 88.9514L236.987 144.763C236.866 146.666 237.271 149.007 238.323 149.884C238.601 150.339 239.127 150.777 239.622 150.744C240.116 150.711 240.579 150.207 241.042 149.702L278.968 85.5978C279.615 84.1337 279.984 82.2146 279.364 80.3615Z'
+
+// The mark on its own, inheriting currentColor — unlike the wordmark's bolt, which keeps
+// its green because there it is a letter in a logo rather than a UI element.
+export function Bolt({ height = 11 }: { height?: number }) {
+  return (
+    <svg height={height} viewBox="224 15 57 137" fill="none" aria-hidden style={{ display: 'block' }}>
+      <path fill="currentColor" d={BOLT_PATH} />
+    </svg>
+  )
+}
+
 export default function Wordmark({ height = 22 }: { height?: number }) {
   return (
     <svg
@@ -32,10 +48,7 @@ export default function Wordmark({ height = 22 }: { height?: number }) {
         d="M450.28 127.8L422.02 83.88L405.64 101.52V79.02L444.34 39.06H466.84L434.8 72L471.16 127.8H450.28ZM389.8 127.8V2.34H407.62V127.8H389.8Z"
       />
       {/* The lightning-bolt "i". */}
-      <path
-        fill={BOLT}
-        d="M279.364 80.3615C278.99 78.492 277.907 77.1435 276.918 77.2095L262.087 78.2001L268.043 22.3883C268.164 20.4857 267.759 18.1446 266.707 17.2676C265.624 15.9191 264.667 16.4567 263.741 17.4658L225.815 81.5702C225.167 83.0343 224.799 84.9534 225.419 86.8065C226.04 88.6595 227.123 90.0081 228.112 89.942L242.943 88.9514L236.987 144.763C236.866 146.666 237.271 149.007 238.323 149.884C238.601 150.339 239.127 150.777 239.622 150.744C240.116 150.711 240.579 150.207 241.042 149.702L278.968 85.5978C279.615 84.1337 279.984 82.2146 279.364 80.3615Z"
-      />
+      <path fill={BOLT} d={BOLT_PATH} />
     </svg>
   )
 }
