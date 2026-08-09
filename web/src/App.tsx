@@ -147,6 +147,15 @@ export default function App() {
       (i) => i.state === 'uploading' || i.state === 'running' || i.state === 'queued',
     ) ?? null
 
+  // A recording the user asked to WATCH from the dock, before it has an article to open by.
+  // Deliberately not a route (CLAUDE.md §10c): there is nothing stable to put in a URL yet,
+  // and it stops being this the instant Stage 1 writes the article — at which point
+  // onArticleResolved navigates and the normal article route takes over.
+  const [watchItemId, setWatchItemId] = useState<string | null>(null)
+  const watchItem = watchItemId
+    ? (queue.items.find((i) => i.id === watchItemId) ?? null)
+    : null
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
@@ -457,25 +466,33 @@ export default function App() {
   //   · uploading, on the first-run landing — no job row yet
   //   · a job in flight on the first-run landing — no article row yet either
   const watchingRun = landing === 'article' && (phase === 'working' || phase === 'generating')
-  if ((routeArticleId || watchingRun) && kb) {
+  // A fourth way in: watching a recording opened from the dock, which has no article yet.
+  // Same component, same branch — so when Stage 1 lands, the instance is kept and the URL
+  // simply gains the article id underneath it.
+  const watched = watchingRun ? activeItem : watchItem
+  if ((routeArticleId || watchingRun || watchItem) && kb) {
     return (
       <>
         {adminBar}
         <Editor
-          articleId={routeArticleId ?? null}
+          articleId={routeArticleId ?? watchItem?.articleId ?? null}
           kb={kb}
           plan={plan}
-          jobId={watchingRun ? (activeItem?.jobId ?? null) : null}
-          uploadProgress={
-            watchingRun && activeItem?.state === 'uploading' ? activeItem.progress : null
-          }
+          jobId={watched?.jobId ?? null}
+          uploadProgress={watched?.state === 'uploading' ? watched.progress : null}
           onArticleResolved={(id) => {
             // The URL catches up with the run. `replace`, because the article-less URL is
             // not somewhere the back button should be able to return to.
             navigate(`/app/${kb.id}/article/${id}`, { replace: true })
+            // The article route owns it from here; keeping the item watch as well would
+            // leave two things claiming the same editor.
+            setWatchItemId(null)
           }}
           onReupload={startOver}
-          onBack={closeArticle}
+          onBack={() => {
+            setWatchItemId(null)
+            closeArticle()
+          }}
           onOpenTheme={() => setPhase('theme')}
         />
       </>
@@ -543,6 +560,7 @@ export default function App() {
           onUndoRemove={queue.undoRemove}
           canUndo={!!queue.lastRemoved}
           onOpenArticle={openArticle}
+          onWatchItem={setWatchItemId}
           onUpgrade={() => setShowUpgrade(true)}
           onDismiss={queue.dismiss}
           onAddMore={() => setPhase('upload')}

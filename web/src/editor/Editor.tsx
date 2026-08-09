@@ -328,9 +328,14 @@ export default function Editor({
   // whether a run is in flight. `article.status` is the authority once the row exists and
   // reaches a terminal value on EVERY path, failure included; before it exists, a job id is
   // the only evidence a run is happening.
+  // An upload still moving is a run in flight too, even though no job row exists yet. Without
+  // this the first-run landing rendered a BLANK PAGE for the whole upload: articleId and
+  // jobId are both null until the bytes land, so `building` was false and the shell's own
+  // early return fired — nothing on screen said a guide was coming.
+  const uploading = uploadProgress !== null && uploadProgress < 1
   const docState = articleState(
     article && { status: article.status, visibility },
-    !!watchJobId,
+    !!watchJobId || uploading,
   )
   const building = docState === 'building'
 
@@ -1018,10 +1023,7 @@ export default function Editor({
   const { done: stepsReady, total: stepTotal } = buildProgress(shownSteps)
   const skeleton = building && shownSteps.length === 0
 
-  const stage: BuildStage =
-    uploadProgress !== null && uploadProgress < 1
-      ? 'uploading'
-      : (gen.job?.stage ?? 'analyzing')
+  const stage: BuildStage = uploading ? 'uploading' : (gen.job?.stage ?? 'analyzing')
 
   // A run that died BEFORE producing an article has nothing to show and nothing to edit —
   // that is the one case still worth a failure screen. Once steps exist the user is looking

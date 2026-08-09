@@ -200,6 +200,28 @@ export function useQueue({
     persistHeld(items)
   }, [items, persistHeld])
 
+  // --- the one window a reload can still destroy something --------------------------
+  // Between "the bytes start moving" and "the job row exists" this browser holds the ONLY
+  // copy of the recording: the File is in React state (persistHeld saves `held` files, not
+  // in-flight ones), the XHR dies with the page, and no job row exists yet — so the
+  // adoption below has nothing to find. A reload there loses the recording completely and
+  // SILENTLY, which is exactly how it reads to the user: they refresh and their help center
+  // looks like they never dropped anything.
+  //
+  // The browser's own guard is the whole fix. It cannot make an aborted upload survive —
+  // that needs the file persisted and re-uploaded, which is a bigger change — but it turns
+  // silent destruction into a question, and the honest answer to "are you sure?" here is
+  // usually no.
+  useEffect(() => {
+    const holdingBytes = items.some(
+      (i) => i.state === 'uploading' || (i.state === 'queued' && i.file),
+    )
+    if (!holdingBytes) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [items])
+
   // --- runs already going: the dock survives a reload (3g) --------------------------
   // This is what makes "safe to close this tab" a fact rather than a claim. Without it the
   // dock is a session artifact and the sentence is a hope.

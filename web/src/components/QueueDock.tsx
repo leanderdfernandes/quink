@@ -22,6 +22,9 @@ type Props = {
   onUndoRemove: () => void
   canUndo: boolean
   onOpenArticle: (articleId: string) => void
+  // Watch a recording that has no article yet — the upload, and the stretch before Stage 1.
+  // By item id, not article id, because the whole point is that there isn't one.
+  onWatchItem: (itemId: string) => void
   onUpgrade: () => void
   onDismiss: () => void
   onAddMore: () => void
@@ -87,6 +90,7 @@ export default function QueueDock({
   onUndoRemove,
   canUndo,
   onOpenArticle,
+  onWatchItem,
   onUpgrade,
   onDismiss,
   onAddMore,
@@ -142,17 +146,34 @@ export default function QueueDock({
             const locked =
               item.state !== 'queued' && item.state !== 'held' && item.state !== 'error'
             const position = queued.indexOf(item)
-            // 2f: clicking a row goes in and watches it build. Before Stage 1 there is no
-            // article to go to, so the row says so rather than being a dead click.
-            const openable = !!item.articleId
-            const open = () => item.articleId && onOpenArticle(item.articleId)
+            // 2f: clicking a row goes in and watches it build. That now works from the
+            // moment the bytes start moving, not only once Stage 1 has written something —
+            // the upload is the longest part of the wait on a big recording, and having no
+            // way in during it was the stretch where nothing on screen was watchable.
+            // Before the article exists the shell is opened by ITEM, because there is no
+            // article id yet to open by.
+            // Anything already in flight, which is upload AND the stretch before Stage 1 —
+            // covering only the upload would make the view blink out for the thirty seconds
+            // the video model takes, which is worse than never offering it.
+            // NOT `queued`: a file that has not entered a lane stays editable in the dock
+            // (3d), and opening it into a locked editor would take that away.
+            const watchable = item.state === 'uploading' || item.state === 'running'
+            const openable = !!item.articleId || watchable
+            const open = () =>
+              item.articleId ? onOpenArticle(item.articleId) : onWatchItem(item.id)
             return (
               <div className="dock-f" key={item.id}>
                 <div
                   className={`dock-f-top${openable ? ' openable' : ''}`}
                   role={openable ? 'button' : undefined}
                   tabIndex={openable ? 0 : undefined}
-                  title={openable ? 'Open this article' : undefined}
+                  title={
+                    !openable
+                      ? undefined
+                      : item.articleId
+                        ? 'Open this article'
+                        : 'Watch this being built'
+                  }
                   onClick={openable ? open : undefined}
                   onKeyDown={
                     openable
@@ -243,11 +264,9 @@ export default function QueueDock({
                 {/* No separate "Open it" button: the ROW is the target, for every state
                     that has an article behind it — including a run still going, which is
                     the whole point of being able to go and watch it. */}
-                {!openable && (item.state === 'running' || item.state === 'uploading') && (
-                  <p className="dock-f-wait">
-                    You&rsquo;ll be able to open this once the first steps are written.
-                  </p>
-                )}
+                {/* The "you'll be able to open this once the first steps are written" line
+                    is gone: every in-flight row is openable now, so it was a promise about
+                    a wait that no longer exists. */}
               </div>
             )
           })}
