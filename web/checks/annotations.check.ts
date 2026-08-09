@@ -66,14 +66,37 @@ for (const col of ['annotations', 'is_edited', 'timestamp_seconds']) {
   assert.ok(dup.includes(col), `duplicateArticle drops '${col}' — the copy silently loses it`)
 }
 
-// Both publish snapshots. The reader renders from published_content, never from the live
-// rows, and the two implementations share no helper — so both have to be checked.
-for (const [name, src] of [['Editor.doPublish', editor], ['articles.publishArticle', articles]] as const) {
-  const snap = src.slice(src.indexOf('const snapshot'), src.indexOf('const snapshot') + 900)
-  const built = snap || src
+// The published snapshot. The reader renders from published_content, never from the live
+// rows, so a column missing HERE shows the author shapes the live site does not have.
+//
+// This used to read both publish paths and look for the column near each one's snapshot
+// object, because they hand-rolled one each. They now share ONE builder — which is the
+// stronger arrangement, and it made this check fail on correct code: both call sites are a
+// single `publishSnapshot(...)` line with the column names nowhere near them. A check that
+// does not follow its subject through a refactor fails loudly at the wrong thing and
+// teaches people to ignore it.
+//
+// So the assertion is now in two halves, which together say the same thing the old one
+// meant: the builder carries the columns, and neither path has quietly grown its own
+// snapshot again.
+const builder = articles.slice(
+  articles.indexOf('export function publishSnapshot'),
+  articles.indexOf('export function publishSnapshot') + 700,
+)
+for (const col of ['annotations', 'screenshot_url', 'heading', 'body_text', 'step_number']) {
   assert.ok(
-    built.includes('annotations'),
-    `${name} omits 'annotations' from published_content — the editor would show shapes the live site does not`,
+    builder.includes(col),
+    `publishSnapshot omits '${col}' — the reader renders this snapshot, so the live site would lose it`,
+  )
+}
+for (const [name, src] of [
+  ['Editor.doPublish', editor],
+  ['articles.publishArticle', articles],
+] as const) {
+  assert.match(
+    src,
+    /const snapshot = publishSnapshot\(/,
+    `${name} must build published_content through publishSnapshot, not its own object — two builders is how one publish path silently loses a column`,
   )
 }
 
