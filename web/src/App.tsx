@@ -156,12 +156,42 @@ export default function App() {
     ? (queue.items.find((i) => i.id === watchItemId) ?? null)
     : null
 
+  // A DEAD SESSION MUST LAND ON THE LANDING PAGE, NOT ON NOTHING.
+  //
+  // `phase` starts at 'loading', which renders an empty div, and the only thing that moved
+  // it off there was a resolved getSession() reporting no session. So every way that call
+  // can end badly — a rejection, or a refresh token whose user no longer exists (a deleted
+  // account: "User from sub claim in refresh token not found") — left the app on 'loading'
+  // forever. That is a blank white page on the MARKETING HOME, for a visitor who cannot
+  // sign in to fix it and has nothing on screen to click.
+  //
+  // The stored token is the other half: it survives the failed refresh, so the next load
+  // repeats it, and the next. Clearing it locally is what makes this recoverable by
+  // reloading rather than by clearing site data in devtools. `scope: 'local'` because the
+  // server call would fail on the same dead token it is trying to revoke.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      if (!data.session) setPhase('home')
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error || !data.session) {
+          if (error) void supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+          setSession(null)
+          setPhase('home')
+          return
+        }
+        setSession(data.session)
+      })
+      .catch(() => {
+        setSession(null)
+        setPhase('home')
+      })
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s)
+      // A refresh that fails LATER (the account is deleted while the tab is open) arrives
+      // here, not above. Without this the app keeps rendering an authenticated screen whose
+      // every query now returns nothing.
+      if (event === 'SIGNED_OUT') setPhase('home')
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => sub.subscription.unsubscribe()
   }, [])
 
@@ -215,7 +245,14 @@ export default function App() {
       // A :kbId that resolves to nothing is either gone or not ours — RLS answers both
       // with zero rows, and so do we. Rendering different states for the two would turn
       // the URL bar into a probe for which KBs exist.
-      if (routeKbId && !found) {
+      //
+      // WITHOUT a :kbId this used to fall through to phase 'kb', which renders only on
+      // `phase === 'kb' && kb` — so a signed-in session whose account resolves no KB at all
+      // matched no branch and hit the bare early return at the bottom: a WHITE PAGE with no
+      // way out, not even a sign-out. handle_new_user() provisions a KB on signup, so
+      // reaching here means the account was emptied underneath a live session (a deleted
+      // profile row, a half-deleted account) — rare, but it strands the user completely.
+      if (!found) {
         setPhase('noaccess')
         return
       }
@@ -233,8 +270,8 @@ export default function App() {
       const pending = await loadPending().catch(() => undefined)
       if (cancelled) return
 
-      if (!pending || !found) {
-        setPhase('kb') // returning user, or nothing queued
+      if (!pending) {
+        setPhase('kb') // returning user, nothing queued
         return
       }
 
@@ -410,13 +447,18 @@ export default function App() {
           <p className="cap" style={{ marginTop: 8 }}>
             This help center doesn't exist, or your account doesn't have access to it.
           </p>
-          <button
-            className="btn btn-ghost"
-            style={{ marginTop: 18 }}
-            onClick={() => navigate('/')}
-          >
-            Back to your help center
-          </button>
+          {/* Sign out is here because this screen is also where a session outlives its
+              account. "Back" re-runs the same lookup and lands right back here, so without
+              it the only way out of a broken session is clearing site data by hand. It
+              says nothing about WHICH of the two states this is — §10c still holds. */}
+          <div className="wall-actions">
+            <button className="btn btn-ghost" onClick={() => navigate('/')}>
+              Back to your help center
+            </button>
+            <button className="btn btn-ghost" onClick={signOut}>
+              Sign out
+            </button>
+          </div>
         </div>
       </div>
     )
