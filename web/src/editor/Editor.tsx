@@ -332,7 +332,11 @@ export default function Editor({
   // this the first-run landing rendered a BLANK PAGE for the whole upload: articleId and
   // jobId are both null until the bytes land, so `building` was false and the shell's own
   // early return fired — nothing on screen said a guide was coming.
-  const uploading = uploadProgress !== null && uploadProgress < 1
+  // Any non-null value means the run has not reached a job row yet — including progress 1,
+  // which is the window where the bytes have landed and /api/generate has not answered.
+  // `< 1` here was the blank first-run screen: at 100% uploaded there was no article, no job
+  // and now no upload either, so `building` went false and the early return below fired.
+  const uploading = uploadProgress !== null
   const docState = articleState(
     article && { status: article.status, visibility },
     !!watchJobId || uploading,
@@ -1134,7 +1138,14 @@ export default function Editor({
       {/* The build bar. Directly under the toolbar, only while building — and it is the ONLY
           thing on this screen that appears and disappears, because it is the only thing that
           is genuinely about a run rather than about the article. */}
-      {building && <BuildBar stage={stage} done={stepsReady} total={stepTotal} />}
+      {building && (
+        <BuildBar
+          stage={stage}
+          done={stepsReady}
+          total={stepTotal}
+          uploadProgress={uploadProgress}
+        />
+      )}
 
       {/* Completion, as an event. It drops in at the same moment the bar collapses, the pill
           flips and Publish comes back — all of them ride on `building` turning false, so

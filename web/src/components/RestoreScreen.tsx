@@ -43,7 +43,7 @@ export default function RestoreScreen({ kbName, trial, articleCount, onContinue 
           bring them back — nothing was lost.
         </p>
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        <div className="wall-actions">
           {mailto ? (
             <a className="btn" href={mailto}>
               Restore my help center

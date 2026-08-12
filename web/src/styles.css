@@ -525,12 +525,13 @@ textarea {
   font-size: 13px;
   margin-top: 10px;
 }
+/* A paragraph, not a row. It was `display: flex`, so the sentence and the mailto beside it
+   became two flex items: the text wrapped inside its own column and the address sat off to
+   the right on its own line, ignoring the centred card around it. */
 .note {
   font-size: 12px;
+  line-height: 1.55;
   color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 7px;
   margin-top: 14px;
 }
 /* The support mailto in the upgrade modal. Left unstyled it rendered as the browser's
@@ -552,6 +553,24 @@ textarea {
   padding: 32px;
   box-shadow: var(--sh-lg);
   text-align: center;
+}
+/* Body copy inside a centred card. Without a measure the paragraph runs the full 376px of
+   card interior and centred text over five ragged lines is what reads as amateur. */
+.wall .cap,
+.wall .note {
+  max-width: 34em;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* The button row. It was an inline `display: flex` at three call sites, so the buttons sat
+   left-packed under centred text — the one thing on the card ignoring its own alignment.
+   Wraps rather than overflowing when the labels are long. */
+.wall-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
 }
 .wall .padlock {
   font-size: 26px;
@@ -5519,17 +5538,95 @@ a.rs-crumb-link:hover {
 .bbar {
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 10px 22px;
   padding: 10px 18px;
   background: var(--brand-50);
   border-bottom: 1px solid var(--brand-100);
 }
-.bbar-stage {
+/* The four phases in order. Past ones are ticked and recede, the running one is the only
+   thing at full weight, the rest wait — so the wait has a shape even while the bar itself
+   has nothing to measure. */
+.bbar-phases {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: none;
-  font-size: 13px;
-  font-weight: 600;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bbar-phases li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
   letter-spacing: -0.005em;
+  color: var(--brand-700);
+  opacity: 0.45;
+  white-space: nowrap;
+  transition: opacity 0.3s ease;
+}
+.bbar-phases li.done {
+  opacity: 0.7;
+}
+.bbar-phases li.now {
+  opacity: 1;
+  font-weight: 600;
   color: var(--brand-800);
+}
+/* Drawn, not a character — a bullet or an arrow here would be read aloud as content. */
+.bbar-phases li + li::before {
+  content: '';
+  flex: none;
+  width: 12px;
+  height: 1px;
+  background: var(--brand-200);
+}
+.bbar-pip {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid var(--brand-300);
+  color: var(--brand-600);
+}
+.bbar-phases li.done .bbar-pip {
+  border-color: var(--brand-600);
+}
+.bbar-phases li.now .bbar-pip {
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  animation: bbar-pip 1.5s ease-in-out infinite;
+}
+@keyframes bbar-pip {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--brand-ring);
+  }
+  55% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+.bbar-meter {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 190px;
+}
+/* Below this the four labels cannot sit on one line, so it falls back to naming only what
+   is happening now — the behaviour this strip had everywhere before. */
+@media (max-width: 900px) {
+  .bbar-phases li:not(.now) {
+    display: none;
+  }
+  .bbar-phases li + li::before {
+    display: none;
+  }
 }
 .bbar-count {
   flex: none;
@@ -5598,6 +5695,12 @@ a.rs-crumb-link:hover {
   padding: 0;
   background: none;
   border: 0;
+}
+/* The compact bar is a fixed 110px track in an article-list row, so the meter must not
+   impose the full-size bar's minimum on it and stretch the track to fill it. */
+.bbar-sm .bbar-meter {
+  display: block;
+  min-width: 0;
 }
 .bbar-sm .bbar-track {
   height: 5px;
@@ -5890,6 +5993,7 @@ a.rs-crumb-link:hover {
   .bbar-fill,
   .bbar-bolt,
   .bbar-track.idet .bbar-bolt,
+  .bbar-phases li.now .bbar-pip,
   .ed .ed-tools button,
   .ed .ed-icbtn,
   .ed .ed-seg button,

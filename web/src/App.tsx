@@ -362,6 +362,20 @@ export default function App() {
   // itself or with the email (pricing-spec §2).
   const trial = kb ? trialFor(kb, plan) : null
 
+  // A run that died BEFORE a job row existed — an upload that failed, a refused start. The
+  // 'failed' phase was built for exactly this and stopped being reachable when the queue took
+  // over the upload, so the first-run landing rendered nothing at all instead. The editor
+  // can't own this one: with no job to poll and no article to open there is nothing there.
+  const deadItem =
+    landing === 'article' && phase === 'generating'
+      ? (queue.items.find((i) => i.state === 'error' && !i.jobId) ?? null)
+      : null
+  useEffect(() => {
+    if (!deadItem) return
+    setFailureCode(deadItem.failureCode)
+    setPhase('failed')
+  }, [deadItem])
+
   useEffect(() => {
     if (!kb || trial?.stage !== 'offline') return
     supabase
@@ -479,7 +493,13 @@ export default function App() {
           kb={kb}
           plan={plan}
           jobId={watched?.jobId ?? null}
-          uploadProgress={watched?.state === 'uploading' ? watched.progress : null}
+          // Every state BEFORE a job row exists, not just 'uploading'. A queued file waiting
+          // for a lane, and — the long one — a finished upload while POST /api/generate is
+          // still in flight, both reported null here, so the editor had no article, no job
+          // and no upload to render and fell through to its blank early return. On a cold
+          // worker that blank screen lasted tens of seconds, which is what "nothing seemed
+          // to be happening" was.
+          uploadProgress={watched && !watched.jobId ? watched.progress : null}
           onArticleResolved={(id) => {
             // The URL catches up with the run. `replace`, because the article-less URL is
             // not somewhere the back button should be able to return to.

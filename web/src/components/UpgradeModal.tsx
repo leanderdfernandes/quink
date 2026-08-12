@@ -33,7 +33,7 @@ export default function UpgradeModal({ onWriteManually, onClose }: Props) {
           {COPY.upgradeBody}
         </p>
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        <div className="wall-actions">
           {/* The primary action is the one that WORKS. pricing-spec §7 leads with "Start
               with Starter", but checkout doesn't exist yet and a dead CTA on the highest-
               intent screen in the funnel teaches users the product is broken, not paid.
