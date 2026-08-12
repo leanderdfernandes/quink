@@ -62,16 +62,21 @@ export default function BuildBar({
   // Written during render on purpose — it is a max(), so a StrictMode double render and a
   // repeat poll both produce the same value.
   const high = useRef(0)
-  const raw = total > 0 ? Math.min(done / total, 1) : null
-  if (raw !== null) high.current = Math.max(high.current, raw)
+  const stepFrac = total > 0 ? Math.min(done / total, 1) : null
+  if (stepFrac !== null) high.current = Math.max(high.current, stepFrac)
 
-  // Indeterminate until the blueprint lands. The text names the phase and shows NO
-  // denominator — the total is not known, so inventing one is not an option.
-  const frac = raw === null ? null : high.current
+  // MEASURED WHENEVER A MEASURE EXISTS. Bytes uploaded is a real fraction and the bar used
+  // to throw it away, running indeterminate through the one phase of the whole run we can
+  // actually count — so the longest, most anxious stretch of a first run was a dot
+  // oscillating in place while the number sat in the text beside it, unused.
+  //
+  // The two fractions are different units and only the step one feeds the high-water mark,
+  // so the bar still cannot travel backwards within a phase. They never overlap on screen
+  // either: `analyzing` sits between them with nothing to count, so the fill has already
+  // given way to the indeterminate treatment before the unit changes.
+  const frac = stepFrac !== null ? high.current : uploadProgress
   const pct = frac === null ? 0 : Math.round(frac * 1000) / 10
 
-  // Deliberately NOT folded into the bar: upload bytes and finished steps are different
-  // units, and switching the fill from one to the other would send it backwards.
   const count =
     total > 0
       ? `${done} of ${total} steps ready`
@@ -111,17 +116,20 @@ export default function BuildBar({
           aria-valuenow={frac === null ? undefined : done}
           aria-label="Steps finished"
         >
-          {frac !== null && <i className="bbar-fill" style={{ width: `${pct}%` }} />}
-          {/* The bolt rides the leading edge of the fill. While indeterminate it travels the
-              track on its own — the brand cue doing the work a generic sweep would, without
-              being one. */}
-          <span
-            className="bbar-bolt"
-            style={frac === null ? undefined : { left: `${pct}%` }}
-            aria-hidden
-          >
-            <Bolt height={compact ? 8 : 10} />
-          </span>
+          {frac !== null && (
+            <>
+              <i className="bbar-fill" style={{ width: `${pct}%` }} />
+              {/* The bolt rides the leading edge of the fill. It is only ever shown on a
+                  fill it can lead: it used to walk the empty track by itself while nothing
+                  was being measured, which is a high-contrast object thrown back and forth
+                  for the ~45 seconds Stage 1 takes. The indeterminate state is a faded
+                  sweep now (styles.css) — it says "working" without pretending to say
+                  "this far along". */}
+              <span className="bbar-bolt" style={{ left: `${pct}%` }} aria-hidden>
+                <Bolt height={compact ? 8 : 10} />
+              </span>
+            </>
+          )}
         </span>
         {!compact && <span className="bbar-count">{count}</span>}
       </div>

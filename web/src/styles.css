@@ -5674,19 +5674,37 @@ a.rs-crumb-link:hover {
 /* Before Stage 1 there is no denominator, so there is nothing honest to fill. The bolt
    walks the track instead — motion that says "working", carried by the brand mark rather
    than by the shimmer sweep the rest of this system reserves for one placeholder. */
-.bbar-track.idet .bbar-bolt {
-  transition: none;
-  animation: bbar-walk 2.1s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+/* NOTHING TO COUNT: a faded band crossing the track, always the same way, never a solid
+   object oscillating. The bolt used to walk 0->100->0 on a loop here, and the longer that
+   runs the more it reads as stuck rather than busy — Stage 1 alone is ~45 seconds of it,
+   which is exactly the length at which a looping indicator starts costing more anxiety
+   than it settles. One direction is the whole difference: a sweep leaves, a bounce comes
+   back. `overflow` clips the band to the pill, and is safe only here because the bolt —
+   which is taller than the track and would be cut in half — is not rendered in this state. */
+.bbar-track.idet {
+  overflow: hidden;
 }
-@keyframes bbar-walk {
-  0% {
-    left: 0%;
+.bbar-track.idet::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--brand-600) 38%, transparent) 40%,
+    color-mix(in oklab, var(--brand-600) 50%, transparent) 50%,
+    color-mix(in oklab, var(--brand-600) 38%, transparent) 60%,
+    transparent 100%
+  );
+  animation: bbar-sweep 2.4s cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+@keyframes bbar-sweep {
+  from {
+    transform: translateX(-100%);
   }
-  50% {
-    left: 100%;
-  }
-  100% {
-    left: 0%;
+  to {
+    transform: translateX(100%);
   }
 }
 /* The article-list row: bar only. The row's status text carries the stage and the count. */
@@ -5992,7 +6010,7 @@ a.rs-crumb-link:hover {
   .ed-status.bld .ed-status-dot,
   .bbar-fill,
   .bbar-bolt,
-  .bbar-track.idet .bbar-bolt,
+  .bbar-track.idet::after,
   .bbar-phases li.now .bbar-pip,
   .ed .ed-tools button,
   .ed .ed-icbtn,
@@ -6008,10 +6026,12 @@ a.rs-crumb-link:hover {
   .ed-shot-wait-sheen {
     background: var(--subtle);
   }
-  /* The bar is still a bar and the count still counts; only the walk stops. Parked at the
-     start rather than mid-track so a stationary bolt never reads as a stalled fill. */
-  .bbar-track.idet .bbar-bolt {
-    left: 0;
+  /* The bar is still a bar and the count still counts; only the sweep stops. A halted band
+     mid-track would read as a stalled fill, so it becomes an even tint across the whole
+     track — "no measure available", stated once, holding still. */
+  .bbar-track.idet::after {
+    transform: none;
+    background: color-mix(in oklab, var(--brand-600) 26%, transparent);
   }
 }
 
