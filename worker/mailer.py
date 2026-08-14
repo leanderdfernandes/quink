@@ -124,15 +124,39 @@ def trial_purged(kb_name: str) -> tuple[str, str]:
     )
 
 
+# --- Account deletion (DPDP right to withdraw consent) ---------------------------------
+def account_deleted(kb_names: list[str], articles: int) -> tuple[str, str]:
+    """Confirmation that a self-serve deletion completed.
+
+    Names what went, so the mail is a RECEIPT rather than a notification — someone who
+    deleted the wrong account of two needs to be able to tell from the subject line. It does
+    not try to win them back: they already left, and a pitch here reads as a company that
+    did not accept the instruction it just carried out.
+
+    The "we don't keep a copy" line is literally true and load-bearing: we are not on
+    Supabase Pro, so there is no point-in-time recovery to restore from. It is the same
+    sentence the confirmation dialog shows before the deletion, on purpose.
+    """
+    named = ", ".join(kb_names) if kb_names else "your help center"
+    return (
+        "Your Quink account has been deleted",
+        f"{named} and {_plural(articles, 'article')} have been deleted, along with every "
+        f"screenshot and recording.\n\nThis is permanent — we don't keep a copy and there "
+        f"is no backup to restore from. Any custom domain you had connected has been "
+        f"released, so you can point it wherever you like.\n\nIf this wasn't you, or it was "
+        f"a mistake, reply to this email today.\n\n— Quink",
+    )
+
+
 # --- The one send path ----------------------------------------------------------------
 def send_once(
     to: str,
     subject: str,
     body: str,
     *,
-    table: str,
-    row_id: str,
-    marker: str,
+    marker: str | None,
+    table: str | None = None,
+    row_id: str | None = None,
 ) -> bool:
     """Send `subject`/`body` to `to`, at most once for `table`.`row_id`.
 
@@ -140,24 +164,40 @@ def send_once(
     if the provider itself fails, so a restart, a second worker, or a user hammering the
     "check again" button cannot produce a second email.
 
+    `marker=None` — THE ONE EXCEPTION, and it is still a required keyword so nobody
+    reaches it by forgetting. It is for a send that fires ONCE, from a user action, with no
+    row left to mark and no possible retry: today that is exactly the account-deletion
+    confirmation, which goes out after `auth.users` is gone and so has no surviving row
+    anywhere in the database. Claiming a marker on a deleted row silently matches zero rows
+    and sends nothing, which is worse than no marker at all.
+
+    §10h says send_once is the only public send and must not grow a second send path — so
+    this is that one function with the marker made explicitly optional, NOT a sibling. The
+    rule it actually protects ("every email from a LOOP OR A SWEEP needs a persisted
+    marker") is untouched: a caller inside a loop still cannot leave the keyword out.
+
     Returns True if this call delivered (or logged, when sending is disabled), False if
     it was already sent or the provider refused. NEVER raises.
     """
     try:
         import pipeline  # lazy: keeps the heavy pipeline module out of import time
 
-        now = datetime.now(timezone.utc).isoformat()
-        claimed = (
-            pipeline.db()
-            .table(table)
-            .update({marker: now})
-            .eq("id", row_id)
-            .is_(marker, "null")
-            .execute()
-        )
-        if not (claimed.data or []):
-            log.debug("%s already sent for %s.%s — not sending again", marker, table, row_id)
-            return False
+        if marker is not None:
+            if not (table and row_id):
+                log.error("send_once: marker=%r given without table/row_id", marker)
+                return False
+            now = datetime.now(timezone.utc).isoformat()
+            claimed = (
+                pipeline.db()
+                .table(table)
+                .update({marker: now})
+                .eq("id", row_id)
+                .is_(marker, "null")
+                .execute()
+            )
+            if not (claimed.data or []):
+                log.debug("%s already sent for %s.%s — not sending again", marker, table, row_id)
+                return False
 
         if not sending_enabled():
             # The documented dev fallback. It logs the WHOLE payload so the message is
@@ -199,7 +239,8 @@ def send_once(
         # Release the claim so the next sweep retries. This is the one case where a
         # duplicate is possible, and it is the case where we WANT another attempt.
         log.error("resend refused mail to %s (%s): %s", to, subject, detail)
-        pipeline.db().table(table).update({marker: None}).eq("id", row_id).execute()
+        if marker is not None:
+            pipeline.db().table(table).update({marker: None}).eq("id", row_id).execute()
         return False
     except Exception:
         log.exception("send_once failed for %s.%s", table, row_id)

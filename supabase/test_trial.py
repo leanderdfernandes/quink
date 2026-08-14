@@ -127,7 +127,23 @@ try:
     from supabase import create_client
     anon = create_client(config.SUPABASE_URL, ANON)
     sub = row["subdomain"]
-    chk("reader — resolver returns nothing", anon.rpc("reader_kb", {"p_key": sub}).execute().data, [])
+    # Migration 0025 CHANGED this deliberately, and this assertion was left behind on 0022's
+    # contract. 0022 filtered an offline KB out of reader_kb entirely, so a lapsed trial and
+    # a typo in the URL produced the identical zero rows and the identical "this help center
+    # doesn't exist" screen — telling a customer's own readers that their site was gone.
+    #
+    # reader_kb now RESOLVES an offline KB and FLAGS it, so the reader can say "X has paused
+    # this". What it must not do is leak anything else, which is the real thing to assert:
+    # name and the flag only, everything else blanked, and noindex forced on.
+    resolved = anon.rpc("reader_kb", {"p_key": sub}).execute().data
+    chk("reader — resolver resolves it", len(resolved), 1)
+    row0 = resolved[0] if resolved else {}
+    chk("reader — flagged offline", row0.get("offline"), True)
+    chk("reader — name kept (the screen names who paused it)", bool(row0.get("name")), True)
+    chk("reader — branding/domain blanked while offline",
+        [row0.get(k) for k in ("about", "headline", "logo_path", "subdomain", "custom_domain")],
+        ["", "", None, None, None])
+    chk("reader — noindex forced on", row0.get("noindex"), True)
     chk("reader — articles by kb_id blocked",
         anon.rpc("reader_articles", {"p_kb_id": kb_id}).execute().data, [])
     chk("reader — article by slug blocked",

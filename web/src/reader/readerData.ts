@@ -82,6 +82,22 @@ export async function searchReader(kbId: string, query: string): Promise<SearchH
   return data as SearchHit[]
 }
 
+// Record that a reader session reached this help center (migration 0031). Fire-and-forget by
+// construction: nothing awaits it, nothing renders from it, and a failure is swallowed —
+// a counter must never be able to delay or break the page it is counting.
+//
+// The once-an-hour debounce is SERVER-side, in the RPC. Keeping it there is what makes the
+// cap real: it holds no matter how the endpoint is called.
+export function pingReader(kbId: string): void {
+  // `.then(noop, noop)`, not `.catch`: the PostgREST builder is a thenable, not a Promise, so
+  // it has no `.catch`. Both arms are empty on purpose — a returned `{ error }` (the RPC
+  // refused) and a thrown network failure are equally none of the reader's business.
+  supabase.rpc('reader_ping', { p_kb_id: kbId }).then(
+    () => {},
+    () => {},
+  )
+}
+
 // The only write on the reader (migration 0025). Anonymous by construction: no id, no
 // session, no fingerprint is sent or stored, because the widget's copy says so.
 //

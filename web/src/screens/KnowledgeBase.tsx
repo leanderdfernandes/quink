@@ -7,6 +7,8 @@ import {
   publishArticle,
   unpublishArticle,
 } from '../lib/articles'
+import DeleteAccountModal from '../components/DeleteAccountModal'
+import LegalFooter from '../components/LegalFooter'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
 import { listInFlightJobs } from '../lib/jobs'
 import { limitsFor, runsUsed } from '../lib/plans'
@@ -110,7 +112,9 @@ function statusBadge(a: ArticleRow, pending: number, build: Build | null): Statu
   return { label: 'Draft', cls: 'draft' }
 }
 
-function timeAgo(iso: string): string {
+// Exported for the admin KB table, which needs the same shape of label. One helper, so
+// "2h ago" means the same thing on both screens.
+export function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
   if (s < 60) return 'just now'
   const m = Math.floor(s / 60)
@@ -148,6 +152,7 @@ export default function KnowledgeBase({
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'live' | 'drafts'>('all')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Row menu, and the folder picker nested inside it.
   const [rowMenu, setRowMenu] = useState<string | null>(null)
@@ -840,6 +845,14 @@ export default function KnowledgeBase({
               </button>
             </div>
           )}
+
+          {/* Account deletion. Bottom of the rail, plain text weight, no colour — findable
+              by someone who came looking for it and invisible to everyone else. A red button
+              in the main chrome would be a permanent, destructive control sitting next to
+              the ones people use every day. */}
+          <button className="rail-danger" onClick={() => setDeleting(true)}>
+            Delete account
+          </button>
         </nav>
 
         <main className="lib-main">
@@ -1130,6 +1143,21 @@ export default function KnowledgeBase({
         <div className="al-toast" role="status">
           {toast}
         </div>
+      )}
+
+      {/* The app's legal footer. Compact and at the very bottom: this is a working surface,
+          not a marketing page, but the links have to be reachable by clicking (Razorpay
+          checks for footer links, not just live URLs). */}
+      <LegalFooter compact />
+
+      {/* Every KB this account owns, not just the one on screen — deletion is account-level
+          and the dialog has to name everything that goes, or it isn't informed consent. */}
+      {deleting && (
+        <DeleteAccountModal
+          kbs={kbs.length ? kbs : [kb]}
+          onClose={() => setDeleting(false)}
+          onDeleted={onSignOut}
+        />
       )}
     </div>
   )

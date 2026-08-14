@@ -1,4 +1,5 @@
 import { COPY } from '../lib/config'
+import LegalFooter from '../components/LegalFooter'
 import Wordmark from '../components/Wordmark'
 
 // The marketing landing — the front door (Quink Flow design).
@@ -94,6 +95,11 @@ export default function Home({ onStart, onLogin }: Props) {
           ))}
         </div>
       </section>
+
+      {/* The "footer" the deferred design called for, reduced to the part that is not
+          optional: Razorpay's activation review looks for these four links on the marketing
+          site. The rest of that section stays deferred. */}
+      <LegalFooter />
     </div>
   )
 }

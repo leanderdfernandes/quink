@@ -91,9 +91,15 @@ try:
     chk("token is a uuid", bool(uuid.UUID(token)), True)
     row = db.table("knowledge_bases").select("is_demo,claim_expires_at").eq("id", kb_id).execute().data[0]
     chk("marks the KB as a demo", row["is_demo"], True)
-    chk("expires ~30 days out",
-        (__import__("datetime").datetime.fromisoformat(row["claim_expires_at"])
-         - __import__("datetime").datetime.now(__import__("datetime").timezone.utc)).days, 29)
+    # Tolerance, not `.days == 29`. The expiry is stamped from the DATABASE clock and
+    # compared against THIS machine's, and the two differ by a fraction of a second — enough
+    # to flip `timedelta.days` between 29 and 30 depending on which side of the boundary the
+    # skew lands. That made a correct 30-day link fail at random. Assert what the test
+    # actually means: thirty days, give or take a few minutes.
+    _dt = __import__("datetime")
+    _delta = (_dt.datetime.fromisoformat(row["claim_expires_at"])
+              - _dt.datetime.now(_dt.timezone.utc)).total_seconds()
+    chk("expires ~30 days out", abs(_delta - 30 * 86400) < 300, True)
 
     print("\n== 2. a stranger cannot mint a link for someone else's KB ==")
     as_c = signed_in(c_email, c_pw)

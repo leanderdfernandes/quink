@@ -134,30 +134,23 @@ def _go_offline(kb: dict, now: datetime) -> None:
 
 
 def _purge(kb: dict) -> None:
-    """Hard delete: storage objects, then the KB row (articles/steps/folders cascade).
+    """Hard delete at the end of the grace window. The WORK lives in purge.purge_kb(), which
+    account deletion calls too — one implementation, so the two can never drift apart about
+    which buckets a KB owns.
 
-    Order matters twice over:
-      * the final email is sent BEFORE this runs, because its marker column lives on the
-        row we are about to delete;
-      * storage goes before the row, for the same reason retention.py deletes the object
-        before nulling its path — the reverse strands objects nothing names."""
-    import pipeline
+    What stays here is the trial-specific part: the final email goes out BEFORE this runs
+    (its marker column is on the row we are about to delete), and a storage failure leaves
+    the row in place so the next tick retries the whole purge.
 
-    kb_id = kb["id"]
-    for bucket in (config.BUCKET_FRAMES, config.BUCKET_VIDEOS, "branding"):
-        try:
-            store = pipeline.db().storage.from_(bucket)
-            names = [f"{kb_id}/{o['name']}" for o in store.list(kb_id) or []]
-            if names:
-                store.remove(names)
-        except Exception:
-            # Leave the row in place so the next tick retries the whole purge. An orphaned
-            # object is a cost; a deleted row with live objects is unreachable garbage.
-            log.exception("purge: could not clear %s/%s", bucket, kb_id)
-            return
+    NOTE: extracting this FIXED a live bug rather than preserving behaviour byte for byte.
+    The old local copy listed only the immediate children of `{kb_id}` in each bucket, so
+    every frame — which is nested at `{kb_id}/{article_id}/…` — survived the purge. See the
+    module docstring in purge.py. Flagged rather than reconciled quietly: this sweep now
+    deletes strictly more than it used to, which is what it always claimed to do."""
+    import purge
 
-    pipeline.db().table("knowledge_bases").delete().eq("id", kb_id).execute()
-    log.warning("kb %s purged (grace window elapsed)", kb_id)
+    if purge.purge_kb(kb["id"]):
+        log.warning("kb %s purged (grace window elapsed)", kb["id"])
 
 
 def sweep() -> int:
@@ -306,8 +299,12 @@ def demo() -> None:
             return type("R", (), {"data": rows, "count": len(rows)})()
 
     class _Store:
-        def list(self, _p):
-            return [{"name": "a.webp"}]
+        # Path-aware and id-bearing, because purge._object_paths now RECURSES: an entry with
+        # a null id is a pseudo-folder to descend into, one with an id is a removable object.
+        # The old fake answered the same single entry for every path, which under the real
+        # (fixed) lister is an infinite tree.
+        def list(self, path, _opts=None):
+            return [{"name": "a.webp", "id": "obj1"}] if "/" not in path else []
 
         def remove(self, names):
             removed.append(tuple(names))

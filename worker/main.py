@@ -29,6 +29,7 @@ import lanes
 import mailer
 import pipeline
 import prompts
+import purge
 from models import (
     DomainConnectRequest,
     DomainKbRequest,
@@ -541,6 +542,28 @@ def domain_disconnect(
         }
     ).eq("id", req.kb_id).execute()
     return {"status": "none"}
+
+
+@app.post("/api/account/delete")
+def account_delete(authorization: str | None = Header(default=None)) -> dict:
+    """Delete the CALLER's account and everything it owns (DPDP right to withdraw consent).
+
+    THE ENDPOINT TAKES NO BODY. Not an oversight — the account being deleted is derived from
+    the JWT and there is deliberately no parameter that could name a different one. §10e.1:
+    a privileged operation that accepts the acting identity as an argument hands the caller
+    the exact thing the check exists to prove, and that has been the root cause of two
+    escalation holes here already. A body is still accepted and ignored by FastAPI, so
+    posting someone else's user id deletes YOUR account — which is the intended answer.
+
+    Refusals come back as 409 with a message written for the user: every one of them says
+    what to do next, because the alternative to self-serve deletion is a support ticket and
+    a dead end teaches people to send one anyway.
+    """
+    uid = _auth_uid(authorization)
+    try:
+        return purge.delete_account(uid)
+    except purge.Refused as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
 
 @app.post("/api/domain/stub")

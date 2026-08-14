@@ -206,6 +206,16 @@ featured tier; Growth is a quiet line, not a card, at launch.
   can't attribute what moved.
 - **Config, not literals:** model IDs, prompts, prices, limits, paths — named and centralized,
   changeable without hunting. Prices/limits ship as editable config, never hardcoded.
+- **Privacy changes ship with the policy.** If a change touches what data we keep, who can
+  access it, or how long we keep it, `/legal/privacy-policy.md` changes in the same commit.
+  Retention periods, deletion behaviour, the subprocessor list and admin-access disclosure
+  are written promises to strangers, not internal notes. If a change would make a sentence
+  in those documents false, the sentence changes or the change doesn't ship.
+  *The frames bug is the argument:* `checklist.md` had storage lifecycle marked done while
+  every frame survived every purge, and we came within one commit of publishing a retention
+  promise that production contradicted. The four legal documents are now a fourth place
+  specs can drift from code, and the most expensive one — the drift is a promise to someone
+  who can act on it.
 
 ## 10b. Entitlements (locked — migration 0014)
 
@@ -283,7 +293,9 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   an owner-derived column, it must be added to that reset list — miss it there and you get
   a visible bug; spread the resets across call sites and you get a silent entitlement leak
   instead. Currently: `owner_id`, `trial_started_at`, `offline_at`, `purge_at`,
-  `reader_views`, `claim_token`, `claim_expires_at`, `is_demo`.
+  `reader_views`, `last_reader_view_at`, `claim_token`, `claim_expires_at`, `is_demo`.
+  (`last_reader_view_at` added in 0033 — 0031 introduced the column and missed this list,
+  which is the exact failure this rule exists to catch.)
 - **Identity is never denormalised outside `jobs.user_id`.** Everything else resolves
   through `knowledge_bases` — articles by `kb_id`, steps through their article, folders by
   `kb_id`, storage by the `{kb_id}/…` path prefix. A table that stores its own copy of who

@@ -15,6 +15,7 @@ import {
   fetchReaderArticles,
   fetchReaderKb,
   groupCategories,
+  pingReader,
   searchReader,
   submitFeedback,
   type SearchHit,
@@ -461,11 +462,33 @@ export function ReaderChrome({
           © {new Date().getFullYear()} {kb.name}
         </span>
         {/* The watermark gate is unchanged — only the Quink line is gated, so a paid help
-            center still gets a footer rule and its own copyright. */}
+            center still gets a footer rule and its own copyright.
+
+            Quink's legal links RIDE THIS GATE, deliberately. Razorpay's reviewer wants
+            footer links, and LEGAL-IMPLEMENTATION §2 asks for them on "every published help
+            center" — but pricing-spec §Starter sells "remove 'Made with' branding fully", and
+            our terms in a paid customer's footer, on their own domain, both breaks that
+            promise and tells their readers to go read someone else's policy. So: wherever
+            the watermark already renders (free tier, and demo KBs via is_demo), the links
+            render with it; where it is suppressed, there is nothing of ours at all. The
+            reviewer is looking at quink.online, which carries all four regardless.
+
+            Absolute URLs, not paths: this footer renders on customer subdomains and custom
+            domains, where /privacy is THEIR help center's article slug, not our policy. */}
         {watermark && (
-          <a href={QUINK_URL} target="_blank" rel="noopener">
-            Made with <b>Quink</b>
-          </a>
+          <>
+            <a href={QUINK_URL} target="_blank" rel="noopener">
+              Made with <b>Quink</b>
+            </a>
+            <span className="rs-ft-legal">
+              <a href={`${QUINK_URL}/privacy`} target="_blank" rel="noopener">
+                Privacy
+              </a>
+              <a href={`${QUINK_URL}/terms`} target="_blank" rel="noopener">
+                Terms
+              </a>
+            </span>
+          </>
         )}
       </div>
     </footer>
@@ -895,6 +918,7 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
   const [state, setState] = useState<'loading' | 'ready' | 'notfound'>('loading')
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<ReaderSearchHit[]>([])
+  const pinged = useRef(false)
 
   const view: 'home' | 'category' | 'article' = articleSlug
     ? 'article'
@@ -984,6 +1008,11 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
   // working — so we move readers over instead of breaking them, and tell crawlers which of
   // the two addresses is the real one. `hostKey != null` scopes this to real reader hosts:
   // the /kb/{slug} dev path must never bounce you to a live customer domain.
+  //
+  // The view count (migration 0031) is recorded HERE rather than beside the KB fetch, for
+  // one reason: this is the only place that knows we are staying on this host. Pinging at
+  // fetch time would count every custom-domain visit twice — once on the subdomain we are
+  // about to bounce off, once on the domain we land on.
   useEffect(() => {
     if (!kb || hostKey == null) return
     const canonicalHost =
@@ -995,6 +1024,16 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
       return
     }
     setCanonical(`https://${canonicalHost}${window.location.pathname}`)
+    // One ping per mount. This effect also re-runs on in-SPA navigation, and moving between
+    // articles is one reader session, not several — matching the reader's existing rule that
+    // navigation writes nothing. A ref, not state: it must not cause a render.
+    //
+    // Paused help centers are skipped because there is nothing to read — the RPC refuses
+    // them anyway (`offline_at is null`), this just saves the round trip.
+    if (!pinged.current && !kb.offline) {
+      pinged.current = true
+      pingReader(kb.id)
+    }
   }, [kb, hostKey, articleSlug, folderId])
 
   useEffect(() => {

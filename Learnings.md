@@ -138,6 +138,46 @@ decision or a trap we already paid for once. Read before repeating a mistake.
   individually. **Do NOT retry 4xx** — a bad key or a dead model id (see #1) must fail
   immediately rather than after three backoffs.
 
+### 8. Storage `list()` is one level deep and pages at 100 — the trial purge was deleting no frames at all
+- **Observed:** the day-37 hard delete did `store.list(kb_id)` and removed whatever came
+  back. Against live Storage, **every frame of every KB survived the purge.**
+- **Why:** there are no real directories. `list(prefix)` returns the *immediate* children,
+  and frames are nested — `frames/{kb_id}/{article_id}/step-3.webp`, plus a `dense/`
+  subfolder under that. So every entry returned for a KB's frames prefix is a pseudo-folder
+  (`id: None`), and `remove()` on a folder name deletes nothing and reports no error.
+- **Why nobody noticed:** `videos/` and `branding/` are flat, so those *did* get cleared.
+  The buckets a human spot-checks by hand were the working ones.
+- **Second bug in the same call:** `list()` defaults to `limit: 100` and does not
+  auto-paginate, so even the flat buckets truncated for any KB with more than 100 objects.
+- **Fix:** one recursive, paginated lister in `purge.py`, used by the trial sweep and by
+  account deletion. An entry with a non-null `id` is a removable object; a null `id` is a
+  prefix to descend into. Getting that discriminator backwards is silent in both directions
+  — treat files as folders and you recurse forever, treat folders as files and you delete
+  nothing, which is the version we shipped.
+- **General rule:** a delete that reports success is not evidence anything was deleted.
+  Verify object-store cleanup by listing the prefix afterwards, not by the absence of an
+  exception.
+
+---
+
+## Accepted holes (known, deliberately not fixed)
+
+### A. Deleting an account resets the free tier
+- Delete the account, sign up again with the same email, get another 3 free runs.
+- The `jobs` ledger is append-only precisely to stop run farming (§10b: `article_id` is
+  `on delete set null` so a ledger row outlives its article, and deleting an article never
+  returns a run). Account deletion walks around all of that — `jobs.user_id` is
+  `on delete set null` (§10e.4), so a deleted account's rows stop counting toward anyone.
+- **Not worth defending at this stage.** The runs cost cents, and nobody knows the product
+  exists. Building against it now is effort spent on an attacker who does not exist.
+- **Worth knowing** because the cheapest later fix is a suppression table of hashed emails
+  checked at signup — and that **has to be disclosed in the privacy policy at the time it
+  is added**, since it means retaining a derivative of an address after we promised the
+  account was deleted. Adding it quietly would turn a real deletion promise into a false
+  one.
+- Revisit only if abuse actually appears. `free_email_providers` already blunts the cheap
+  throwaway-domain version.
+
 ---
 
 ## Open questions this raises

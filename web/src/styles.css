@@ -7088,3 +7088,153 @@ a.rs-crumb-link:hover {
   font-size: 11.5px;
   color: var(--muted);
 }
+
+/* --- Account deletion (DPDP right to withdraw consent) -------------------------------
+   Quiet by design. This control sits at the bottom of the rail in plain muted text so it
+   is findable by someone who came looking for it and invisible to everyone else — a red
+   button beside the controls people use daily is a permanent invitation to a mistake. The
+   colour only appears on hover, once the pointer is already on it. */
+.rail-danger {
+  display: block;
+  width: 100%;
+  margin-top: 24px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rail-danger:hover {
+  color: var(--danger);
+}
+
+/* The dialog itself is the opposite: it states real consequences, so it gets room. */
+.da {
+  max-width: 520px;
+  text-align: left;
+}
+.da-list {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.da-list li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--secondary);
+}
+.da-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.da-list b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.da-confirm {
+  display: block;
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.da-confirm input {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.da-confirm input:focus {
+  outline: none;
+  border-color: var(--brand-600);
+}
+.da-err {
+  color: var(--danger);
+}
+/* Destructive, and deliberately NOT the visually dominant button — the name has already
+   been typed by the time it enables, which is the real confirmation step. */
+.da-go:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.da-go:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --- Legal footer (marketing + app) ---------------------------------------------------
+   Razorpay's activation reviewer looks for footer links, not just live URLs. Quiet and
+   typographic — this is a document trail, not a nav bar. */
+.lf {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 26px 40px 34px;
+  margin-top: 56px;
+}
+.lf-compact {
+  margin-top: 0;
+  padding: 18px 40px 22px;
+}
+.lf-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 12px;
+}
+.lf-links a {
+  font-size: 14px;
+  color: var(--secondary);
+  text-decoration: none;
+}
+.lf-links a:hover {
+  color: var(--brand-700);
+  text-decoration: underline;
+}
+.lf-meta {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  .lf,
+  .lf-compact {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+
+/* The two legal links that ride the reader watermark. Free tier and demos only — where the
+   watermark is suppressed this never renders, so a paid customer's own domain carries no
+   Quink links at all. Sits beside "Made with Quink", visibly subordinate to the customer's
+   own copyright, which is the first thing in that row. */
+.rs-ft-legal {
+  display: inline-flex;
+  gap: 14px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid var(--rs-border, currentColor);
+}
+.rs-ft-legal a {
+  opacity: 0.75;
+}
+.rs-ft-legal a:hover {
+  opacity: 1;
+}

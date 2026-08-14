@@ -24,3 +24,11 @@ eval/results.csv
 worker/.env
 web/.env
 
+
+# Legal pages are GENERATED from /legal/*.md by web/scripts/build-legal.mjs at build time.
+# Never commit them: two copies of a legal promise is exactly how the published page and the
+# document a human reviews drift apart (LEGAL-IMPLEMENTATION §7). The markdown is the source.
+web/public/privacy.html
+web/public/terms.html
+web/public/refunds.html
+web/public/contact.html

@@ -1,0 +1,31 @@
+# Quink — robots.txt
+#
+# ONE FILE, EVERY HOST. This is served from the same Vercel deployment for quink.online, for
+# every {subdomain}.quink.online help center, and for every customer custom domain. It
+# therefore cannot say anything host-specific, which rules out two things people reach for:
+#
+#   * `Disallow: /` to hide demo help centers — it would also de-index every PAID customer's
+#     help center, which is something they are paying for. Per-KB indexing is decided by
+#     `noindex` from PLANS[plan], applied as a meta tag by the reader.
+#   * a Sitemap: line — the sitemap is per-help-center and served by the WORKER at
+#     /reader/{subdomain}/sitemap.xml on a different origin, so a single absolute URL here
+#     would be wrong for every host but one.
+#
+# The four legal pages are called out explicitly. Nothing here disallows them and nothing
+# could, but Google's OAuth verification and Razorpay's activation review both fetch these
+# URLs, and an explicit Allow is cheap insurance against a future blanket rule landing above
+# them. They must stay crawlable.
+
+User-agent: *
+
+Allow: /privacy
+Allow: /terms
+Allow: /refunds
+Allow: /contact
+
+# Authoring surfaces. Private, useless to a crawler, and /claim/ carries a capability token
+# in the URL that must never end up in an index.
+Disallow: /app/
+Disallow: /admin
+Disallow: /claim/
+Disallow: /kb/

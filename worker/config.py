@@ -42,6 +42,15 @@ ALLOWED_ORIGINS = [
 # ownership by resolving that first segment through knowledge_bases (migration 0014).
 BUCKET_VIDEOS = "videos"
 BUCKET_FRAMES = "frames"
+# Logos, favicons and header images. Was a bare "branding" literal inside the trial purge —
+# the one bucket name that existed in three places and this table's whole point is that a
+# path is named once. Mirrors STORAGE_BUCKET_BRANDING in web/src/lib/config.ts.
+BUCKET_BRANDING = "branding"
+
+# Every bucket a KB owns. purge.py iterates THIS, so a fourth bucket added later is deleted
+# by both the trial purge and account deletion without either being edited — the failure this
+# guards against is a new bucket that only one of the two deletion paths knows about.
+KB_BUCKETS = (BUCKET_FRAMES, BUCKET_VIDEOS, BUCKET_BRANDING)
 
 # --- Entitlements (mvp-dev-plan §2) -----------------------------------------
 # LIMITS ONLY. Prices live in the `plans` table in Supabase so they can change without a
@@ -201,6 +210,30 @@ EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", SUPPORT_EMAIL)
 # is the state while the worker is serving a non-local origin, because the silent version
 # of this is how a user-facing promise goes undelivered for a month.
 EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "").lower() in ("1", "true", "yes")
+
+# --- Operator alerts (mvp-dev-plan §7) --------------------------------------
+# Telegram, not email: these are for us, and an operator channel that shares a provider with
+# customer mail goes quiet at exactly the moment you need to know why. Both unset by default,
+# same consent rule as EMAIL_ENABLED — with either missing, purge.notify_ops() logs at
+# WARNING instead, so a dev run exercises the same call path without pinging a real channel.
+#
+# NOTE: §7 specs a much wider alert set (quota, model failures, spend cap, over-cap) and
+# UI-STATE-INVENTORY §D records that none of it is built. This is the first alert to land;
+# notify_ops() is deliberately generic so the rest attach to it rather than growing a second
+# sender, but do NOT take that as licence to build them speculatively.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+# --- Account deletion (DPDP right to withdraw consent) ----------------------
+# Which plans may delete themselves without talking to a human. NOT an entitlement — it is a
+# money safety catch, which is why it is here and not in PLANS.
+#
+# A paid account with a live mandate that deletes itself keeps getting debited by a payment
+# processor that no longer has an account to point at. Razorpay Subscriptions with UPI
+# Autopay does not read our database to decide whether to charge. Closing this before the
+# mandate infrastructure exists costs one `if`; closing it after costs a refund and a
+# chargeback dispute. `internal` is here because it is Lee's own tier and carries no mandate.
+SELF_DELETE_PLANS = ("free", "internal")
 
 # --- Limits -----------------------------------------------------------------
 # Gemini's inline ceiling for Part.from_bytes. Above this the File API is required;

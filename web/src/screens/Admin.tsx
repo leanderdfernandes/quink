@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import Wordmark from '../components/Wordmark'
+import { timeAgo } from './KnowledgeBase'
 
 // The admin shell. Deliberately thin this slice: the Users / Leads / Runs / KBs tabs are
 // the next one. What is here is the entry point open-as-owner needs — a way to reach a KB
@@ -17,6 +18,9 @@ type AdminKb = {
   name: string
   subdomain: string | null
   owner_id: string
+  // Null until someone actually reads the help center (migration 0031). Read-only here —
+  // this is the North Star metric's raw input, not a control.
+  last_reader_view_at: string | null
   profiles: { email: string } | null
 }
 
@@ -71,7 +75,7 @@ export default function Admin() {
       // same query returns their own rows and nothing more.
       const { data } = await supabase
         .from('knowledge_bases')
-        .select('id, name, subdomain, owner_id, profiles(email)')
+        .select('id, name, subdomain, owner_id, last_reader_view_at, profiles(email)')
         .order('created_at', { ascending: false })
       if (!cancelled) setKbs((data as unknown as AdminKb[]) ?? [])
     })()
@@ -129,6 +133,7 @@ export default function Admin() {
               <th>Help center</th>
               <th>Owner</th>
               <th>Address</th>
+              <th>Last read</th>
               <th />
             </tr>
           </thead>
@@ -138,6 +143,10 @@ export default function Admin() {
                 <td>{k.name}</td>
                 <td className="cap">{k.profiles?.email ?? '—'}</td>
                 <td className="cap">{k.subdomain ?? '—'}</td>
+                {/* Null is "never read", which is the honest value and is not backfilled. */}
+                <td className="cap">
+                  {k.last_reader_view_at ? timeAgo(k.last_reader_view_at) : '—'}
+                </td>
                 <td style={{ display: 'flex', gap: 6 }}>
                   <button
                     className="btn btn-ghost"
