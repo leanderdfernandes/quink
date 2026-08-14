@@ -192,4 +192,4 @@ between us.
 ---
 
 **Contact:** support@quink.online  
-**Operated by:** Leander Denzil Fernandes, H.No 339, Near Bhurgeancho khuris chapel, Salvador do Mundo, VTC: Salvador Do Mundo
+**Operated by:** Leander Denzil Fernandes, H. No. 339, Near Bhurgeancho Khuris Chapel, P.O. Salvador do Mundo, Goa 403101, India

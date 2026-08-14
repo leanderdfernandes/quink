@@ -4,7 +4,7 @@ Quink is operated by **Leander Denzil Fernandes**, a sole proprietorship registe
 trading as Quink.
 
 **Email:** support@quink.online  
-**Address:** H.No 339, Near Bhurgeancho khuris chapel, Salvador do Mundo, VTC: Salvador Do Mundo
+**Address:** H. No. 339, Near Bhurgeancho Khuris Chapel, P.O. Salvador do Mundo, Goa 403101, India
 
 One person reads this inbox. You will get a real reply, usually within a day, and always
 within 24 hours on weekdays.

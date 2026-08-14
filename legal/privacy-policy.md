@@ -252,7 +252,7 @@ Minor clarifications may be made without notice.
 
 **Grievance Officer:** Leander Denzil Fernandes  
 **Email:** support@quink.online  
-**Address:** H.No 339, Near Bhurgeancho khuris chapel, Salvador do Mundo, VTC: Salvador Do Mundo
+**Address:** H. No. 339, Near Bhurgeancho Khuris Chapel, P.O. Salvador do Mundo, Goa 403101, India
 
 We acknowledge within 24 hours and resolve within 15 days, and in no case later than 90 days.
 
