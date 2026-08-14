@@ -2,7 +2,7 @@
 
 **Last updated: 13 August 2026**
 
-Quink is operated by [PROPRIETOR LEGAL NAME], a sole proprietorship registered in India
+Quink is operated by Leander Denzil Fernandes, a sole proprietorship registered in India
 (Udyam), trading as Quink at quink.online.
 
 This policy explains what we collect, why, how long we keep it, and how to get rid of it.
@@ -250,9 +250,9 @@ Minor clarifications may be made without notice.
 
 ## 15. Contact and grievances
 
-**Grievance Officer:** [PROPRIETOR LEGAL NAME]
-**Email:** support@quink.online
-**Address:** [BUSINESS ADDRESS]
+**Grievance Officer:** Leander Denzil Fernandes  
+**Email:** support@quink.online  
+**Address:** H.No 339, Near Bhurgeancho khuris chapel, Salvador do Mundo, VTC: Salvador Do Mundo
 
 We acknowledge within 24 hours and resolve within 15 days, and in no case later than 90 days.
 

@@ -2,7 +2,7 @@
 
 **Last updated: 13 August 2026**
 
-Quink is operated by [PROPRIETOR LEGAL NAME], a sole proprietorship registered in India,
+Quink is operated by Leander Denzil Fernandes, a sole proprietorship registered in India,
 trading at quink.online.
 
 ---

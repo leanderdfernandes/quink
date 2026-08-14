@@ -1,10 +1,10 @@
 # Contact
 
-Quink is operated by **[PROPRIETOR LEGAL NAME]**, a sole proprietorship registered in India
-(Udyam Registration No. [UDYAM NUMBER]), trading as Quink.
+Quink is operated by **Leander Denzil Fernandes**, a sole proprietorship registered in India,
+trading as Quink.
 
-**Email:** support@quink.online
-**Address:** [BUSINESS ADDRESS]
+**Email:** support@quink.online  
+**Address:** H.No 339, Near Bhurgeancho khuris chapel, Salvador do Mundo, VTC: Salvador Do Mundo
 
 One person reads this inbox. You will get a real reply, usually within a day, and always
 within 24 hours on weekdays.
@@ -14,7 +14,7 @@ within 24 hours on weekdays.
 **Support and billing** — support@quink.online
 
 **Privacy requests and grievances** — support@quink.online, marked "Privacy". Grievance
-Officer: [PROPRIETOR LEGAL NAME]. We acknowledge within 24 hours and resolve within 15 days,
+Officer: Leander Denzil Fernandes. We acknowledge within 24 hours and resolve within 15 days,
 and never later than 90 days.
 
 **Takedown requests** — support@quink.online, marked "Takedown". Include the URL. If it's a

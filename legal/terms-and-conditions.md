@@ -2,7 +2,7 @@
 
 **Last updated: 13 August 2026**
 
-These terms are the agreement between you and [PROPRIETOR LEGAL NAME], a sole proprietorship
+These terms are the agreement between you and Leander Denzil Fernandes, a sole proprietorship
 registered in India (Udyam), trading as Quink at quink.online. By creating an account you
 agree to them.
 
@@ -191,5 +191,5 @@ between us.
 
 ---
 
-**Contact:** support@quink.online
-**Operated by:** [PROPRIETOR LEGAL NAME], [BUSINESS ADDRESS]
+**Contact:** support@quink.online  
+**Operated by:** Leander Denzil Fernandes, H.No 339, Near Bhurgeancho khuris chapel, Salvador do Mundo, VTC: Salvador Do Mundo
