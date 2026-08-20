@@ -570,6 +570,61 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   accounts — what a member can do, the four refusals, re-invite after removal, quota
   attribution, and the claim wipe. Run it after touching anything membership-shaped.
 
+## 10k. Concurrent editing (locked — migration 0036)
+
+- **Every autosave is a CONDITIONAL UPDATE on `articles.updated_at`.** The editor holds the
+  value it last read and writes `where id = ? and updated_at = ?`. Zero rows is the
+  conflict: the write is REFUSED, nothing is merged, nothing is retried, and the user's
+  unsaved text stays in the editor until they choose. Last-write-wins autosave with two
+  admins in one article is silent data loss, and silent is the part that matters — there
+  was no error, no conflict and nothing to report.
+- **An article edit IS the claim; a step edit claims first, then writes.** Claiming and
+  then writing the article patch would bump `updated_at` twice and leave the editor's own
+  base stale, so its next save would conflict with itself. One update carries the patch.
+- **`articles.updated_at` does not move when a step is written** (LEARNINGS #9) — the two
+  `touch_updated_at` triggers each bump their own row. That is why the claim exists rather
+  than a trigger on `steps`: a trigger would fire for every step the PIPELINE writes,
+  adding two dozen writes to `articles` per generation. Do not add one without reading
+  LEARNINGS #9 first.
+- **`last_edited_by` / `last_edited_at` are stamped by the claim**, so they are written on
+  every successful save and by nothing else. They exist so the conflict strip can name a
+  person instead of saying "someone".
+- **The strip is evergreen, not amber, and it never writes on its own.** `Keep mine`
+  rebases onto what is on the server and writes on the user's NEXT edit — an overwrite the
+  user chose, with the other author named on screen. `Reload their version` discards the
+  local copy only. Neither may silently overwrite anyone.
+- **NOT guarded: publish, delete, discard, undo and frame picks.** They are explicit
+  one-shot actions rather than the debounced text path, and they are recorded as a known
+  gap in OPEN-ITEMS rather than half-covered here.
+- **Presence keys ONE CHANNEL PER CONNECTION, never per user.** Two tabs under one presence
+  key leave a permanent ghost — the second untrack never empties the key, verified against
+  the live project — and a ghost that never clears teaches people to ignore the signal.
+  The hook de-duplicates by `user_id` when rendering, so one person with three tabs is one
+  face. `web/checks/presence.check.mjs` asserts exactly this.
+- **No Yjs, no CRDT, no operational transform.** Presence prevents most collisions and the
+  guard catches the rest. A merge layer is weeks of work to solve a problem two people in
+  one help center do not have.
+- `supabase/test_guard.py` reproduces the editor's save path with two real sessions and
+  proves no text is lost in either window. Run it after touching the save path.
+
+## 10l. The watermark predicate (locked — migration 0036)
+
+- **`kb_watermark(plan, is_demo)` is the ONE definition**, called by `reader_kb()` and by
+  `kb_entitlements()`. The rule is "the owner plan's flag OR the KB is a demo" — the second
+  half is what makes claiming a reverse demo change nothing visually (§10d), and it has
+  been silently dropped from `reader_kb` once already. Never re-implement it; a second copy
+  would drift, and the drift shows up as a customer's preview disagreeing with their live
+  site.
+- **`kb_entitlements(p_kb_id)` is how the SPA learns limits.** It resolves the OWNER's plan,
+  is gated on `can_edit_kb()`, and returns limits, usage and rendering flags — but the tier
+  NAME only to the owner. Limits and usage are operational; billing is not. `kb_runs_used`
+  is folded into it and gone: two functions answering "how many runs" is two answers that
+  can disagree.
+- **`person_name()` resolves every display name**, from `auth.users` OAuth metadata with the
+  email's local part as the fallback. `kb_entitlements`, `kb_people` and `invite_preview`
+  all call it. It is SECURITY INVOKER and revoked from clients, so it only resolves inside
+  a definer function.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock

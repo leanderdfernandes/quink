@@ -160,6 +160,36 @@ decision or a trap we already paid for once. Read before repeating a mistake.
 
 ---
 
+### 9. `articles.updated_at` does not move when a step is written
+
+The `articles_touch` and `steps_touch` triggers each bump their OWN row's `updated_at`.
+Nothing propagates a step write up to its article. So:
+
+- **`articles.updated_at` means "the article ROW changed"** — title, subtitle, visibility,
+  slug, folder — and nothing else. It does not mean "this article changed".
+- The editor's own load path already knew this without saying so: it computes whether a
+  draft is ahead of what readers see as `max(article.updated_at, ...steps.updated_at)`.
+  That `max` is the tell, and it is the only place the whole truth was assembled.
+
+This matters well beyond the feature that found it. Any query that asks "what changed
+recently" over `articles` alone is silently blind to the bulk of editing, because the bulk
+of editing is step text. A "recently edited" list, a staleness sweep, an incremental
+re-index or a cache invalidation built on that column would all look correct and be wrong
+in the same direction.
+
+**The stale-write guard (Phase 3) does not add a trigger for this.** A trigger on `steps`
+that touched the parent would fire for every step the PIPELINE writes too — a generated
+article is a dozen step inserts plus a dozen Stage-2 updates — turning one generation into
+two dozen extra writes on the busiest table in the product, and doing it inside the path
+that already has the tightest latency budget. Instead the editor CLAIMS the article row
+before a step write: one conditional update that both proves nothing moved underneath and
+stamps `last_edited_by`. Same guarantee, no change to what the table means, and the
+pipeline is untouched.
+
+If a trigger is ever added anyway, `worker/pipeline.py` needs looking at first.
+
+---
+
 ## Accepted holes (known, deliberately not fixed)
 
 ### A. Deleting an account resets the free tier

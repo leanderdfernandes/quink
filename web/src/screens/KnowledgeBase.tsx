@@ -11,7 +11,7 @@ import DeleteAccountModal from '../components/DeleteAccountModal'
 import LegalFooter from '../components/LegalFooter'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
 import { listInFlightJobs } from '../lib/jobs'
-import { limitsFor, runsUsed } from '../lib/plans'
+import { runsLeftFrom, type Entitlements } from '../lib/plans'
 import type { Person } from '../lib/people'
 import AvatarStack from '../components/AvatarStack'
 import { publicBrandingUrl } from '../lib/storage'
@@ -47,6 +47,10 @@ type Props = {
   // NULL when this account is not the owner: a member cannot read the owner's tier and must
   // not be shown it (team-access-spec L7). Every billing surface below keys on that.
   plan: string | null
+  // The OWNER's limits and usage for this KB, resolved by kb_entitlements(). This is what
+  // the run meter and the trial clock read — never the caller's own plan, which is the
+  // wrong answer for everyone except the owner.
+  ent: Entitlements | null
   // Owner of this help center. Not Quink staff, and not "can edit".
   isOwner: boolean
   userId: string | null
@@ -141,6 +145,7 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 export default function KnowledgeBase({
   kb,
   plan,
+  ent,
   isOwner,
   userId,
   people,
@@ -188,9 +193,6 @@ export default function KnowledgeBase({
   const [confirmFolderId, setConfirmFolderId] = useState<string | null>(null)
   const [confirmArticleId, setConfirmArticleId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  // AI video runs spent, read from the append-only jobs ledger — never from a counter on
-  // the KB. Deleting an article does not give a run back, so this number only rises.
-  const [runs, setRuns] = useState(0)
   // The day-7 banner is dismissible PER SESSION only (pricing-spec §7) — never permanently.
   const [bannerHidden, setBannerHidden] = useState(false)
   const renameInput = useRef<HTMLInputElement>(null)
@@ -198,14 +200,13 @@ export default function KnowledgeBase({
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const [{ data }, fs, used, fb] = await Promise.all([
+      const [{ data }, fs, fb] = await Promise.all([
         supabase
           .from('articles')
           .select('*')
           .eq('kb_id', kb.id)
           .order('created_at', { ascending: false }),
         listFolders(kb.id),
-        runsUsed(kb.id),
         // Granted to authenticated since migration 0025 and called by nothing until now.
         // It proves ownership through auth.uid() itself, so there is no filter to add here.
         supabase.rpc('article_feedback_summary', { p_kb_id: kb.id }),
@@ -214,7 +215,6 @@ export default function KnowledgeBase({
       const rows = (data as ArticleRow[]) ?? []
       setArticles(rows)
       setFolders(fs)
-      setRuns(used)
 
       const summary: Record<string, Feedback> = {}
       for (const r of (fb.data ?? []) as {
@@ -561,13 +561,16 @@ export default function KnowledgeBase({
 
   // Only tiers with a lifetime cap get a counter. The unit is video RUNS — writing an
   // article by hand is unlimited on every tier, so the copy must not imply otherwise.
-  const runLimit = plan ? limitsFor(plan).lifetime_runs : null
-  const left = runLimit === null ? null : Math.max(runLimit - runs, 0)
+  // Usage and the cap come from the SAME read (kb_entitlements), so the meter and the
+  // number beside it can never disagree — they used to be two separate queries.
+  const runs = ent?.runs_used ?? 0
+  const runLimit = ent?.lifetime_runs ?? null
+  const left = runsLeftFrom(ent)
 
   // Runs and days both drain. ONE pill, escalating with the clock (pricing-spec §6).
   // With no plan to read — an admin inside someone else's help center — there is no clock
   // to show. The countdown is a bill arriving, and it is not theirs.
-  const trial = plan ? trialFor(kb, plan) : { stage: 'none' as const, daysLeft: 0, graceLeft: 0 }
+  const trial = ent ? trialFor(kb, ent.expiry_days) : { stage: 'none' as const, daysLeft: 0, graceLeft: 0 }
   // Both are billing surfaces — a countdown to a bill and a button to pay it — so neither
   // renders for someone who cannot act on them (team-access-spec L7).
   const pill = isOwner ? trialPillLabel(trial, left) : null
@@ -874,16 +877,27 @@ export default function KnowledgeBase({
             </div>
           )}
 
-          {/* An admin gets the one number that changes what they can do — whether this help
-              center still has recordings in it — and nothing else. No cap, because the cap
-              lives on the owner's plan and their profile is not readable from here; no
-              plan name, no countdown, no upgrade link. See OPEN-ITEMS D.2. */}
-          {!isOwner && runs > 0 && (
+          {/* An admin gets the numbers that change what they can DO — how many recordings
+              this help center has left — and nothing that only the owner can act on. No
+              plan name, no countdown, no upgrade link. The cap is the owner's, resolved by
+              kb_entitlements(); before that existed this line could not show one at all. */}
+          {!isOwner && ent && (runLimit !== null || runs > 0) && (
             <div className="rail-trial">
+              {left !== null && runLimit !== null && (
+                <div
+                  className="rail-meter"
+                  role="img"
+                  aria-label={`${runLimit - left} of ${runLimit} video runs used`}
+                >
+                  <i style={{ width: `${((runLimit - left) / runLimit) * 100}%` }} />
+                </div>
+              )}
               <p>
                 <b>Video guides</b>
-                {plural(runs, 'recording')} turned into a guide here. Writing an article by
-                hand is unlimited.
+                {runLimit === null
+                  ? `${plural(runs, 'recording')} turned into a guide here.`
+                  : `${runLimit - (left ?? 0)} of ${runLimit} used.`}{' '}
+                Writing an article by hand is unlimited.
               </p>
             </div>
           )}

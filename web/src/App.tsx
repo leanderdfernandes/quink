@@ -5,7 +5,15 @@ import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
 import { useQueue } from './lib/queue'
 import QueueDock from './components/QueueDock'
-import { DEFAULT_PLAN, fetchProfile, lanesFor, limitsFor, runsUsed, type PlanId } from './lib/plans'
+import {
+  DEFAULT_PLAN,
+  fetchEntitlements,
+  fetchProfile,
+  lanesFor,
+  runsLeftFrom,
+  type Entitlements,
+  type PlanId,
+} from './lib/plans'
 import {
   fetchKb,
   listKbs,
@@ -15,7 +23,6 @@ import {
 } from './lib/kbs'
 import { clearJustClaimed, isJustClaimed, takeClaimToken } from './lib/claim'
 import {
-  displayName,
   fetchAccessState,
   fetchPeople,
   takeInviteToken,
@@ -127,7 +134,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   // Runs spent, off the append-only jobs ledger. Held here so the dropzone can refuse a
   // capped user at file selection instead of after a 90-second upload.
-  const [runs, setRuns] = useState<number | null>(null)
+  // Everything this account may know about THIS help center: the owner's limits, the
+  // owner's usage, and the flags the previews render from. Null until it resolves, and null
+  // for a KB this account cannot edit. It replaces reading limits off `plan`, which was
+  // only ever the right answer for the owner.
+  const [ent, setEnt] = useState<Entitlements | null>(null)
   // Set when a generation is refused before any job row exists — the only failure the
   // polling screen can't see, so App renders it.
   const [failureCode, setFailureCode] = useState<string | null>(null)
@@ -158,13 +169,16 @@ export default function App() {
     kbId: kb?.id ?? null,
     ownerId: userId,
     product,
+    // Upload concurrency only. A member has no plan to read, so this stays at the free
+    // default for them — conservative, and the worker's LANES is the real limit anyway.
     lanes: lanesFor(plan ?? DEFAULT_PLAN),
     // Display + the client-side hold only. The worker enforces the real wall before the
     // Gemini call — the SPA reads counters for display, never for permission (§10b).
-    runsLeft:
-      !plan || limitsFor(plan).lifetime_runs === null || runs === null
-        ? null
-        : Math.max(limitsFor(plan).lifetime_runs! - runs, 0),
+    // The dropzone's local refusal, now correct for a member too: it reads the OWNER's cap
+    // and the OWNER's usage. Before this it read the caller's own plan, so a member's
+    // over-quota upload was never refused here and only failed at the worker — after the
+    // file was already in Storage, stranding an object nothing in the database named.
+    runsLeft: runsLeftFrom(ent),
     onQuotaBlocked: () => setShowUpgrade(true),
   })
   // The post-auth effect must not re-run every time the queue changes — it is keyed on the
@@ -315,7 +329,7 @@ export default function App() {
       void fetchPeople(found.id).then((p) => !cancelled && setPeople(p))
       // The run count is billed to the KB's OWNER, so it can only be asked for once we know
       // which KB we are in — this account has no quota of its own inside someone else's.
-      setRuns(await runsUsed(found.id))
+      setEnt(await fetchEntitlements(found.id))
       if (cancelled) return
 
       // The URL is the record of where you are. Put it there as soon as we know, so a
@@ -362,7 +376,7 @@ export default function App() {
   const refreshAfterRun = useCallback(async () => {
     if (kb) {
       setKb(await fetchKb(kb.id))
-      setRuns(await runsUsed(kb.id))
+      setEnt(await fetchEntitlements(kb.id))
     }
   }, [kb])
 
@@ -456,24 +470,38 @@ export default function App() {
   // Owner of THIS help center. Not Quink staff, and not "can edit" — this is the line
   // billing sits behind.
   const isOwner = !!kb && !!userId && kb.owner_id === userId
-  // Who to point an admin at. From kb_people(), which is the only projection of another
-  // person's name this app has — profiles stays closed.
-  const ownerName = (() => {
-    const o = people.find((p) => p.is_owner)
-    return o ? displayName(o) : null
-  })()
+  // Identity for presence, straight off the session: Google puts a name in the token's
+  // metadata, and the email's local part is the fallback everywhere else in the app.
+  // Deliberately not another round trip — this is already in memory.
+  const me = session?.user
+    ? {
+        user_id: session.user.id,
+        display_name:
+          (session.user.user_metadata?.full_name as string | undefined)?.trim() ||
+          (session.user.user_metadata?.name as string | undefined)?.trim() ||
+          session.user.email?.split('@')[0] ||
+          'Someone',
+        avatar_url: (session.user.user_metadata?.avatar_url as string | undefined) ?? null,
+      }
+    : null
+
+  // Who to point an admin at. kb_entitlements() resolves it through person_name(), the
+  // same helper the People list and the invite screen use — profiles stays closed.
+  const ownerName = ent?.owner_name ?? null
   // The cap is unknowable from a member's session, so there is none to enforce locally. That
   // is safe by §10b: the client may REFUSE work it can already tell will be rejected, but it
   // may never GRANT — the worker's wall runs on every request either way.
-  const runLimit = plan ? limitsFor(plan).lifetime_runs : null
-  const runsLeft = runLimit === null || runs === null ? null : Math.max(runLimit - runs, 0)
+  const runsLeft = runsLeftFrom(ent)
 
   // The free-trial clock. Computed here so the wizard and the KB shell read the same
   // number on the same day — the countdown is only defensible if it never disagrees with
   // itself or with the email (pricing-spec §2).
   // Billing state, so it is the owner's alone (spec L7). A member sees no countdown, no
   // plan name and no upgrade path — they are not the person who can act on any of it.
-  const trial = kb && plan ? trialFor(kb, plan) : null
+  // The clock comes from the OWNER's expiry_days now, so it is right inside a claimed demo
+  // and absent on a paid help center whoever is looking. Still rendered only for the owner:
+  // a countdown is a bill arriving, and it is not a member's to act on.
+  const trial = kb && ent ? trialFor(kb, ent.expiry_days) : null
 
   // A run that died BEFORE a job row existed — an upload that failed, a refused start. The
   // 'failed' phase was built for exactly this and stopped being reachable when the queue took
@@ -651,7 +679,7 @@ export default function App() {
           kb={kb}
           userId={userId}
           isOwner={isOwner}
-          plan={plan}
+          ent={ent}
           onBack={() => navigate(`/app/${kb.id}`)}
           onUpgrade={() => setShowUpgrade(true)}
           // Leaving takes away the thing you are looking at. Back to the root, which
@@ -681,11 +709,9 @@ export default function App() {
         <Editor
           articleId={routeArticleId ?? watchItem?.articleId ?? null}
           kb={kb}
-          // Preview flags only (watermark / noindex). With no plan to read — an admin
-          // inside someone else's help center — this falls back to the free tier, which
-          // errs toward SHOWING a watermark that may not be on the live site rather than
-          // hiding one that is. Wrong in the harmless direction; see OPEN-ITEMS D.2.
-          plan={plan ?? DEFAULT_PLAN}
+          me={me}
+          people={people}
+          ent={ent}
           jobId={watched?.jobId ?? null}
           // Every state BEFORE a job row exists, not just 'uploading'. A queued file waiting
           // for a lane, and — the long one — a finished upload while POST /api/generate is
@@ -742,6 +768,7 @@ export default function App() {
         <KnowledgeBaseScreen
           kb={kb}
           plan={plan}
+          ent={ent}
           isOwner={isOwner}
           people={people}
           userId={userId}
@@ -798,8 +825,7 @@ export default function App() {
         {adminBar}
         <ThemeSettings
           kb={kb}
-          // Preview flags only — same fallback and same reason as the editor above.
-          plan={plan ?? DEFAULT_PLAN}
+          ent={ent}
           onBack={() => setPhase('kb')}
           onSaved={(updated) => setKb(updated)}
         />

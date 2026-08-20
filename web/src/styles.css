@@ -7622,3 +7622,57 @@ a.rs-crumb-link:hover {
   margin: 8px 0 4px;
   padding: 0 8px;
 }
+
+/* --- presence + the stale-write guard (Phase 3) -----------------------------
+   One face and one line in the editor bar, and one strip under it. Nothing
+   floats, nothing pulses, nothing follows a cursor: the job is stopping two
+   people overwriting each other, not simulating a collaborative word processor. */
+.ed-presence {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--secondary);
+  white-space: nowrap;
+}
+.ed-presence .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+/* Evergreen, not amber. Their save landed and ours did not — that is information,
+   and every character of the unsaved text is still on screen. Amber would say
+   something went wrong, and nothing did. */
+.ed-conflict {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--brand-50);
+  border-bottom: 1px solid var(--brand-100);
+  border-left: 3px solid var(--brand-600);
+  padding: 11px 20px;
+}
+.ed-conflict-txt {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  color: var(--brand-900);
+}
+.ed-conflict-txt b {
+  font-weight: 600;
+}
+.ed-conflict-txt span {
+  font-size: 12px;
+  color: var(--secondary);
+}
+.ed-conflict-acts {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.ed-conflict-acts .btn {
+  padding: 6px 13px;
+  font-size: 13px;
+}

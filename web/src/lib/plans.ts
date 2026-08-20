@@ -73,19 +73,50 @@ export function limitsFor(plan: string | null | undefined): PlanLimits {
   return PLANS[(plan ?? DEFAULT_PLAN) as PlanId] ?? PLANS[DEFAULT_PLAN]
 }
 
-// Runs charged to this KB's OWNER, counted off the append-only jobs ledger. Display only —
-// the worker enforces the cap before the Gemini call, and the DB has a backstop trigger.
+// --- Entitlements, resolved for a KB rather than guessed from the caller -----------------
 //
-// Deliberately NOT a stored counter: deleting an article must never hand a run back, and
-// count(*) over rows that outlive their articles is the whole mechanism.
+// This replaces reading limits off the signed-in user's plan, which was only ever correct
+// for the owner. A member sits inside someone else's help center spending the OWNER's
+// allowance, and `profiles` is closed, so the SPA cannot resolve any of this itself — it
+// used to fall back to `free` and render a watermark badge to somebody editing a paying
+// customer's help center.
 //
-// Goes through an rpc rather than counting the table: jobs_select_own is keyed on
-// `user_id`, so an admin who is not the owner cannot see the rows their quota is measured
-// in — and widening that policy would show someone who claimed a demo the previous
-// owner's ledger.
-export async function runsUsed(kbId: string): Promise<number> {
-  const { data } = await supabase.rpc('kb_runs_used', { p_kb_id: kbId })
-  return (data as number) ?? 0
+// One call answers everything a screen needs. It deliberately carries no price and no
+// marketing copy, and `plan` — the tier NAME — comes back null unless you own the KB.
+// Limits and usage are operational; billing is not. That line is load-bearing.
+//
+// `watermark` is computed by the same database function the READER uses (kb_watermark, in
+// migration 0036), so the preview and the live site cannot disagree. Never recompute it
+// here from a plan id.
+export type Entitlements = {
+  is_owner: boolean
+  /** OWNER ONLY — null for a member. Never render it; it exists for owner-only screens. */
+  plan: PlanId | null
+  owner_name: string | null
+  /** null = uncapped */
+  lifetime_runs: number | null
+  runs_used: number
+  /** null = no trial clock */
+  expiry_days: number | null
+  can_invite: boolean
+  watermark: boolean
+  noindex: boolean
+}
+
+// Null when this account cannot edit the KB — the same answer a stranger's probe gets from
+// the database, which returns no row rather than a row of nulls.
+export async function fetchEntitlements(kbId: string): Promise<Entitlements | null> {
+  const { data } = await supabase.rpc('kb_entitlements', { p_kb_id: kbId })
+  return ((data as Entitlements[] | null)?.[0]) ?? null
+}
+
+// Runs left before the wall, or null when there is no wall. Display and the local refusal
+// only — the worker enforces the real cap before the Gemini call, and the DB has a backstop
+// trigger. The client may REFUSE work it can already tell will be rejected; it may never
+// GRANT (§10b).
+export function runsLeftFrom(ent: Entitlements | null): number | null {
+  if (!ent || ent.lifetime_runs === null) return null
+  return Math.max(ent.lifetime_runs - ent.runs_used, 0)
 }
 
 // This account's own plan and staff flag, in one read.

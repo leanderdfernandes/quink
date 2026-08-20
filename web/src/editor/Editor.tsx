@@ -8,7 +8,8 @@ import { pendingEditCount } from '../lib/pendingEdits'
 import { createFolder, listFolders } from '../lib/folders'
 import { COPY, helpCenterUrl } from '../lib/config'
 import { articleState, buildProgress } from '../lib/buildState'
-import { limitsFor } from '../lib/plans'
+import type { Entitlements } from '../lib/plans'
+import { usePresence, type Peer } from '../lib/usePresence'
 import { ReaderChrome } from '../reader/ReaderSite'
 import StepThumb from '../components/StepThumb'
 import StepCard from './StepCard'
@@ -51,7 +52,10 @@ type Props = {
   articleId: string | null
   kb: KB
   // The OWNER's plan (profiles.plan), not the KB's — entitlements are owner-level.
-  plan: string
+  // The OWNER's limits and flags for this KB (kb_entitlements). Replaces the plan id
+  // the preview used to derive watermark/noindex from — which was only correct for
+  // the owner.
+  ent: Entitlements | null
   onBack: () => void
   // The publish-moment handoff into theming (ux-spec §5). An offer, never a redirect.
   onOpenTheme: () => void
@@ -65,6 +69,11 @@ type Props = {
   onArticleResolved?: (articleId: string) => void
   onRetryStarted?: (jobId: string) => void
   onReupload?: () => void
+  // Who is looking at this article, for presence and for naming whoever moved the row out
+  // from under a save. `people` is the KB's roster (kb_people) — the only projection of
+  // another person's name this app has.
+  me: Peer | null
+  people: { id: string; name: string | null; email: string }[]
 }
 
 // An undo checkpoint — content only, no DB ids (a restore reinserts fresh rows).
@@ -173,8 +182,10 @@ const InfoIcon = () => (
 
 export default function Editor({
   articleId,
+  me,
+  people,
   kb,
-  plan,
+  ent,
   onBack,
   onOpenTheme,
   jobId = null,
@@ -241,6 +252,18 @@ export default function Editor({
   // once and hand control back to the normal editing path.
   const [reloadKey, setReloadKey] = useState(0)
 
+  // --- The stale-write guard (team-access-spec §8) --------------------------------------
+  // Autosave was last-write-wins: two admins in one article meant one person's paragraph
+  // vanished with no error, no conflict and nothing to report. This is the whole reason
+  // Phase 3 exists.
+  //
+  // `base` is the `articles.updated_at` this editor last saw. Every save is a CONDITIONAL
+  // update on it — `where id = ? and updated_at = ?` — so a row that moved underneath us
+  // matches zero rows, and zero rows is the conflict. No merge, no clobber, no retry: the
+  // user's unsaved text stays in the editor, untouched, until they choose what to do.
+  const base = useRef<string | null>(null)
+  const [conflict, setConflict] = useState<{ name: string } | null>(null)
+
   // The run behind an article we did NOT arrive at from the landing. Opening a
   // half-written article from the article list gives us an article id and nothing else, so
   // the job has to be looked up or the build bar has no stage and never ends.
@@ -281,6 +304,10 @@ export default function Editor({
       if (cancelled) return
       const art = a as ArticleRow
       setArticle(art)
+      // The row as we found it. Every later save is conditional on this value, and every
+      // successful save replaces it with the one the database hands back.
+      base.current = art.updated_at
+      setConflict(null)
       const rows = (s as StepRow[]) ?? []
       setSteps(rows)
       setVisibility(art.visibility)
@@ -318,6 +345,10 @@ export default function Editor({
       cancelled = true
     }
   }, [articleId, kb.id, jobId, reloadKey])
+
+  // Who else is in here. One quiet line in the top bar — the warning that means nobody has
+  // to be caught by the guard below in the first place.
+  const peers = usePresence(kb.id, articleId, me)
 
   // --- The run, if there is one ---------------------------------------------------
   const watchJobId = jobId ?? foundJobId
@@ -442,19 +473,95 @@ export default function Editor({
     void applySnapshot(h.stack[h.pointer])
   }
 
+  // Claim the article row for this save, and optionally carry an article patch with it.
+  //
+  // ONE conditional update does both, because two would race each other: claiming first and
+  // then writing the patch would bump `updated_at` a second time and leave our own base
+  // stale, so the NEXT save would conflict with ourselves. A step write is different — it
+  // touches `steps`, not `articles` — so there the claim runs first and stands alone.
+  //
+  // `last_edited_by` / `last_edited_at` ride along on every successful save. Phase 1 added
+  // both columns and nothing wrote them; they are what lets the conflict strip name a
+  // person instead of saying "someone".
+  const claim = useCallback(
+    async (patch: Partial<ArticleRow> = {}) => {
+      // Before the article row exists (the first ~15s of a run) there is nothing to guard
+      // and nothing to guard against: the pipeline owns the document and the editor is
+      // locked.
+      if (!articleId || !base.current) return
+      const { data, error } = await supabase
+        .from('articles')
+        .update({
+          ...patch,
+          last_edited_by: me?.user_id ?? null,
+          last_edited_at: new Date().toISOString(),
+        })
+        .eq('id', articleId)
+        .eq('updated_at', base.current)
+        .select('updated_at, last_edited_by')
+      if (error) throw error
+
+      if (!data || data.length === 0) {
+        // Zero rows: someone else saved between our last read and now. REFUSE — nothing is
+        // written, including the patch that was riding along.
+        const { data: row } = await supabase
+          .from('articles')
+          .select('last_edited_by')
+          .eq('id', articleId)
+          .maybeSingle()
+        const who = people.find((p) => p.id === row?.last_edited_by)
+        setConflict({ name: who?.name || who?.email?.split('@')[0] || 'Someone else' })
+        throw new Error('stale-write')
+      }
+
+      base.current = (data[0] as { updated_at: string }).updated_at
+    },
+    [articleId, me?.user_id, people],
+  )
+
+  // Every debounced write goes through here, so there is exactly one place the guard can be
+  // forgotten from. A step write claims first and then writes; an article write IS the
+  // claim.
+  const guarded = useCallback(
+    (write: (() => Promise<void>) | null, patch?: Partial<ArticleRow>) => {
+      schedule(async () => {
+        await claim(patch ?? {})
+        if (write) await write()
+      })
+    },
+    [schedule, claim],
+  )
+
+  // "Keep mine" — dismiss, and write NOTHING now. The next edit rebases onto what is on the
+  // server and saves over it, which is a choice this person just made with the other
+  // version's author named on screen. It is never silent, and it never happens on its own.
+  async function keepMine() {
+    const { data } = await supabase
+      .from('articles')
+      .select('updated_at')
+      .eq('id', articleId!)
+      .maybeSingle()
+    if (data) base.current = (data as { updated_at: string }).updated_at
+    setConflict(null)
+  }
+
+  // "Reload their version" — discard the LOCAL copy only. Their save is already in the
+  // database; this just stops pretending ours exists.
+  function reloadTheirs() {
+    setConflict(null)
+    setReloadKey((k) => k + 1)
+  }
+
   function saveArticle(patch: Partial<ArticleRow>) {
     setArticle((a) => (a ? { ...a, ...patch } : a))
     setDirty(true)
-    schedule(async () => {
-      const { error } = await supabase.from('articles').update(patch).eq('id', articleId)
-      if (error) throw error
-    })
+    guarded(null, patch)
   }
 
   function saveStep(id: string, patch: Partial<StepRow>) {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
     setDirty(true)
-    schedule(async () => {
+    guarded(async () => {
       const { error } = await supabase.from('steps').update(patch).eq('id', id)
       if (error) throw error
     })
@@ -490,7 +597,7 @@ export default function Editor({
 
   function persistOrder(list: StepRow[]) {
     setDirty(true)
-    schedule(async () => {
+    guarded(async () => {
       const results = await Promise.all(
         list.map((s, i) =>
           supabase.from('steps').update({ step_number: i + 1 }).eq('id', s.id),
@@ -532,7 +639,7 @@ export default function Editor({
     )
     setSteps(next)
     bumpRev(prevStep.id)
-    schedule(async () => {
+    guarded(async () => {
       const a = await supabase
         .from('steps')
         .update({ body_text: mergedBody })
@@ -573,7 +680,7 @@ export default function Editor({
     setSteps(next)
     bumpRev(cur.id)
     clearError()
-    schedule(async () => {
+    guarded(async () => {
       const { error } = await supabase
         .from('steps')
         .update({ body_text: beforeHtml })
@@ -996,7 +1103,11 @@ export default function Editor({
         custom_domain: kb.custom_domain,
         domain_status: kb.domain_status,
         noindex: true,
-        watermark: limitsFor(plan).watermark,
+        // The database's own answer, computed by the same function the reader calls
+        // (kb_watermark, migration 0036) — not re-derived from a plan id here. Deriving it
+        // locally is how the preview came to disagree with the live site for anyone who
+        // was not the owner.
+        watermark: !!ent?.watermark,
         header_style: kb.header_style,
         header_image_path: kb.header_image_path,
         header_link_label: kb.header_link_label,
@@ -1101,6 +1212,17 @@ export default function Editor({
         </button>
 
         <div className="ed-spacer" />
+        {/* One face and one line. Nothing floating, no cursors, no typing indicator. */}
+        {peers.length > 0 && (
+          <span className="ed-presence" title={peers.map((p) => p.display_name).join(', ')}>
+            <span className="avatar av-t2" aria-hidden>
+              {peers[0].display_name.slice(0, 2).toUpperCase()}
+            </span>
+            {peers.length === 1
+              ? `${peers[0].display_name} is editing`
+              : `${peers.length} others are editing`}
+          </span>
+        )}
         {notice && <span className="ed-notice">{notice}</span>}
 
         {/* The reason, next to the thing it disables. A grey button on its own says
@@ -1122,6 +1244,7 @@ export default function Editor({
           changingVisibility={changingVisibility}
           subdomain={kb.subdomain}
           saveState={state}
+          conflict={!!conflict}
           opError={opError}
           folderName={folderName}
           onPublish={openPublish}
@@ -1134,6 +1257,25 @@ export default function Editor({
           onNotify={notify}
         />
       </header>
+
+      {/* Non-destructive, evergreen not amber: this is information, not damage. Their save
+          landed; ours did not, and every character of it is still on screen. */}
+      {conflict && (
+        <div className="ed-conflict" role="status">
+          <span className="ed-conflict-txt">
+            <b>{conflict.name} updated this article.</b>
+            <span>Your changes aren't saved yet.</span>
+          </span>
+          <span className="ed-conflict-acts">
+            <button className="btn btn-ghost" onClick={keepMine}>
+              Keep mine
+            </button>
+            <button className="btn" onClick={reloadTheirs}>
+              Reload their version
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* The build bar. Directly under the toolbar, only while building — and it is the ONLY
           thing on this screen that appears and disappears, because it is the only thing that

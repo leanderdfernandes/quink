@@ -41,6 +41,8 @@ type Props = {
   // and a folder that failed to create are the same thing to the person looking at it —
   // something didn't stick — so they share one surface in one fixed spot.
   saveState: SaveState
+  // The stale-write guard refused the last save (Phase 3).
+  conflict?: boolean
   opError: string | null
   folderName: string | null
   onPublish: () => void
@@ -98,13 +100,20 @@ const TrashIcon = () => (
 function StatusPill({
   building,
   saveState,
+  conflict,
   opError,
   visibility,
   everPublished,
   pendingEdits,
 }: Pick<
   Props,
-  'building' | 'saveState' | 'opError' | 'visibility' | 'everPublished' | 'pendingEdits'
+  | 'building'
+  | 'saveState'
+  | 'conflict'
+  | 'opError'
+  | 'visibility'
+  | 'everPublished'
+  | 'pendingEdits'
 >) {
   let cls = ''
   let label = 'Draft'
@@ -118,6 +127,12 @@ function StatusPill({
   } else if (opError) {
     cls = 'err'
     label = opError
+  } else if (conflict) {
+    // A refused write is not a broken one. The strip under the bar carries the explanation
+    // and the two ways out; this just stops the status claiming a failure that isn't ours.
+    cls = 'dirty'
+    label = 'Not saved'
+    sub = 'someone else edited this'
   } else if (saveState === 'error') {
     cls = 'err'
     label = 'Couldn’t save'
@@ -160,6 +175,7 @@ export default function ShareControls({
   changingVisibility,
   subdomain,
   saveState,
+  conflict,
   opError,
   folderName,
   onPublish,
@@ -260,6 +276,7 @@ export default function ShareControls({
       <StatusPill
         building={building}
         saveState={saveState}
+        conflict={conflict}
         opError={opError}
         visibility={visibility}
         everPublished={everPublished}

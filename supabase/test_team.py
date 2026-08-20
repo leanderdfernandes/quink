@@ -167,14 +167,23 @@ try:
         S.rpc("kb_people", {"p_kb_id": kb_id}).execute().data, [])
 
     # --- quota is billed to the OWNER ------------------------------------------------
-    before = M.rpc("kb_runs_used", {"p_kb_id": kb_id}).execute().data
+    ent = lambda c: c.rpc("kb_entitlements", {"p_kb_id": kb_id}).execute().data[0]
+    before = ent(M)["runs_used"]
     job = db.table("jobs").insert({
         "kb_id": kb_id, "user_id": m_uid, "billed_to_user_id": o_uid,
         "status": "done", "stage": "writing",
     }).execute().data[0]
     db.table("jobs").update({"counted_against_quota": True}).eq("id", job["id"]).execute()
-    chk("a member's run moves the OWNER's meter",
-        M.rpc("kb_runs_used", {"p_kb_id": kb_id}).execute().data, before + 1)
+    chk("a member's run moves the OWNER's meter", ent(M)["runs_used"], before + 1)
+    # The whole point of kb_entitlements: a member gets the OWNER's cap, not their own, and
+    # never the tier name.
+    chk("...and the member reads the OWNER's limits, not their own",
+        (ent(M)["lifetime_runs"], ent(M)["watermark"], ent(M)["can_invite"]), (None, False, True))
+    chk("...with the plan name withheld from a non-owner",
+        (ent(M)["plan"], ent(M)["is_owner"]), (None, False))
+    chk("...and handed to the owner", (ent(O)["plan"], ent(O)["is_owner"]), ("starter", True))
+    chk("a stranger gets no entitlements at all",
+        S.rpc("kb_entitlements", {"p_kb_id": kb_id}).execute().data, [])
     chk("...and the member's own account is untouched",
         db.table("jobs").select("id", count="exact")
           .eq("billed_to_user_id", m_uid).eq("counted_against_quota", True).execute().count, 0)

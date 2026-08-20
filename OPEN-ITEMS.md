@@ -155,31 +155,30 @@ and it is discarded. Same lossiness argument as `reader_views` before migration 
 
 ---
 
-## D. Team access — Phases 1 and 2 are in, Phase 3 is not
+## D. Team access — all three phases are in
 
 Migration 0035 landed the data layer (`kb_members`, `kb_invites`, the `owns_kb()` /
 `can_edit_kb()` split, the invite RPCs, quota billed to the owner, the claim wipe), and
 Phase 2 landed the screens: `/app/:kbId/people`, `/invite/:token` with five distinct
 states, the removed-access screen, the avatar stack, the `Yours` / `Shared with you`
-switcher, and `POST /api/invite/email`. `supabase/test_team.py` proves the data layer live.
+switcher, and `POST /api/invite/email`. Migration 0036 (Phase 3) added `kb_entitlements()`,
+the shared `kb_watermark()` predicate and `person_name()`. `supabase/test_team.py` proves
+the data layer live.
 
 **Before this reaches a customer:**
 
-- **`/invite/*` must be in the Supabase redirect allowlist** (Auth → URL Configuration →
-  Redirect URLs), exactly as `/claim/*` had to be. Without it Google OAuth returns to the
-  Site URL, the token is gone, and an invited person lands in their own empty app. This is
-  a dashboard setting and cannot be done from code. `lib/people.ts` stashes the token in
-  localStorage as a backstop, but that only rescues a same-origin fallback — it is a net,
-  not a substitute. **Verified end to end only after this is set.**
+- ~~`/invite/*` in the Supabase redirect allowlist~~ — **added** (`https://www.quink.online/invite/*`).
+  The localStorage backstop in `lib/people.ts` stays as a net, not a substitute.
 - **`EMAIL_ENABLED` must be on for the worker** or invites are logged, never sent. With it
   off the People screen says so ("…we couldn't send the email just now") rather than
   claiming a delivery that did not happen, so nothing is silently broken — but nobody gets
   an invite either.
 
-**Phase 3 — presence and the stale-write guard — is not built.** `useAutosave.ts` is still
-last-write-wins, so two admins in one article means one person's text disappears with no
-error state. Phase 2 without Phase 3 ships that failure to customers; the columns are
-already there (`articles.last_edited_by`, `last_edited_at`).
+**Phase 3 is in.** `kb_entitlements()` replaced the guessing (D.2 below records what it
+deliberately left), presence renders in the editor top bar, and autosave is no longer
+last-write-wins: every save is a conditional update on `articles.updated_at` that refuses
+rather than clobbers. `supabase/test_guard.py` and `web/checks/presence.check.mjs` prove
+both against the live project.
 
 ### D.1 Free-tier dormancy is a fixed clock, not an activity signal
 
@@ -194,25 +193,25 @@ mechanism the spec describes does not exist. Decide which is true before Phase 2
 either the spec sentence goes, or activity-based persistence gets built and
 `privacy-policy.md` §5's "30 days after your first article" changes with it.
 
-### D.2 A member cannot see the KB's entitlements, so two numbers are missing
+### D.2 Known gaps in the concurrent-editing guard
 
-`profiles` is closed, and correctly: a member has no way to read the owner's plan. Nothing
-in migration 0035 projects the owner's *limits* for a KB the way `kb_runs_used()` projects
-its *usage*. Two consequences, both live and both cosmetic-to-mild:
+Phase 3 landed the entitlements RPC, presence and the stale-write guard. Three things it
+deliberately does not cover:
 
-1. **An admin sees runs USED with no cap.** The rail says "3 recordings turned into a guide
-   here", never "3 of 3". They cannot tell that the next run will be refused until the
-   worker refuses it — and because the dropzone cannot refuse locally either, that refusal
-   arrives after the upload, stranding one Storage object (the leak §10b's worked example
-   closes for owners).
-2. **Preview flags fall back to the free tier.** The editor and Theming previews read
-   `limitsFor(plan).watermark`, and with no plan they assume `free` — so an admin inside a
-   paid help center may see a watermark badge in the preview that is not on the live site.
-   Wrong in the harmless direction, deliberately.
-
-The fix is one RPC — the KB's rendering/limit flags projected by kb id, gated on
-`can_edit_kb()`, returning no tier name — but that is a migration, and Phase 2 was UI only.
-Do it with Phase 3 or before the first real team.
+- **Only the debounced save path is guarded.** Publish, delete, discard, undo and frame
+  picks write directly and are not conditional on `articles.updated_at`. They are one-shot
+  explicit actions rather than autosave, and the damage from a collision is smaller and
+  visible (you can see which frame is on the step). Worth closing if two-editor use turns
+  out to be common; not worth ten wrapped call sites before it does.
+- **The presence channel is public.** Anyone signed in who knows a kb id and an article id
+  can join `kb:{kbId}:article:{articleId}` and see who is editing. What travels is a
+  display name and an avatar url — never article content — and both ids are already in the
+  URL of everyone who legitimately has access. Making it private needs Realtime
+  authorization policies on the `realtime` schema, which is a migration in a schema nothing
+  else here touches.
+- **`lanesFor` still reads the caller's plan**, so a member uploads at the free tier's
+  concurrency (1) inside a paid help center. Conservative, invisible, and the worker's
+  `LANES` is the real limit either way. Fold it into `kb_entitlements` if it ever matters.
 
 ---
 

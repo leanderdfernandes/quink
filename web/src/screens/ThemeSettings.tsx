@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { publicBrandingUrl, removeBranding, uploadBranding } from '../lib/storage'
-import { limitsFor } from '../lib/plans'
+import type { Entitlements } from '../lib/plans'
 import {
   DEFAULT_PRIMARY_COLOR,
   FONT_PAIRINGS,
@@ -31,7 +31,10 @@ import type {
 
 type Props = {
   kb: KB
-  plan: string
+  // The OWNER's limits and flags for this KB (kb_entitlements). Replaces the plan id
+  // the preview used to derive watermark/noindex from — which was only correct for
+  // the owner.
+  ent: Entitlements | null
   onBack: () => void
   onSaved: (kb: KB) => void
 }
@@ -157,7 +160,7 @@ export function normalizeLinkUrl(raw: string): string | null {
   }
 }
 
-export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
+export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
   const [name, setName] = useState(kb.name)
   const [about, setAbout] = useState(kb.about ?? '')
   const [headline, setHeadline] = useState(kb.headline ?? '')
@@ -425,8 +428,11 @@ export default function ThemeSettings({ kb, plan, onBack, onSaved }: Props) {
     subdomain: kb.subdomain,
     custom_domain: kb.custom_domain,
     domain_status: kb.domain_status,
-    noindex: limitsFor(plan).noindex,
-    watermark: limitsFor(plan).watermark,
+    // Both from kb_entitlements(), which computes them exactly as the reader does. A
+    // member has no plan to derive them from, and guessing `free` put a watermark on the
+    // preview of a paying customer's help center.
+    noindex: !!ent?.noindex,
+    watermark: !!ent?.watermark,
     header_style: headerStyle,
     header_image_path: headerImagePath,
     header_link_label: linkLabel.trim() || null,

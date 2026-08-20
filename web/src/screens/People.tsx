@@ -9,7 +9,7 @@ import {
   sendInviteEmail,
   type Person,
 } from '../lib/people'
-import { limitsFor, type PlanId } from '../lib/plans'
+import type { Entitlements } from '../lib/plans'
 import type { KnowledgeBase } from '../lib/types'
 
 // People — /app/:kbId/people. One help center, many editors.
@@ -31,9 +31,10 @@ type Props = {
   // Owner of THIS help center, not Quink staff. Decides the two owner-only surfaces on
   // this screen: the plan gate and its "See plans" call to action.
   isOwner: boolean
-  // The owner's plan — null when this account is not the owner, because a member cannot
-  // read the owner's profile and must never be shown their tier anyway (spec L7).
-  plan: PlanId | null
+  // The OWNER's entitlements for this KB. `can_invite` is the gate, and it is the owner's
+  // answer whoever is asking — which is the point: a free-plan admin inside a paid help
+  // center can invite, and an admin inside a free one cannot.
+  ent: Entitlements | null
   onBack: () => void
   onUpgrade: () => void
   // Called after you remove yourself. There is nothing to render afterwards: the very next
@@ -41,7 +42,7 @@ type Props = {
   onLeft: () => void
 }
 
-export default function People({ kb, userId, isOwner, plan, onBack, onUpgrade, onLeft }: Props) {
+export default function People({ kb, userId, isOwner, ent, onBack, onUpgrade, onLeft }: Props) {
   const [people, setPeople] = useState<Person[]>([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
@@ -71,11 +72,11 @@ export default function People({ kb, userId, isOwner, plan, onBack, onUpgrade, o
     }
   }, [kb.id])
 
-  // Gate ONLY when we know it is blocked. A member's plan tells us nothing about this help
-  // center's entitlements, so an unknown plan renders the working field and lets
-  // invite_to_kb() answer — the client may refuse locally, it may never grant (§10b), and
-  // guessing "blocked" here would lock a teammate out of a paid help center.
-  const gated = isOwner && !limitsFor(plan).can_invite
+  // Now an exact answer rather than a guess: kb_entitlements() resolves can_invite from the
+  // OWNER's plan, so an admin inside a free help center sees the same gate the owner does
+  // instead of a field that fails on submit. Still only a local refusal — invite_to_kb()
+  // enforces it server-side and is the only thing that can grant (§10b).
+  const gated = !!ent && !ent.can_invite
 
   async function send(e: React.FormEvent) {
     e.preventDefault()
@@ -182,12 +183,18 @@ export default function People({ kb, userId, isOwner, plan, onBack, onUpgrade, o
               </button>
             </div>
             <div className="pp-gate-foot">
-              <button className="btn" onClick={onUpgrade}>
-                See plans
-              </button>
+              {/* The CTA is billing, so it is the owner's alone. An admin gets the same
+                  wall and the name of the person who can lift it — never a button that
+                  would take them to a checkout they cannot complete. */}
+              {isOwner ? (
+                <button className="btn" onClick={onUpgrade}>
+                  See plans
+                </button>
+              ) : null}
               <span className="pp-gate-note">
                 Adding teammates is part of every paid plan. Free help centers are
                 single-editor.
+                {!isOwner && ent?.owner_name ? ` ${ent.owner_name} can change that.` : ''}
               </span>
             </div>
           </div>

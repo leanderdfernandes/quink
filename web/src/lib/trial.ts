@@ -1,4 +1,3 @@
-import { limitsFor } from './plans'
 import type { KnowledgeBase } from './types'
 
 // The free-trial countdown, SPA side. ONE computation, used by the pill, the banner, the
@@ -33,9 +32,11 @@ function wholeDaysUntil(iso: string, addDays: number): number {
   return Math.ceil((end - Date.now()) / 86400_000)
 }
 
-export function trialFor(kb: KnowledgeBase, plan: string): Trial {
-  const expiryDays = limitsFor(plan).expiry_days
-  // A paid plan has no clock at all. Reading expiry_days rather than `plan === 'free'`
+// Takes the OWNER's expiry_days, not a plan id: the clock belongs to whoever owns the help
+// center, and inside someone else's a member cannot read their tier. kb_entitlements()
+// resolves it, so this stays a pure computation over a number and two timestamps.
+export function trialFor(kb: KnowledgeBase, expiryDays: number | null): Trial {
+  // A paid plan has no clock at all. Taking expiry_days rather than testing for 'free'
   // keeps the entitlement table the only place tiers are described.
   if (expiryDays === null || !kb.trial_started_at) {
     return { stage: 'none', daysLeft: 0, graceLeft: 0 }

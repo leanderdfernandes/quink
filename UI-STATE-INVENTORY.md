@@ -788,3 +788,50 @@ and Domain, because the rail lives in `KnowledgeBase.tsx` and every other settin
 nothing else, and RLS is hiding the row by then, so the built copy says "this help center".
 ⚠️ DRIFT — §9.4 has one "Sign in to accept" button; built with the email-link fallback beside it,
 because the invited address is the one that must sign in and a magic link goes straight there.
+
+---
+
+## H. Presence + the conflict strip (team access, Phase 3)
+
+States added to surface B (the article editor). ⚠️ DRIFT = contradicts `team-access-spec.md`.
+
+**1. Files** — `lib/usePresence.ts` (one Realtime channel per open article),
+`editor/Editor.tsx` (`claim()`, `guarded()`, the strip), `editor/ShareControls.tsx` (the
+status pill's refused-save label), `lib/plans.ts` (`fetchEntitlements`).
+
+**2. Render branches**
+| State | Condition |
+|---|---|
+| Presence hidden | nobody else on the channel, or no article row yet (mid-run) |
+| Presence, one person | `peers.length === 1` → one face + "{Name} is editing" in the editor bar |
+| Presence, several | `peers.length > 1` → one face + "N others are editing"; names in the `title` |
+| Conflict strip | a save was refused — `articles.updated_at` moved under this editor |
+| Status pill: `Not saved` | `conflict` — ahead of `saveState === 'error'`, because a refused write is not a broken one; sub-line "someone else edited this" |
+| Status pill: `Couldn't save` | `saveState === 'error'` with no conflict (a genuine failure) |
+
+**3. User actions**
+| Action | Writes | On conflict |
+|---|---|---|
+| Type in title / subtitle | one conditional `articles` update carrying the patch + `last_edited_by`/`last_edited_at` | refused; nothing written, local text untouched |
+| Type in a step / reorder / merge / split | claim (conditional `articles` update) then the `steps` write | refused before the step write happens |
+| `Keep mine` | nothing, immediately — rebases the base only | next edit writes over their version, chosen with their name on screen |
+| `Reload their version` | nothing — refetches the article and steps | local copy discarded |
+| Publish · delete · discard · undo · frame pick | direct writes, **not guarded** | last-write-wins (OPEN-ITEMS D.2) |
+
+**4. Data** — Realtime presence payload `{ user_id, display_name, avatar_url }`, keyed per
+CONNECTION and de-duplicated by `user_id`; `articles.updated_at` as the guard's base;
+`articles.last_edited_by` resolved to a name through the `kb_people()` roster App already
+holds. `kb_entitlements(kb_id)` replaces `limitsFor(plan)` for watermark, noindex, the run
+cap and the trial clock.
+
+**5. Hardcoded** — "{Name} is editing", "N others are editing", the strip's two sentences
+and both button labels, "Not saved" / "someone else edited this". Identity for presence
+comes from the session's OAuth metadata with the email's local part as fallback.
+
+**6. Default-open vs on-demand** — both are consequences, never controls: presence appears
+when someone else opens the article, the strip when a save is refused. Nothing here can be
+opened, dismissed or configured except by resolving the conflict.
+
+⚠️ DRIFT §8 — the spec puts presence as "a face stack in the editor top bar and a single
+quiet line under the title". Built as one face and one line, both in the bar: a stack
+implies many, and the realistic number is one.
