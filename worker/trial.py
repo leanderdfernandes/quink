@@ -44,7 +44,10 @@ MARKERS = (DAY14, DAY7, OFFLINE, PURGED)
 _COLUMNS = (
     "id, name, subdomain, owner_id, trial_started_at, offline_at, purge_at, "
     + ", ".join(MARKERS)
-    + ", profiles!inner(email, plan)"
+    # Disambiguated by FK NAME on purpose: kb_members gives knowledge_bases a SECOND
+    # path to profiles, and a bare `profiles!inner` embed became ambiguous the moment it
+    # existed — PostgREST answers PGRST201 and the sweep silently stops running.
+    + ", profiles!knowledge_bases_owner_id_fkey!inner(email, plan)"
 )
 
 

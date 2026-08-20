@@ -18,19 +18,25 @@ import type { KnowledgeBase } from '../lib/types'
 
 type Props = {
   kb: KnowledgeBase
-  plan: string
+  // Null inside someone else's help center — no plan, so no "New help center" action.
+  plan: string | null
   kbs: KnowledgeBase[]
+  userId: string | null
   onSwitch: (kbId: string) => void
   onCreate?: () => void
 }
 
-export default function KbSwitcher({ kb, plan, kbs, onSwitch, onCreate }: Props) {
+export default function KbSwitcher({ kb, plan, kbs, userId, onSwitch, onCreate }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
   const showSwitcher = kbs.length > 1
-  const canCreate = kbs.length < limitsFor(plan).kbs
+  // OWNED only. Being invited into a colleague's help center must not consume the
+  // invitee's own allowance — that would make accepting an invite cost you the ability to
+  // make your own (team-access-spec L5).
+  const owned = kbs.filter((k) => k.owner_id === userId)
+  const canCreate = !!plan && owned.length < limitsFor(plan).kbs
 
   useEffect(() => {
     if (!open) return
@@ -45,6 +51,14 @@ export default function KbSwitcher({ kb, plan, kbs, onSwitch, onCreate }: Props)
     const q = query.trim().toLowerCase()
     return q ? kbs.filter((k) => k.name.toLowerCase().includes(q)) : kbs
   }, [kbs, query])
+
+  // Two sections. The header is the ONLY place the distinction appears: inside a help
+  // center, an admin's experience is the owner's minus billing and the domain, and
+  // labelling every row would make it feel like a lesser kind of access.
+  const sections: [string, KnowledgeBase[]][] = [
+    ['Yours', matches.filter((k) => k.owner_id === userId)],
+    ['Shared with you', matches.filter((k) => k.owner_id !== userId)],
+  ]
 
   if (!showSwitcher) return <span className="lib-kb-name">{kb.name}</span>
 
@@ -76,21 +90,31 @@ export default function KbSwitcher({ kb, plan, kbs, onSwitch, onCreate }: Props)
             onChange={(e) => setQuery(e.target.value)}
           />
           <div className="kbsw-list">
-            {matches.map((k) => (
-              <button
-                key={k.id}
-                role="option"
-                aria-selected={k.id === kb.id}
-                className={`kbsw-item${k.id === kb.id ? ' on' : ''}`}
-                onClick={() => {
-                  setOpen(false)
-                  if (k.id !== kb.id) onSwitch(k.id)
-                }}
-              >
-                <span className="kbsw-item-name">{k.name}</span>
-                {k.subdomain && <span className="kbsw-item-sub">{k.subdomain}</span>}
-              </button>
-            ))}
+            {sections.map(([label, rows]) =>
+              rows.length === 0 ? null : (
+                <div key={label}>
+                  {/* Only worth a heading when there is something to tell apart. */}
+                  {sections.every(([, r]) => r.length > 0) && (
+                    <p className="kbsw-group">{label}</p>
+                  )}
+                  {rows.map((k) => (
+                    <button
+                      key={k.id}
+                      role="option"
+                      aria-selected={k.id === kb.id}
+                      className={`kbsw-item${k.id === kb.id ? ' on' : ''}`}
+                      onClick={() => {
+                        setOpen(false)
+                        if (k.id !== kb.id) onSwitch(k.id)
+                      }}
+                    >
+                      <span className="kbsw-item-name">{k.name}</span>
+                      {k.subdomain && <span className="kbsw-item-sub">{k.subdomain}</span>}
+                    </button>
+                  ))}
+                </div>
+              ),
+            )}
             {matches.length === 0 && <p className="kbsw-empty">No help centers match.</p>}
           </div>
           {onCreate && canCreate && (

@@ -72,19 +72,19 @@ KB_BUCKETS = (BUCKET_FRAMES, BUCKET_VIDEOS, BUCKET_BRANDING)
 PLANS: dict[str, dict] = {
     "free":     {"lifetime_runs": 3,    "monthly_runs": None, "kbs": 1,
                  "expiry_days": 30,   "custom_domain": False,
-                 "watermark": True,  "noindex": True},
+                 "watermark": True,  "noindex": True, "can_invite": False},
     "founding": {"lifetime_runs": None, "monthly_runs": 20,   "kbs": 1,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False},
+                 "watermark": False, "noindex": False, "can_invite": True},
     "starter":  {"lifetime_runs": None, "monthly_runs": 20,   "kbs": 1,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False},
+                 "watermark": False, "noindex": False, "can_invite": True},
     "growth":   {"lifetime_runs": None, "monthly_runs": 80,   "kbs": 5,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False},
+                 "watermark": False, "noindex": False, "can_invite": True},
     "internal": {"lifetime_runs": None, "monthly_runs": None, "kbs": 999,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": True},
+                 "watermark": False, "noindex": True, "can_invite": True},
 }
 
 DEFAULT_PLAN = "free"

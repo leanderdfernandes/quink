@@ -523,6 +523,53 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   with a throwaway account, by moving `trial_started_at` backwards. Run it after touching
   the sweep, the reader gate, `claim_kb`, `admin_set_plan`, or the `jobs` FKs.
 
+## 10j. Team access (locked — migration 0035)
+
+- **`owns_kb()` and `can_edit_kb()` are two different questions and neither is a synonym
+  for the other.** `can_edit_kb()` — owner OR an active `kb_members` row — gates
+  everything that MAKES ARTICLES: `articles`, `folders`, `steps`, all three storage
+  buckets, `knowledge_bases` UPDATE, and the worker's `/api/generate` + `/api/retry`.
+  `owns_kb()` stays the gate for what only the person accountable for the help center may
+  do: deleting the KB, ownership transfer, and the custom domain. When you add a surface,
+  decide which question it asks — a new policy that reaches for `owns_kb()` by habit locks
+  out every admin, and one that reaches for `can_edit_kb()` by habit hands an invitee the
+  DNS.
+- **Entitlements resolve through `knowledge_bases.owner_id → profiles.plan`, never the
+  caller's plan.** A free-plan user who is an admin inside a paid help center can invite
+  and can generate; they are spending the owner's entitlement. This is why
+  `_require_editor()` returns `(uid, owner_id)` — the caller and the payer are no longer
+  the same person, and every limit reads the second one.
+- **`jobs.billed_to_user_id` is stamped at creation and never derived by joining through
+  `kb_id`.** A join re-bills history on every ownership change: claim a demo we spent
+  three runs building and the prospect starts at 3 of 3. `jobs.user_id` stays as who
+  pressed the button (the failure lookup wants it). The quota query counts the former.
+- **Domain columns are owner-only by COLUMN GRANT, not a trigger and not a second
+  policy.** RLS is row-level and cannot express column scope (§10e.2), so the row policy
+  stays at `can_edit_kb()` and UPDATE on `custom_domain` / `domain_*` is revoked from
+  `authenticated` — the same mechanism that blocks `is_admin` self-elevation. 0035 also
+  narrowed that grant to the sixteen columns the SPA actually writes, which closed a live
+  hole: the blanket grant let any owner reset their own `trial_started_at` or clear
+  `offline_at` from the browser console.
+- **Rendering people must never widen the `profiles` SELECT policy.** `kb_people()`
+  projects exactly the fields the screen needs and nothing else. If you find yourself
+  editing a `profiles` policy to show a member list, stop.
+- **Membership is wiped in `claim_kb()`, in that one function** — same rule and same
+  reason as every other owner-derived reset (§10d). Hard delete for members, `revoked_at`
+  for live invites, `jobs` untouched.
+- **`kb_members` gave `knowledge_bases` a SECOND foreign-key path to `profiles`, so every
+  bare PostgREST embed became ambiguous** (PGRST201) the moment the table existed. The
+  trial sweep failed silently on it. Embeds now name the FK:
+  `profiles!knowledge_bases_owner_id_fkey(...)`. Any new table linking those two must
+  expect the same, and the sweeps must be re-run after adding one.
+- **Every migration that recreates a function states its live-definition diff in the
+  header.** Print the body from `pg_proc` first, diff it, and say what changed. This is
+  not ceremony: 0024 recreated `reader_kb` from an older body and dropped the watermark
+  clause, and 0025/0026 carried the loss. A `create or replace` you did not diff is a
+  silent revert.
+- `supabase/test_team.py` proves the whole thing against the live project with throwaway
+  accounts — what a member can do, the four refusals, re-invite after removal, quota
+  attribution, and the claim wipe. Run it after touching anything membership-shaped.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock
@@ -550,3 +597,11 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
 
   ## SUPABASE SQL changes
   -The supabase link is in the root .env, make all changes to the db using the same
+
+Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend most of the response on the main answer. When asked to explain something, give a high-level summary unless an in-depth explanation is specifically requested.
+
+Match the length of written documents to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate.
+
+If you notice smaller bugs that are recoverable, fix them instead of asking me. It's cheaper that way. 
+
+Stay brief and concise. Optimise for quality

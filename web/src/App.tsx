@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
 import { useQueue } from './lib/queue'
 import QueueDock from './components/QueueDock'
-import { DEFAULT_PLAN, fetchPlan, lanesFor, limitsFor, runsUsed, type PlanId } from './lib/plans'
+import { DEFAULT_PLAN, fetchProfile, lanesFor, limitsFor, runsUsed, type PlanId } from './lib/plans'
 import {
   fetchKb,
   listKbs,
@@ -14,6 +14,14 @@ import {
   setLastKb,
 } from './lib/kbs'
 import { clearJustClaimed, isJustClaimed, takeClaimToken } from './lib/claim'
+import {
+  displayName,
+  fetchAccessState,
+  fetchPeople,
+  takeInviteToken,
+  type AccessState,
+  type Person,
+} from './lib/people'
 import { trialFor } from './lib/trial'
 import AdminBanner from './components/AdminBanner'
 import FailureScreen from './components/FailureScreen'
@@ -27,6 +35,8 @@ import AccountWall from './screens/AccountWall'
 import KnowledgeBaseScreen from './screens/KnowledgeBase'
 import ThemeSettings from './screens/ThemeSettings'
 import DomainSettings from './screens/DomainSettings'
+import People from './screens/People'
+import OwnerOnly from './components/OwnerOnly'
 import Editor from './editor/Editor'
 
 // The activation flow (ux-spec §2):
@@ -59,6 +69,10 @@ type Phase =
   | 'kb'
   | 'theme'
   | 'domain'
+  // Distinct from 'noaccess' on purpose. "You were removed" and "this doesn't exist for
+  // you" are the same row state to the software and nothing like each other to the person
+  // it happens to — the instinct on losing access is that your work was deleted.
+  | 'removed'
   | 'noaccess'
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -66,6 +80,9 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 export default function App() {
   const { kbId: routeKbId, articleId: routeArticleId } = useParams()
   const navigate = useNavigate()
+  // People is a ROUTE (main.tsx), not a wizard phase: it is somewhere you send a colleague
+  // a link to. Theming and Domain stay phases — nobody links to those.
+  const onPeopleRoute = useLocation().pathname.endsWith('/people')
   // Handed over by the claim flow. One dismissible line, never a modal — the articles are
   // the demo and nothing should stand in front of them. Read-and-clear on mount, so it
   // greets exactly once no matter how many times this component mounts on the way here.
@@ -81,7 +98,21 @@ export default function App() {
   // Entitlements are owner-level (profiles.plan), so they are held here beside the session
   // rather than on the KB — a KB's tier would be the wrong thing to read the moment a KB
   // can change hands.
-  const [plan, setPlan] = useState<PlanId>(DEFAULT_PLAN)
+  // The OWNER's plan — and null when this account is not the owner. A member cannot read
+  // the owner's profile row (profiles is closed) and must never be shown their tier anyway,
+  // so every plan-derived surface below either hides or falls back to "no limit known".
+  // Falling back to `free` instead would gate a teammate inside a paid help center on their
+  // own lifetime cap, which is the exact bug team-access-spec §5 exists to prevent.
+  const [plan, setPlan] = useState<PlanId | null>(DEFAULT_PLAN)
+  // QUINK STAFF, not a KB admin. Read once, and used for exactly two things: the
+  // viewing-as-admin banner, and keeping every customer's help center out of the switcher.
+  const [isAdmin, setIsAdmin] = useState(false)
+  // 'ok' | 'removed' | 'none' for the KB in the URL. Drives the removed screen and, with
+  // isAdmin, the admin banner.
+  const [access, setAccess] = useState<AccessState>('ok')
+  // Everyone who can edit this KB. Only for the avatar stack — the People screen fetches
+  // its own, because it mutates the list.
+  const [people, setPeople] = useState<Person[]>([])
   // The context the user typed on the upload screen, kept so the queue can ground every
   // file in the drop with it — and so the post-auth resume grounds identically.
   const [pendingContext, setPendingContext] = useState<VideoContext | null>(null)
@@ -127,11 +158,11 @@ export default function App() {
     kbId: kb?.id ?? null,
     ownerId: userId,
     product,
-    lanes: lanesFor(plan),
+    lanes: lanesFor(plan ?? DEFAULT_PLAN),
     // Display + the client-side hold only. The worker enforces the real wall before the
     // Gemini call — the SPA reads counters for display, never for permission (§10b).
     runsLeft:
-      limitsFor(plan).lifetime_runs === null || runs === null
+      !plan || limitsFor(plan).lifetime_runs === null || runs === null
         ? null
         : Math.max(limitsFor(plan).lifetime_runs! - runs, 0),
     onQuotaBlocked: () => setShowUpgrade(true),
@@ -208,6 +239,15 @@ export default function App() {
     if (pendingClaim) navigate(`/claim/${pendingClaim}`, { replace: true })
   }, [userId, navigate])
 
+  // The same rescue for an invite that lost its path across the sign-in redirect. Identical
+  // failure, identical net: without it an invited person signs in and lands in their own
+  // empty app with no idea what happened to the help center they were invited to.
+  useEffect(() => {
+    if (!userId) return
+    const pendingInvite = takeInviteToken()
+    if (pendingInvite) navigate(`/invite/${pendingInvite}`, { replace: true })
+  }, [userId, navigate])
+
   // Resolve which KB we are in: the URL wins, then the last one used, then whatever this
   // account has. The old version was `.eq('owner_id', userId).single()`, which THREW rather
   // than degraded the moment an account held a second KB — and `internal` (our own account,
@@ -215,8 +255,8 @@ export default function App() {
   //
   // A route id that resolves to nothing is not an error to report; it is a state to render.
   const loadKb = useCallback(
-    async (userId: string, wantedKbId?: string) =>
-      wantedKbId ? await fetchKb(wantedKbId) : await resolveDefaultKb(userId),
+    async (userId: string, wantedKbId?: string, isAdmin = false) =>
+      wantedKbId ? await fetchKb(wantedKbId) : await resolveDefaultKb(userId, isAdmin),
     [],
   )
 
@@ -231,16 +271,21 @@ export default function App() {
     let cancelled = false
 
     ;(async () => {
-      const [found, ownerPlan, mine, used] = await Promise.all([
-        loadKb(userId, routeKbId),
-        fetchPlan(userId),
-        listKbs(userId),
-        runsUsed(userId),
+      // Staff first: it decides whether the switcher lists this account's KBs or every
+      // KB in the database, so it has to be known before the list is asked for.
+      const me = await fetchProfile(userId)
+      if (cancelled) return
+      setIsAdmin(me.isAdmin)
+
+      const [found, mine] = await Promise.all([
+        loadKb(userId, routeKbId, me.isAdmin),
+        listKbs(userId, me.isAdmin),
       ])
       if (cancelled) return
-      setPlan(ownerPlan)
       setKbs(mine)
-      setRuns(used)
+      // Their plan governs this help center only when it is THEIRS. Inside someone else's,
+      // the entitlements are the owner's and we deliberately cannot see them.
+      setPlan(found && found.owner_id === userId ? me.plan : null)
 
       // A :kbId that resolves to nothing is either gone or not ours — RLS answers both
       // with zero rows, and so do we. Rendering different states for the two would turn
@@ -253,10 +298,25 @@ export default function App() {
       // reaching here means the account was emptied underneath a live session (a deleted
       // profile row, a half-deleted account) — rare, but it strands the user completely.
       if (!found) {
-        setPhase('noaccess')
+        // Before settling on "not found", ask whether this account was REMOVED from it.
+        // kb_access_state() answers for a KB whose row RLS is now hiding, which is the only
+        // way to tell the two apart — and they are not the same message.
+        const state = routeKbId ? await fetchAccessState(routeKbId) : 'none'
+        if (cancelled) return
+        setAccess(state)
+        setPhase(state === 'removed' ? 'removed' : 'noaccess')
         return
       }
       setKb(found)
+
+      // Access state and the people list, together: the first decides whether the
+      // viewing-as-admin banner shows, the second feeds the avatar stack.
+      void fetchAccessState(found.id).then((a) => !cancelled && setAccess(a))
+      void fetchPeople(found.id).then((p) => !cancelled && setPeople(p))
+      // The run count is billed to the KB's OWNER, so it can only be asked for once we know
+      // which KB we are in — this account has no quota of its own inside someone else's.
+      setRuns(await runsUsed(found.id))
+      if (cancelled) return
 
       // The URL is the record of where you are. Put it there as soon as we know, so a
       // refresh, a bookmark or a pasted link all land in the same place.
@@ -300,9 +360,11 @@ export default function App() {
   // hang this on — the editor just becomes editable — so it runs when the user leaves the
   // article, which is the next time either number is used for anything.
   const refreshAfterRun = useCallback(async () => {
-    if (kb) setKb(await fetchKb(kb.id))
-    if (userId) setRuns(await runsUsed(userId))
-  }, [kb, userId])
+    if (kb) {
+      setKb(await fetchKb(kb.id))
+      setRuns(await runsUsed(kb.id))
+    }
+  }, [kb])
 
   async function handleSubmit(chosen: File[], context: VideoContext) {
     const [first, ...rest] = chosen
@@ -391,13 +453,27 @@ export default function App() {
   // never conditionally hidden — see AdminBanner.
   // Video runs left, or null when there is no cap (paid) or no account yet (a visitor,
   // who gets the full free allowance the moment they sign up).
-  const runLimit = limitsFor(plan).lifetime_runs
+  // Owner of THIS help center. Not Quink staff, and not "can edit" — this is the line
+  // billing sits behind.
+  const isOwner = !!kb && !!userId && kb.owner_id === userId
+  // Who to point an admin at. From kb_people(), which is the only projection of another
+  // person's name this app has — profiles stays closed.
+  const ownerName = (() => {
+    const o = people.find((p) => p.is_owner)
+    return o ? displayName(o) : null
+  })()
+  // The cap is unknowable from a member's session, so there is none to enforce locally. That
+  // is safe by §10b: the client may REFUSE work it can already tell will be rejected, but it
+  // may never GRANT — the worker's wall runs on every request either way.
+  const runLimit = plan ? limitsFor(plan).lifetime_runs : null
   const runsLeft = runLimit === null || runs === null ? null : Math.max(runLimit - runs, 0)
 
   // The free-trial clock. Computed here so the wizard and the KB shell read the same
   // number on the same day — the countdown is only defensible if it never disagrees with
   // itself or with the email (pricing-spec §2).
-  const trial = kb ? trialFor(kb, plan) : null
+  // Billing state, so it is the owner's alone (spec L7). A member sees no countdown, no
+  // plan name and no upgrade path — they are not the person who can act on any of it.
+  const trial = kb && plan ? trialFor(kb, plan) : null
 
   // A run that died BEFORE a job row existed — an upload that failed, a refused start. The
   // 'failed' phase was built for exactly this and stopped being reachable when the queue took
@@ -431,12 +507,71 @@ export default function App() {
     setPhase('upload')
   }
 
+  // QUINK STAFF inside a help center they are neither the owner nor a member of.
+  //
+  // The old condition was `kb.owner_id !== userId`, which was right when the only way to be
+  // in someone else's KB was to be staff. A teammate is also not the owner, so every member
+  // saw a permanent, undismissable "Viewing as admin" bar on the help center they were
+  // invited to. `access === 'ok'` is exactly "owner or active member", straight from
+  // kb_access_state() — the same function the database gates on.
+  // ONE decision about what "upgrade" looks like, so the paths cannot drift.
+  //
+  // An admin never sees a price, a plan name or a CTA — but they DO hit the wall, because
+  // runs are the owner's and the worker refuses on the owner's cap. So they get the fact
+  // and the person, and nothing to click. A visitor with no KB yet is not an admin of
+  // anything; they get the real modal.
+  const upgradeUi = !showUpgrade ? null : isOwner || !kb ? (
+    <UpgradeModal
+      onWriteManually={() => {
+        setShowUpgrade(false)
+        writeFromScratch()
+      }}
+      onClose={() => setShowUpgrade(false)}
+    />
+  ) : (
+    <OwnerOnly
+      modal
+      heading="This help center is out of video guides"
+      body="You can still write and edit articles by hand here, as many as you like — it's only recordings that are capped."
+      ownerName={ownerName}
+      onDismiss={() => setShowUpgrade(false)}
+    />
+  )
+
   const adminBar =
-    kb && userId && kb.owner_id !== userId ? (
+    kb && isAdmin && access !== 'ok' ? (
       <AdminBanner kbName={kb.name} onExit={() => navigate('/admin')} />
     ) : null
 
   if (phase === 'loading') return <div className="page" />
+
+  // Removed, and told so. The reassurance line is the whole point: the instinct on losing
+  // access is that everything you wrote went with it.
+  //
+  // The help center's NAME is deliberately absent — kb_access_state() returns a state and
+  // nothing else, and the row itself is now hidden from this account by RLS. Naming it
+  // would mean handing back a fragment of a help center they can no longer read.
+  if (phase === 'removed') {
+    return (
+      <div className="page" style={{ justifyContent: 'center' }}>
+        <div className="card wall">
+          <h2>You no longer have access to this help center</h2>
+          <p className="cap" style={{ marginTop: 8 }}>
+            Your access was removed. Anything you wrote is still there — it belongs to the
+            help center, not to your account.
+          </p>
+          <div className="wall-actions">
+            <button className="btn" onClick={() => navigate('/')}>
+              Go to your help centers
+            </button>
+            <button className="btn btn-ghost" onClick={signOut}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Same answer whether the KB is gone or was never ours: the URL must not reveal which.
   if (phase === 'noaccess') {
@@ -482,15 +617,7 @@ export default function App() {
         />
         {/* A capped user is stopped at the dropzone and can still leave with an article —
             blocking generation is not blocking the product. */}
-        {showUpgrade && (
-          <UpgradeModal
-            onWriteManually={() => {
-              setShowUpgrade(false)
-              writeFromScratch()
-            }}
-            onClose={() => setShowUpgrade(false)}
-          />
-        )}
+        {upgradeUi}
       </>
     )
   if (phase === 'login') return <Login onBack={() => setPhase('home')} />
@@ -515,6 +642,27 @@ export default function App() {
     )
   }
 
+  // People. A route rather than a phase, so it survives a refresh and can be linked to.
+  if (onPeopleRoute && kb && userId) {
+    return (
+      <>
+        {adminBar}
+        <People
+          kb={kb}
+          userId={userId}
+          isOwner={isOwner}
+          plan={plan}
+          onBack={() => navigate(`/app/${kb.id}`)}
+          onUpgrade={() => setShowUpgrade(true)}
+          // Leaving takes away the thing you are looking at. Back to the root, which
+          // re-resolves to a help center this account still has.
+          onLeft={() => navigate('/')}
+        />
+        {upgradeUi}
+      </>
+    )
+  }
+
   // The editor, which is ALSO the generating screen — there is no other one (2a). Three
   // ways in, one component, deliberately in one branch so React keeps the same instance
   // when the URL gains the article id mid-run:
@@ -533,7 +681,11 @@ export default function App() {
         <Editor
           articleId={routeArticleId ?? watchItem?.articleId ?? null}
           kb={kb}
-          plan={plan}
+          // Preview flags only (watermark / noindex). With no plan to read — an admin
+          // inside someone else's help center — this falls back to the free tier, which
+          // errs toward SHOWING a watermark that may not be on the live site rather than
+          // hiding one that is. Wrong in the harmless direction; see OPEN-ITEMS D.2.
+          plan={plan ?? DEFAULT_PLAN}
           jobId={watched?.jobId ?? null}
           // Every state BEFORE a job row exists, not just 'uploading'. A queued file waiting
           // for a lane, and — the long one — a finished upload while POST /api/generate is
@@ -590,8 +742,12 @@ export default function App() {
         <KnowledgeBaseScreen
           kb={kb}
           plan={plan}
+          isOwner={isOwner}
+          people={people}
+          userId={userId}
           kbs={kbs}
           onSwitchKb={switchKb}
+          onOpenPeople={() => navigate(`/app/${kb.id}/people`)}
           onNewArticle={() => {
             setError(null)
             setPhase('upload')
@@ -629,17 +785,9 @@ export default function App() {
         />
 
         {/* The proactive path (pricing-spec §6): they tapped the countdown rather than
-            hitting a wall. Same modal either way — one place decides what upgrading looks
+            hitting a wall. Same surface either way — one place decides what upgrading looks
             like, so the two paths cannot drift apart. */}
-        {showUpgrade && (
-          <UpgradeModal
-            onWriteManually={() => {
-              setShowUpgrade(false)
-              writeFromScratch()
-            }}
-            onClose={() => setShowUpgrade(false)}
-          />
-        )}
+        {upgradeUi}
       </>
     )
   }
@@ -650,7 +798,8 @@ export default function App() {
         {adminBar}
         <ThemeSettings
           kb={kb}
-          plan={plan}
+          // Preview flags only — same fallback and same reason as the editor above.
+          plan={plan ?? DEFAULT_PLAN}
           onBack={() => setPhase('kb')}
           onSaved={(updated) => setKb(updated)}
         />
@@ -659,6 +808,35 @@ export default function App() {
   }
 
   if (phase === 'domain' && kb) {
+    // An admin changing the CNAME takes a paying customer's help center off the internet,
+    // so the worker refuses them (_require_owner) — which would land here as a raw 403 on a
+    // screen that looks broken. A named state instead: the rail item still works, it just
+    // says whose decision this is.
+    if (!isOwner) {
+      return (
+        <>
+          {adminBar}
+          <div className="settings">
+            <header className="settings-top">
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '6px 12px', fontSize: 13 }}
+                onClick={() => setPhase('kb')}
+              >
+                ← Help center
+              </button>
+            </header>
+            <div className="settings-single">
+              <OwnerOnly
+                heading="The address is managed by the owner"
+                body={`${kb.name} is reachable at its Quink address, and a custom domain can be connected to it. Connecting or changing one points a real website at this help center, so it stays with the person accountable for it.`}
+                ownerName={ownerName}
+              />
+            </div>
+          </div>
+        </>
+      )
+    }
     return (
       <>
         {adminBar}

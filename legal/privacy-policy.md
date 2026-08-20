@@ -30,7 +30,7 @@ For the **content inside your recordings and articles**, you are the Data Fiduci
 Quink is a Data Processor acting on your instructions. If your recording shows a customer's
 name, email address, or any other personal data belonging to someone else, that is your
 data to control. You decide what to record, what to publish, and when to delete it. We
-process it only to generate and host your help center. See §11.
+process it only to generate and host your help center. See §12.
 
 ---
 
@@ -70,7 +70,7 @@ not use it for model improvement.
 We do not use your recordings, articles, or screenshots to train any model of our own. We
 do not have a model of our own.
 
-We do not review your recordings as a matter of routine. See §8 for the limited case where
+We do not review your recordings as a matter of routine. See §9 for the limited case where
 a human at Quink can see your content.
 
 ---
@@ -84,7 +84,8 @@ a human at Quink can see your content.
 | Articles and screenshots — paid plans | Kept until you delete them or close your account |
 | Articles and screenshots — free plan | Help center goes offline 30 days after your first article; content is permanently deleted 7 days after that, at day 37 |
 | Account record | Until you delete your account |
-| Processing job records | Retained after account deletion in anonymised form — see §10 |
+| Record that someone was an editor of a help center | Until the help center is deleted, or that person deletes their account — see §8 |
+| Processing job records | Retained after account deletion in anonymised form — see §11 |
 | Billing and tax records | Retained for the period required by Indian tax law, currently 6 years, even after account deletion |
 | Server and access logs | Up to 12 months |
 
@@ -135,7 +136,27 @@ deliberate choice, not an oversight.
 
 ---
 
-## 8. Access by Quink staff
+## 8. Teammates you invite
+
+The owner of a help center, and anyone already editing it, can invite other people by email
+address. An invited person who accepts can read and change everything inside that help
+center — including unpublished articles, screenshots, and the source recordings still stored
+against unpublished articles. They cannot change the custom domain, see the plan or any
+billing information, delete the help center, or remove its owner.
+
+To make this work we store the invited email address, who sent the invite, when it was sent
+and when it was accepted or revoked. If someone's access is later removed we keep the record
+that they were once an editor, rather than deleting it — it is how the app can tell them
+their access was removed instead of showing them a help center that appears not to exist.
+That record is deleted when the help center is deleted, or when the person deletes their
+Quink account.
+
+Invites are bound to the address they were sent to: the link cannot be redeemed by anyone
+signed in with a different email address, and it expires after 14 days.
+
+---
+
+## 9. Access by Quink staff
 
 Quink is currently run by one person. Administrative access to the system allows that person
 to open a customer's knowledge base — including unpublished articles and screenshots — in
@@ -147,14 +168,14 @@ otherwise would be dishonest. We do not browse customer content for any other re
 
 ---
 
-## 9. Your rights
+## 10. Your rights
 
 Under the DPDP Act you have the right to:
 
 - **Access** a summary of the personal data we hold about you and who we have shared it with.
 - **Correct** data that is inaccurate, and complete data that is incomplete. Most of this
   you can do yourself in Settings.
-- **Erase** your data and withdraw your consent. See §10.
+- **Erase** your data and withdraw your consent. See §11.
 - **Nominate** another person to exercise these rights on your behalf if you die or become
   incapacitated. Email us to register a nominee.
 - **Grieve** — raise a complaint with us, and escalate to the Data Protection Board of India
@@ -167,7 +188,7 @@ There is no charge for any of this.
 
 ---
 
-## 10. Deleting your account
+## 11. Deleting your account
 
 You can delete your account yourself, from Settings. It is at the bottom of the page and it
 requires you to type your help center name to confirm.
@@ -199,7 +220,7 @@ We will email you a confirmation when deletion completes.
 
 ---
 
-## 11. When your recording contains someone else's data
+## 12. When your recording contains someone else's data
 
 If your screen recording shows a real customer's name, email address, order details, or any
 other personal data, you are responsible for having the right to record and publish it.
@@ -208,13 +229,13 @@ Our advice, which is also our request: record with test data. It makes better ar
 it removes the problem entirely.
 
 Where we process personal data on your behalf, we act only on your instructions, we do not
-use it for our own purposes, we apply the security measures in §12, and we delete it when
+use it for our own purposes, we apply the security measures in §13, and we delete it when
 you delete it. A written Data Processing Agreement is available at no cost — email
 support@quink.online and we will send one.
 
 ---
 
-## 12. Security
+## 13. Security
 
 Access to your data is restricted at the database level, so one customer's account cannot
 read another's. Files are stored in per-knowledge-base locations with the same restriction.
@@ -232,7 +253,7 @@ notify the Data Protection Board of India within the timeframes the DPDP Rules r
 
 ---
 
-## 13. Children
+## 14. Children
 
 Quink is a business tool and is not for anyone under 18. We do not knowingly collect data
 from children. If you believe a child has created an account, email support@quink.online and
@@ -240,7 +261,7 @@ we will delete it.
 
 ---
 
-## 14. Changes to this policy
+## 15. Changes to this policy
 
 If we change anything material — new subprocessor, changed retention period, new category of
 data — we will email account holders before it takes effect and update the date at the top.
@@ -248,7 +269,7 @@ Minor clarifications may be made without notice.
 
 ---
 
-## 15. Contact and grievances
+## 16. Contact and grievances
 
 **Grievance Officer:** Leander Denzil Fernandes  
 **Email:** support@quink.online  

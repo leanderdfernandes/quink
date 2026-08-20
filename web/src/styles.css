@@ -7238,3 +7238,387 @@ a.rs-crumb-link:hover {
 .rs-ft-legal a:hover {
   opacity: 1;
 }
+
+/* ============================================================================
+   TEAM ACCESS — People, the avatar stack, the invite screen
+   Every value is a token. These screens have to sit next to Articles and Theming
+   without announcing themselves as newer.
+   ============================================================================ */
+
+/* --- avatars ----------------------------------------------------------------
+   Initials, not photos: `profiles` has no avatar column, and kb_people() only
+   sometimes finds one in Google's metadata. Four faces where one has a picture
+   and three have letters looks broken; four letters looks intentional. */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--brand-100);
+  color: var(--brand-800);
+}
+/* Four tints, so a list of people is scannable. Brand and warm neutrals only —
+   the same hues as the rest of the app, at low saturation. */
+.av-t0 {
+  background: var(--brand-100);
+  color: var(--brand-800);
+}
+.av-t1 {
+  background: var(--subtle);
+  color: var(--secondary);
+}
+.av-t2 {
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+.av-t3 {
+  background: var(--paper);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+/* A pending invite is not a person in the room yet. */
+.avatar.ghost {
+  background: var(--paper);
+  color: var(--muted);
+  border: 1px dashed var(--border-strong);
+}
+
+.avstack {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.avstack .avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+  margin-left: -7px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.avstack .avatar:first-child {
+  margin-left: 0;
+}
+.avstack-more {
+  margin-left: -7px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* --- People ----------------------------------------------------------------- */
+.pp {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  width: 100%;
+}
+.pp h1 {
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.pp-lede {
+  margin: 7px 0 26px;
+  font-size: 14.5px;
+  color: var(--muted);
+  max-width: 56ch;
+}
+
+/* Inline, above the list. One input and one button do not need a modal. */
+.pp-invite {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 15px 16px;
+  margin-bottom: 22px;
+  box-shadow: var(--sh-sm);
+}
+.pp-invite label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--secondary);
+  margin-bottom: 8px;
+}
+.pp-invite-row {
+  display: flex;
+  gap: 8px;
+}
+.pp-invite-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 8px 11px;
+  background: var(--paper);
+}
+.pp-invite-row input:focus {
+  outline: none;
+  border-color: var(--brand-400);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--brand-50);
+}
+.pp-invite-row input::placeholder {
+  color: var(--muted);
+}
+.pp-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+.pp-hint.err {
+  color: var(--danger);
+}
+.pp-hint.ok {
+  color: var(--success);
+}
+/* Visible and inert. The shape of the thing is the argument for it. */
+.pp-inert {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* The free gate. A flat brand tint, not a gradient panel: this is a state of the
+   product, not a billboard inside it. */
+.pp-gate {
+  background: var(--brand-50);
+  border: 1px solid var(--brand-100);
+  border-radius: var(--r-md);
+  padding: 20px 22px 22px;
+  margin-bottom: 22px;
+}
+.pp-gate h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.pp-gate p {
+  font-size: 14px;
+  color: var(--secondary);
+  max-width: 52ch;
+  margin: 0;
+}
+.pp-gate-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.pp-gate-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pp-empty {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 30px 24px 32px;
+  text-align: center;
+  margin-bottom: 22px;
+}
+.pp-empty h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.pp-empty p {
+  font-size: 14px;
+  color: var(--secondary);
+  max-width: 44ch;
+  margin: 0 auto;
+}
+/* The timeline seam — the mark the rest of the product uses for "a thing with
+   steps in it". */
+.pp-seam {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-bottom: 16px;
+}
+.pp-seam i {
+  width: 52px;
+  height: 1px;
+  background: var(--border-strong);
+}
+.pp-seam b {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.pp-listhead {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 9px;
+}
+.pp-list {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.pp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.pp-row:last-child {
+  border-bottom: 0;
+}
+.pp-row.pending {
+  background: var(--paper);
+}
+.pp-who {
+  min-width: 0;
+}
+.pp-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pp-row.pending .pp-name {
+  font-weight: 500;
+  color: var(--secondary);
+}
+.pp-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pp-acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.pp-acts .linklike {
+  font-size: 12.5px;
+}
+.linklike.danger:hover {
+  color: var(--danger);
+}
+.pp-confirm {
+  font-size: 12.5px;
+  color: var(--secondary);
+}
+.pp-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2.5px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--secondary);
+  white-space: nowrap;
+}
+.pp-chip.owner {
+  background: var(--brand-50);
+  border-color: var(--brand-100);
+  color: var(--brand-700);
+}
+.pp-chip.pend {
+  background: var(--subtle);
+  border-color: var(--border);
+  color: var(--muted);
+}
+.pp-chip.dashed {
+  background: transparent;
+  border-style: dashed;
+  color: var(--muted);
+}
+
+/* --- Accept an invite -------------------------------------------------------
+   Wears the help center's own mark and colour: the thing they were invited to is
+   their colleague's help center, not Quink. */
+.inv {
+  text-align: center;
+}
+.inv-logo,
+.inv-mark {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+  margin: 0 auto 16px;
+  object-fit: contain;
+}
+.inv-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--border-strong);
+  color: var(--surface);
+  font-weight: 700;
+  font-size: 17px;
+}
+.inv-mismatch {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 12.5px;
+  margin: 0 0 18px;
+}
+.inv-mismatch span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+.inv-mismatch i {
+  font-style: normal;
+  color: var(--muted);
+}
+.inv-mismatch b {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- switcher sections ------------------------------------------------------ */
+.kbsw-group {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 8px 0 4px;
+  padding: 0 8px;
+}

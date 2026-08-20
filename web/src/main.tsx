@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-r
 import App from './App'
 import Admin from './screens/Admin'
 import Claim from './screens/Claim'
+import Invite from './screens/Invite'
 import ReaderSite from './reader/ReaderSite'
 import { readerKeyFromHost } from './lib/config'
 import './styles.css'
@@ -53,12 +54,18 @@ createRoot(document.getElementById('root')!).render(
           {/* The receiving end of a reverse demo. Above /app/ because an unauthenticated
               visitor must land here, not be bounced through the signed-out landing page. */}
           <Route path="/claim/:token" element={<Claim />} />
+          {/* The receiving end of a team invite. Above /app/ for the same reason as
+              /claim/: the visitor is usually signed out, or signed in as the wrong person,
+              and must land HERE rather than be bounced through the landing page. */}
+          <Route path="/invite/:token" element={<Invite />} />
 
           {/* App renders both: it resolves the KB from :kbId when present, and otherwise
               runs the signed-out landing/upload flow at "/" and redirects once it knows
               which KB to open. */}
           <Route path="/app/:kbId" element={<App />} />
           <Route path="/app/:kbId/article/:articleId" element={<App />} />
+          {/* People is a route, not a wizard phase: it is a place you send someone to. */}
+          <Route path="/app/:kbId/people" element={<App />} />
           <Route path="*" element={<KbQueryRedirect />} />
         </Routes>
       )}

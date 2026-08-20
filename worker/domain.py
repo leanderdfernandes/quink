@@ -398,7 +398,8 @@ def _notify_live(kb_id: str, domain: str) -> None:
         row = (
             pipeline.db()
             .table("knowledge_bases")
-            .select("owner_id, profiles(email)")
+            # Explicit FK: kb_members makes a bare `profiles` embed ambiguous (PGRST201).
+            .select("owner_id, profiles!knowledge_bases_owner_id_fkey(email)")
             .eq("id", kb_id)
             .single()
             .execute()

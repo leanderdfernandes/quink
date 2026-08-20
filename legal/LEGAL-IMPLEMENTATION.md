@@ -66,7 +66,7 @@ the fix is to change the code or change the sentence, not to publish and hope. V
 - [ ] **PostHog is installed in cookieless mode**, or privacy §7's "no cookie banner" claim
       is not yet true. `checklist.md` §1.5 has this unchecked. Either ship cookieless PostHog
       first, or soften §7 until you do. Do not publish the stronger version early.
-- [ ] **Self-serve account deletion is live and matches privacy §10** — permanent, no PITR,
+- [ ] **Self-serve account deletion is live and matches privacy §11** — permanent, no PITR,
       paid plans refused, jobs rows anonymised, confirmation email sent.
 - [ ] **Free-tier day 30 / day 37 behaviour matches** terms §3 and privacy §5, including the
       14-day, 7-day and offline emails actually sending. `checklist.md` §1.7 flags that the
@@ -107,10 +107,10 @@ or listed, fix that before publishing the terms, not after.
 - The retention numbers in privacy §5 and terms §3 — 30 days, day 37, 7 days for failed-job
   videos. They describe shipped behaviour. If you want different numbers, change the code
   first and the documents second.
-- The "no PITR / no backup / permanent" language in privacy §10 and §12. It is unflattering
+- The "no PITR / no backup / permanent" language in privacy §11 and §13. It is unflattering
   and it is true, and it matches the deletion dialog copy.
-- The admin-access disclosure in privacy §8. `checklist.md` D4 explicitly requires it.
-- The jobs-anonymisation and billing-retention carve-outs in privacy §10. They must stay
+- The admin-access disclosure in privacy §9. `checklist.md` D4 explicitly requires it.
+- The jobs-anonymisation and billing-retention carve-outs in privacy §11. They must stay
   aligned with the delete-account implementation. If that implementation changes, this
   paragraph changes with it.
 - The liability cap and governing law in terms §13 and §16.

@@ -128,7 +128,9 @@ def run(
     kb_id: str,
     video_path: str,
     context: dict,
-    user_id: str | None = None,
+    # The KB's OWNER, not whoever pressed the button: lanes are an account-level cost
+    # control, and the account with the money on it is the owner's.
+    owner_id: str | None = None,
     lanes: int = 1,
 ) -> None:
     """Execute the pipeline. Any raised error is classified onto the job row and re-raised
@@ -139,7 +141,7 @@ def run(
     waiting for a lane sits at 'queued', which is what the dock renders as "in line".
     """
     try:
-        with lanes_mod.Lane(user_id, lanes):
+        with lanes_mod.Lane(owner_id, lanes):
             # Queue time ends HERE. The timeout sweep measures a running job from this
             # stamp, never from created_at — otherwise a job that waited its turn behind
             # other runs gets failed as "hung" for the crime of being in the queue (3i).

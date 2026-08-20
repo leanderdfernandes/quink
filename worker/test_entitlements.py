@@ -23,6 +23,7 @@ import main  # noqa: E402
 import pipeline  # noqa: E402
 
 OWNER = "owner-uid"
+MEMBER = "member-uid"
 KB_ID = "kb-1"
 VIDEO = f"{KB_ID}/recording.mp4"
 
@@ -64,6 +65,9 @@ class _Query:
     def maybe_single(self):
         return self
 
+    def is_(self, *_a):
+        return self
+
     def execute(self):
         if self._insert is not None:
             self.db.inserted.append(self._insert)
@@ -74,6 +78,10 @@ class _Query:
             return _Result({"plan": self.db.plan})
         if self.table_name == "knowledge_bases":
             return _Result({"owner_id": OWNER})
+        if self.table_name == "kb_members":
+            # An active membership row exists only for whoever _FakeDb was told about.
+            return _Result([{"user_id": self._eq.get("user_id")}]
+                           if self._eq.get("user_id") == self.db.member else [])
         # jobs: either the quota count or the spend scan
         if self._count:
             return _Result([], count=self.db.runs_used)
@@ -81,17 +89,18 @@ class _Query:
 
 
 class _FakeDb:
-    def __init__(self, plan="free", runs_used=0, spend_today=0.0):
+    def __init__(self, plan="free", runs_used=0, spend_today=0.0, member=None):
         self.plan, self.runs_used, self.spend_today = plan, runs_used, spend_today
+        self.member = member
         self.inserted: list[dict] = []
 
     def table(self, name):
         return _Query(self, name)
 
 
-def _install(db):
+def _install(db, as_user=OWNER):
     pipeline.db = lambda: db
-    main._auth_uid = lambda _auth: OWNER
+    main._auth_uid = lambda _auth: as_user
     # The pipeline itself is out of scope here — what matters is whether we got far enough
     # to schedule it at all.
     pipeline.run = lambda *a, **k: ran.append(a)
@@ -122,7 +131,24 @@ def run() -> None:
         assert _generate(c).status_code == 200
     assert len(db.inserted) == 1, "an allowed run must create its ledger row"
     assert db.inserted[0]["user_id"] == OWNER, "the ledger is keyed by OWNER, not by KB"
+    assert db.inserted[0]["billed_to_user_id"] == OWNER
     assert db.inserted[0]["over_cap"] is False
+
+    # --- a MEMBER presses the button: allowed, and the run is billed to the OWNER.
+    # Entitlements resolve through the KB owner, never the caller — a free-plan admin
+    # inside a paid help center spends the owner's runs, not their own (team-access §4).
+    db = _install(_FakeDb(plan="free", runs_used=2, member=MEMBER), as_user=MEMBER)
+    with TestClient(main.app) as c:
+        assert _generate(c).status_code == 200
+    assert db.inserted[0]["user_id"] == MEMBER, "who pressed the button"
+    assert db.inserted[0]["billed_to_user_id"] == OWNER, "who pays"
+
+    # --- a stranger with a valid session is still refused: no membership row, no run.
+    ran.clear()
+    db = _install(_FakeDb(plan="free", member=MEMBER), as_user="stranger-uid")
+    with TestClient(main.app) as c:
+        assert _generate(c).status_code == 403
+    assert not db.inserted and not ran, "a non-member must not reach the ledger"
 
     # --- free tier, at the cap: HARD wall, and nothing is spent reaching it
     ran.clear()

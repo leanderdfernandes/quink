@@ -524,7 +524,9 @@ def _retry(db):
     import main
 
     pipeline.db = lambda: db
-    main._require_owner = lambda _auth, _kb: "owner"
+    # (uid, owner_id) — retry goes through the editor guard, and the run is billed to
+    # the owner even when a member pressed the button.
+    main._require_editor = lambda _auth, _kb: ("owner", "owner")
     started.clear()
     real_run = pipeline.run
     pipeline.run = lambda *a, **k: started.append(a)

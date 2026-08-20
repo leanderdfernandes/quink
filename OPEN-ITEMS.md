@@ -155,7 +155,68 @@ and it is discarded. Same lossiness argument as `reader_views` before migration 
 
 ---
 
-## D. One-line cleanups
+## D. Team access — Phases 1 and 2 are in, Phase 3 is not
+
+Migration 0035 landed the data layer (`kb_members`, `kb_invites`, the `owns_kb()` /
+`can_edit_kb()` split, the invite RPCs, quota billed to the owner, the claim wipe), and
+Phase 2 landed the screens: `/app/:kbId/people`, `/invite/:token` with five distinct
+states, the removed-access screen, the avatar stack, the `Yours` / `Shared with you`
+switcher, and `POST /api/invite/email`. `supabase/test_team.py` proves the data layer live.
+
+**Before this reaches a customer:**
+
+- **`/invite/*` must be in the Supabase redirect allowlist** (Auth → URL Configuration →
+  Redirect URLs), exactly as `/claim/*` had to be. Without it Google OAuth returns to the
+  Site URL, the token is gone, and an invited person lands in their own empty app. This is
+  a dashboard setting and cannot be done from code. `lib/people.ts` stashes the token in
+  localStorage as a backstop, but that only rescues a same-origin fallback — it is a net,
+  not a substitute. **Verified end to end only after this is set.**
+- **`EMAIL_ENABLED` must be on for the worker** or invites are logged, never sent. With it
+  off the People screen says so ("…we couldn't send the email just now") rather than
+  claiming a delivery that did not happen, so nothing is silently broken — but nobody gets
+  an invite either.
+
+**Phase 3 — presence and the stale-write guard — is not built.** `useAutosave.ts` is still
+last-write-wins, so two admins in one article means one person's text disappears with no
+error state. Phase 2 without Phase 3 ships that failure to customers; the columns are
+already there (`articles.last_edited_by`, `last_edited_at`).
+
+### D.1 Free-tier dormancy is a fixed clock, not an activity signal
+
+`team-access-spec.md` §8 says "free-tier persistence keys on reader or edit signal", and
+asks that member edits count as edit signal. **They cannot, because nothing does.**
+`worker/trial.py` keys entirely on `knowledge_bases.trial_started_at` — a fixed 30-day
+clock from KB creation or claim. `last_reader_view_at` and `reader_views` are recorded but
+read only by the admin KBs tab; no query anywhere extends a trial for activity of any kind.
+
+Nothing is scoped to `owner_id`, so there is no member-specific bug to fix — the whole
+mechanism the spec describes does not exist. Decide which is true before Phase 2 ships:
+either the spec sentence goes, or activity-based persistence gets built and
+`privacy-policy.md` §5's "30 days after your first article" changes with it.
+
+### D.2 A member cannot see the KB's entitlements, so two numbers are missing
+
+`profiles` is closed, and correctly: a member has no way to read the owner's plan. Nothing
+in migration 0035 projects the owner's *limits* for a KB the way `kb_runs_used()` projects
+its *usage*. Two consequences, both live and both cosmetic-to-mild:
+
+1. **An admin sees runs USED with no cap.** The rail says "3 recordings turned into a guide
+   here", never "3 of 3". They cannot tell that the next run will be refused until the
+   worker refuses it — and because the dropzone cannot refuse locally either, that refusal
+   arrives after the upload, stranding one Storage object (the leak §10b's worked example
+   closes for owners).
+2. **Preview flags fall back to the free tier.** The editor and Theming previews read
+   `limitsFor(plan).watermark`, and with no plan they assume `free` — so an admin inside a
+   paid help center may see a watermark badge in the preview that is not on the live site.
+   Wrong in the harmless direction, deliberately.
+
+The fix is one RPC — the KB's rendering/limit flags projected by kb id, gated on
+`can_edit_kb()`, returning no tier name — but that is a migration, and Phase 2 was UI only.
+Do it with Phase 3 or before the first real team.
+
+---
+
+## E. One-line cleanups
 
 - **`profiles.account_deleted_email_sent_at` is dead.** Migration 0032 added it as the
   deletion email's `send_once` marker; the email now fires *after* `auth.users` is deleted,
@@ -174,7 +235,7 @@ and it is discarded. Same lossiness argument as `reader_views` before migration 
 
 ---
 
-## E. Deferred by decision — do not build yet
+## F. Deferred by decision — do not build yet
 
 - **Payments.** Razorpay Subscriptions with UPI Autopay. `purge.py` carries a
   `TODO(payments)` at the paid-plan deletion refusal: once subscription state is

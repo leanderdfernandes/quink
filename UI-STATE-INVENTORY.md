@@ -717,3 +717,74 @@ items 12–14, are the parts most affected.
   granted to clients) marks when a lane was acquired. Running jobs are measured from it;
   queued jobs get `QUEUE_TIMEOUT_MIN` (2h) and their own code, `never_started`. Before this, a
   job waiting its turn on a single lane was failed as a `timeout`.
+
+---
+
+## G. People, invites, removed access (team access, Phase 2)
+
+Added after A–F. ⚠️ DRIFT here = contradicts `ux-spec-v2.md` or `team-access-spec.md`.
+
+**1. Routes / files** — `/app/:kbId/people` → `screens/People.tsx` (a real route, unlike Theming and
+Domain, which stay `phase` values — People is somewhere you send a colleague a link to).
+`/invite/:token` → `screens/Invite.tsx`, rendered outside the app shell like `/claim/:token`.
+Sub-parts: `components/AvatarStack.tsx`, `components/OwnerOnly.tsx`, `lib/people.ts`. The removed
+state is `phase === 'removed'` in `App.tsx`.
+
+**2. Render branches — People**
+| State | Condition |
+|---|---|
+| Paid, populated | `!gated` → inline invite form, then one list: members, then live invites |
+| Paid, empty | one member and no invites → "Just you, for now" panel above the list |
+| Free, gated | `isOwner && !limitsFor(plan).can_invite` → gate panel, inert field, "See plans"; owner row still renders below it |
+| Admin (non-owner) view | `plan === null` → gate NEVER renders (their plan says nothing about this KB); the field works and `invite_to_kb()` is the authority |
+| Row: owner / you / member / pending | `is_owner` → `Owner` chip, no action · `id === userId` → `You` chip + `Leave` · member → `Remove` · `kind === 'invite'` → dimmed row, `Pending` chip, `Resend` / `Revoke` |
+| Confirm | `confirming === row.id` → the action is replaced by a question + confirm/cancel |
+| Hint line | default / `ok` after a send / `err` carrying **the RPC's own message** |
+| Email didn't go out | `sendInviteEmail` false → "…is invited, but we couldn't send the email just now — use Resend in a moment." |
+| Loading | no spinner, no skeleton: the list simply does not render until `kb_people()` answers |
+
+**3. Render branches — `/invite/:token`** (five, each with its own copy — deliberately not merged the
+way `App.tsx` merges permission-denied and not-found)
+| State | Condition |
+|---|---|
+| Valid | `state === 'valid'`, signed out → KB logo/colour, "{inviter} invited you to help maintain {kb}", Continue with Google + email link |
+| Expired | `state === 'expired'` → names who to ask |
+| Revoked | `state === 'revoked'` → vague about who withdrew it, on purpose |
+| Wrong account | `accept_kb_invite()` throws → both addresses side by side, `prompt=select_account` re-auth, or a magic link to the invited address |
+| Frozen | `state === 'frozen'` (owner downgraded) → names the reason, says the invite still works |
+| Used / unknown | `state === 'accepted'` / zero rows |
+| Already a member | `accept_kb_invite()` returns a kb id → silent `navigate('/app/:kbId')`, never an error |
+
+**4. Other branches**
+| State | Condition | Ref |
+|---|---|---|
+| Removed-access screen | `fetchKb` null **and** `kb_access_state() === 'removed'` | App |
+| Not found (unchanged) | `fetchKb` null and state `'none'` | App |
+| Admin banner — **CORRECTED** | `isAdmin && access !== 'ok'` (was `kb.owner_id !== userId`, which fired for every legitimate member) | App |
+| Avatar stack | `people.length > 1` — three faces plus `+N`, opens People | KB top bar |
+| Rail item People | always, every plan, with a count when `people.length > 1` | KB rail |
+| Billing surfaces | trial pill, day-7 banner, rail trial panel, upgrade modal: `isOwner` only. A non-owner gets a runs-used line with no cap and no CTA, and `OwnerOnly` instead of the upgrade modal | KB rail / App |
+| Domain, non-owner | `phase === 'domain' && !isOwner` → `OwnerOnly` screen naming the owner, not a 403 | App |
+| KB switcher | two sections, `Yours` / `Shared with you`, headings only when both are non-empty; `+ New help center` counts OWNED KBs against `PLANS[plan].kbs` | KbSwitcher |
+
+**5. Data** — `kb_people(kb_id)`, `kb_access_state(kb_id)`, `kb_runs_used(kb_id)`, `invite_to_kb`,
+`revoke_kb_invite`, `remove_kb_member`, `invite_preview` (anon), `accept_kb_invite`; `listKbs` now
+runs with NO owner filter and lets RLS return owned + shared (`isAdmin` still filters, or staff would
+see every KB in the database). `POST /api/invite/email` for the send. Nothing reads `kb_members`,
+`kb_invites` or another user's `profiles` row directly — all of those are revoked from clients.
+
+**6. Hardcoded** — every string on both screens, the `SHOWN = 3` faces in the stack, the four avatar
+tints, the 14-day expiry wording (the interval itself lives in the `kb_invites` default). *Config:*
+`PLANS[plan].can_invite`, `WORKER_URL`.
+
+**7. Default-open vs on-demand** — Default-open: the invite field (inline, never a modal), the whole
+list. On-demand: the per-row confirm, the switcher dropdown. One `localStorage` key added,
+`quink.invite_token`, purely as the OAuth-redirect backstop that `quink.claim_token` already is.
+
+⚠️ DRIFT — `team-access-spec.md` §9.1 puts the invite box "at the top of the list" and §9.2 shows the
+People screen inside the app rail. Built as a settings-style screen with a back link, matching Theming
+and Domain, because the rail lives in `KnowledgeBase.tsx` and every other settings screen leaves it.
+⚠️ DRIFT — §9.5's removed-access copy names the help center. `kb_access_state()` returns a state and
+nothing else, and RLS is hiding the row by then, so the built copy says "this help center".
+⚠️ DRIFT — §9.4 has one "Sign in to accept" button; built with the email-link fallback beside it,
+because the invited address is the one that must sign in and a magic link goes straight there.

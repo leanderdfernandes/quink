@@ -75,7 +75,9 @@ export default function Admin() {
       // same query returns their own rows and nothing more.
       const { data } = await supabase
         .from('knowledge_bases')
-        .select('id, name, subdomain, owner_id, last_reader_view_at, profiles(email)')
+        // Explicit FK: kb_members gives knowledge_bases a second path to profiles, and a
+        // bare embed is ambiguous (PGRST201).
+        .select('id, name, subdomain, owner_id, last_reader_view_at, profiles!knowledge_bases_owner_id_fkey(email)')
         .order('created_at', { ascending: false })
       if (!cancelled) setKbs((data as unknown as AdminKb[]) ?? [])
     })()

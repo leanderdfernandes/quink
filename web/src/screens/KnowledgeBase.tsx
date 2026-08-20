@@ -12,6 +12,8 @@ import LegalFooter from '../components/LegalFooter'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
 import { listInFlightJobs } from '../lib/jobs'
 import { limitsFor, runsUsed } from '../lib/plans'
+import type { Person } from '../lib/people'
+import AvatarStack from '../components/AvatarStack'
 import { publicBrandingUrl } from '../lib/storage'
 import {
   createFolder,
@@ -41,8 +43,16 @@ import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
 
 type Props = {
   kb: KB
-  // The owner's plan (profiles.plan). Entitlements are owner-level, never per-KB.
-  plan: string
+  // The owner's plan (profiles.plan). Entitlements are owner-level, never per-KB — and
+  // NULL when this account is not the owner: a member cannot read the owner's tier and must
+  // not be shown it (team-access-spec L7). Every billing surface below keys on that.
+  plan: string | null
+  // Owner of this help center. Not Quink staff, and not "can edit".
+  isOwner: boolean
+  userId: string | null
+  // Everyone who can edit this KB, for the avatar stack. Owner + members + live invites.
+  people: Person[]
+  onOpenPeople: () => void
   // Every KB this account can open. Unused on a 1-KB plan — the switcher renders a label.
   kbs: KB[]
   onSwitchKb: (kbId: string) => void
@@ -131,6 +141,10 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 export default function KnowledgeBase({
   kb,
   plan,
+  isOwner,
+  userId,
+  people,
+  onOpenPeople,
   kbs,
   onSwitchKb,
   onNewArticle,
@@ -191,7 +205,7 @@ export default function KnowledgeBase({
           .eq('kb_id', kb.id)
           .order('created_at', { ascending: false }),
         listFolders(kb.id),
-        runsUsed(kb.owner_id),
+        runsUsed(kb.id),
         // Granted to authenticated since migration 0025 and called by nothing until now.
         // It proves ownership through auth.uid() itself, so there is no filter to add here.
         supabase.rpc('article_feedback_summary', { p_kb_id: kb.id }),
@@ -547,13 +561,17 @@ export default function KnowledgeBase({
 
   // Only tiers with a lifetime cap get a counter. The unit is video RUNS — writing an
   // article by hand is unlimited on every tier, so the copy must not imply otherwise.
-  const runLimit = limitsFor(plan).lifetime_runs
+  const runLimit = plan ? limitsFor(plan).lifetime_runs : null
   const left = runLimit === null ? null : Math.max(runLimit - runs, 0)
 
   // Runs and days both drain. ONE pill, escalating with the clock (pricing-spec §6).
-  const trial = trialFor(kb, plan)
-  const pill = trialPillLabel(trial, left)
-  const showBanner = trial.stage === 'urgent' && !bannerHidden && !loading
+  // With no plan to read — an admin inside someone else's help center — there is no clock
+  // to show. The countdown is a bill arriving, and it is not theirs.
+  const trial = plan ? trialFor(kb, plan) : { stage: 'none' as const, daysLeft: 0, graceLeft: 0 }
+  // Both are billing surfaces — a countdown to a bill and a button to pay it — so neither
+  // renders for someone who cannot act on them (team-access-spec L7).
+  const pill = isOwner ? trialPillLabel(trial, left) : null
+  const showBanner = isOwner && trial.stage === 'urgent' && !bannerHidden && !loading
 
   const initial = (kb.name.trim()[0] || 'Q').toUpperCase()
   const logo = publicBrandingUrl(kb.logo_path)
@@ -740,10 +758,11 @@ export default function KnowledgeBase({
               {initial}
             </span>
           )}
-          <KbSwitcher kb={kb} plan={plan} kbs={kbs} onSwitch={onSwitchKb} />
+          <KbSwitcher kb={kb} plan={plan} kbs={kbs} userId={userId} onSwitch={onSwitchKb} />
           <span className="lib-kb-tag">Help Center</span>
         </div>
         <div className="lib-top-right">
+          <AvatarStack people={people} onOpen={onOpenPeople} />
           {pill && (
             <button
               className={`counter counter-btn${trial.stage === 'warning' ? ' amber' : ''}`}
@@ -813,11 +832,20 @@ export default function KnowledgeBase({
             <GlobeIcon />
             Domain
           </button>
+          {/* Always present, on every plan. Hiding it on free would mean nobody ever learns
+              the capability exists — the gated screen behind it is the upgrade surface. */}
+          <button className="rail-item link" onClick={onOpenPeople}>
+            <PeopleIcon />
+            People
+            {people.length > 1 && <span className="rail-count">{people.length}</span>}
+          </button>
 
           {/* The trial and the run ledger both exist in the data and appeared nowhere in
               the app. The header pill is easy to miss and disappears entirely on day 7,
               when it is replaced by the banner — this panel is where someone can look. */}
-          {(trial.stage !== 'none' || left !== null) && (
+          {/* Owner only. An admin gets the run counter — they need to know when recordings
+              are exhausted — but never the plan name, the countdown or the upgrade link. */}
+          {isOwner && (trial.stage !== 'none' || left !== null) && (
             <div className="rail-trial">
               {left !== null && runLimit !== null && (
                 <div
@@ -843,6 +871,20 @@ export default function KnowledgeBase({
               <button className="linklike" onClick={onUpgrade}>
                 See plans →
               </button>
+            </div>
+          )}
+
+          {/* An admin gets the one number that changes what they can do — whether this help
+              center still has recordings in it — and nothing else. No cap, because the cap
+              lives on the owner's plan and their profile is not readable from here; no
+              plan name, no countdown, no upgrade link. See OPEN-ITEMS D.2. */}
+          {!isOwner && runs > 0 && (
+            <div className="rail-trial">
+              <p>
+                <b>Video guides</b>
+                {plural(runs, 'recording')} turned into a guide here. Writing an article by
+                hand is unlimited.
+              </p>
             </div>
           )}
 
@@ -1197,6 +1239,13 @@ const GlobeIcon = () => (
     <circle cx="12" cy="12" r="10" />
     <path d="M2 12h20" />
     <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
+  </svg>
+)
+const PeopleIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+    <path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20" />
+    <circle cx="9" cy="7.5" r="3.5" />
+    <path d="M17 4.2a3.5 3.5 0 0 1 0 6.6M22 20v-1.5a4 4 0 0 0-3-3.87" />
   </svg>
 )
 const SearchIcon = () => (

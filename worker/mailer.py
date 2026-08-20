@@ -124,6 +124,68 @@ def trial_purged(kb_name: str) -> tuple[str, str]:
     )
 
 
+# --- Team invites (team-access-spec §9.3) ----------------------------------------------
+def team_invite(
+    inviter: str,
+    kb_name: str,
+    url: str,
+    color: str | None,
+    logo_url: str | None,
+) -> tuple[str, str, str]:
+    """The one email in this file that is not from Quink about Quink.
+
+    It is about somebody's colleague and their help center, so it wears THEIR mark and
+    THEIR colour — the same branding the recipient meets on the accept screen and inside
+    the app. An invite that looks like a SaaS announcement gets read as one.
+
+    Returns (subject, text, html). The text half is not a fallback nobody reads: it is what
+    every plain-text client, every screen reader in text mode, and every spam filter
+    actually sees, so it carries the whole message and the whole link.
+    """
+    subject = f"{inviter} invited you to {kb_name}"
+    text = (
+        f"{inviter} invited you to help maintain {kb_name}, their help center on "
+        f"Quink.\n\n"
+        f"You'll be able to write, edit and publish guides there.\n\n"
+        f"Accept the invite: {url}\n\n"
+        f"This link expires in 14 days, and only works for the address it was "
+        f"sent to.\n\n"
+        f"If you weren't expecting this, you can ignore it - nothing happens until "
+        f"you accept.\n\n- Quink"
+    )
+    brand = color or "#0e5c6b"
+    mark = (
+        f'<img src="{logo_url}" alt="" width="44" height="44" '
+        f'style="display:block;margin:0 auto 18px;border-radius:12px">'
+        if logo_url
+        else f'<div style="width:44px;height:44px;border-radius:12px;background:{brand};'
+        f'color:#fff;font:700 17px/44px Helvetica,Arial,sans-serif;text-align:center;'
+        f'margin:0 auto 18px">{(kb_name or "Q")[:1].upper()}</div>'
+    )
+    # Table-free, inline-styled and single-column: every rule here has to survive Gmail,
+    # Outlook and a phone. No web fonts — a font that fails to load is worse than one that
+    # was never asked for.
+    html = (
+        f'<div style="background:#f2efea;padding:32px 16px;'
+        f'font-family:Helvetica,Arial,sans-serif;color:#211f1b">'
+        f'<div style="max-width:440px;margin:0 auto;background:#fff;border:1px solid #e6e1d9;'
+        f'border-radius:16px;padding:32px 30px;text-align:center">'
+        f"{mark}"
+        f'<h1 style="font-size:19px;line-height:1.35;font-weight:600;margin:0 0 10px">'
+        f"{inviter} invited you to help maintain {kb_name}</h1>"
+        f'<p style="font-size:14px;line-height:1.6;color:#5c574e;margin:0 0 24px">'
+        f"You'll be able to write, edit and publish guides in this help center.</p>"
+        f'<a href="{url}" style="display:inline-block;background:{brand};color:#fff;'
+        f'text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;'
+        f'border-radius:8px">Accept invite</a>'
+        f'<p style="font-size:11.5px;line-height:1.6;color:#8a8377;margin:22px 0 0">'
+        f"This link expires in 14 days and only works for the address it was sent to. "
+        f"If you weren't expecting it, ignore this email.</p>"
+        f"</div></div>"
+    )
+    return subject, text, html
+
+
 # --- Account deletion (DPDP right to withdraw consent) ---------------------------------
 def account_deleted(kb_names: list[str], articles: int) -> tuple[str, str]:
     """Confirmation that a self-serve deletion completed.
@@ -157,12 +219,17 @@ def send_once(
     marker: str | None,
     table: str | None = None,
     row_id: str | None = None,
+    html: str | None = None,
 ) -> bool:
     """Send `subject`/`body` to `to`, at most once for `table`.`row_id`.
 
     `marker` is a timestamptz column on that row. It is claimed first and released only
     if the provider itself fails, so a restart, a second worker, or a user hammering the
     "check again" button cannot produce a second email.
+
+    `html` is optional and additive: when given it rides ALONGSIDE `body`, never instead of
+    it, so every message still has a real plain-text half. Only the invite uses it, because
+    only the invite is about somebody else's brand rather than ours.
 
     `marker=None` — THE ONE EXCEPTION, and it is still a required keyword so nobody
     reaches it by forgetting. It is for a send that fires ONCE, from a user action, with no
@@ -222,6 +289,7 @@ def send_once(
                     "reply_to": config.EMAIL_REPLY_TO,
                     "subject": subject,
                     "text": body,
+                    **({"html": html} if html else {}),
                 },
                 timeout=SEND_TIMEOUT_SECONDS,
             )

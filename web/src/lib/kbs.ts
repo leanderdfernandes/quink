@@ -14,33 +14,46 @@ export async function fetchKb(kbId: string): Promise<KnowledgeBase | null> {
   return (data as KnowledgeBase) ?? null
 }
 
-// Every KB this account can open. Note the deliberate absence of `.single()`: the old
-// resolver threw the moment an account had a second KB.
+// Every KB this account can open — owned AND shared. Note the deliberate absence of
+// `.single()`: the old resolver threw the moment an account had a second KB.
+//
+// No `owner_id` filter, and no membership join either: the select policy is
+// `can_edit_kb(id) or is_admin()`, so RLS already returns exactly the KBs this account may
+// open. Filtering by owner here is what made a shared help center invisible.
+//
+// The `isAdmin` branch is not an optimisation. Quink staff can read EVERY KB in the
+// database, so an unfiltered query would put thirty demo help centers and every customer's
+// into their switcher. Staff get their own; a customer KB they need is reached by URL, with
+// the viewing-as-admin banner on it.
+//
 // ponytail: "recent-first" is creation order — there is no per-KB last-opened timestamp,
 // and one column of bookkeeping isn't worth it until someone has enough KBs to care.
-export async function listKbs(userId: string): Promise<KnowledgeBase[]> {
-  const { data } = await supabase
-    .from('knowledge_bases')
-    .select('*')
-    .eq('owner_id', userId)
-    .order('created_at', { ascending: false })
+export async function listKbs(userId: string, isAdmin = false): Promise<KnowledgeBase[]> {
+  const q = supabase.from('knowledge_bases').select('*').order('created_at', { ascending: false })
+  const { data } = await (isAdmin ? q.eq('owner_id', userId) : q)
   return (data as KnowledgeBase[]) ?? []
 }
 
 // Which KB to open when the URL doesn't say: the last one used, else the first one there
 // is. Persisting this is what stops a refresh dumping someone into a picker.
-export async function resolveDefaultKb(userId: string): Promise<KnowledgeBase | null> {
+export async function resolveDefaultKb(
+  userId: string,
+  isAdmin = false,
+): Promise<KnowledgeBase | null> {
   const { data: profile } = await supabase
     .from('profiles')
     .select('last_kb_id')
     .eq('id', userId)
     .maybeSingle()
 
+  // A remembered KB can be one this account was REMOVED from — fetchKb returns null for it
+  // (RLS), and falling through to the list is what turns that into "you're back in your own
+  // help center" rather than an error screen on every sign-in.
   if (profile?.last_kb_id) {
     const remembered = await fetchKb(profile.last_kb_id)
     if (remembered) return remembered
   }
-  return (await listKbs(userId))[0] ?? null
+  return (await listKbs(userId, isAdmin))[0] ?? null
 }
 
 // `last_kb_id` is the only profiles column a client may write — the rest of the table is

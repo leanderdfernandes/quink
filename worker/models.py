@@ -109,6 +109,18 @@ class DomainKbRequest(BaseModel):
     kb_id: str
 
 
+class InviteEmailRequest(BaseModel):
+    """Send (or re-send) the invite mail for one live invite.
+
+    Keyed on the ADDRESS, not the token: there is one live invite per address per KB, so
+    the worker resolves the token itself and the capability never travels through the
+    inviter's browser. The same request is both the first send and Resend.
+    """
+
+    kb_id: str
+    email: str
+
+
 class DomainStubRequest(BaseModel):
     """Dev-only: drive the stub verifier so a domain 'resolves' on the next check."""
 
