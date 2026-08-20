@@ -3,7 +3,7 @@
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/((?!privacy$|terms$|refunds$|contact$|robots\\.txt$|sitemap\\.xml$).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],

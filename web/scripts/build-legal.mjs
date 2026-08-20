@@ -20,6 +20,14 @@
 //
 // Runs from `npm run build`, BEFORE vite — vite copies public/ into dist/ as-is, so the
 // files have to exist by then.
+//
+// HOW THESE SURVIVE THE SPA FALLBACK. vercel.json rewrites `/(.*)` to /index.html, and
+// these pages are untouched by it because Vercel applies rewrites only AFTER the filesystem
+// check — `cleanUrls` resolves /privacy to public/privacy.html first. They need no
+// exclusion in that rewrite and must not be given one: an exclusion list was added here
+// once to "protect" them and instead stopped the rewrite matching anything, 404ing every
+// deep link in production while these four were never at risk. `scripts/smoke-routes.sh`
+// asserts both halves against a real deployment.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
