@@ -21,13 +21,19 @@
 // Runs from `npm run build`, BEFORE vite — vite copies public/ into dist/ as-is, so the
 // files have to exist by then.
 //
-// HOW THESE SURVIVE THE SPA FALLBACK. vercel.json rewrites `/(.*)` to /index.html, and
-// these pages are untouched by it because Vercel applies rewrites only AFTER the filesystem
-// check — `cleanUrls` resolves /privacy to public/privacy.html first. They need no
-// exclusion in that rewrite and must not be given one: an exclusion list was added here
-// once to "protect" them and instead stopped the rewrite matching anything, 404ing every
-// deep link in production while these four were never at risk. `scripts/smoke-routes.sh`
-// asserts both halves against a real deployment.
+// HOW THESE SURVIVE THE SPA FALLBACK, AND WHAT `cleanUrls` DOES TO IT. vercel.json rewrites
+// `/(.*)` to `/` — not to `/index.html`, which is the trap. `cleanUrls: true` exists for
+// these four pages (it is what serves public/privacy.html at /privacy), and it makes EVERY
+// .html path a 308 to its extensionless form, `/index.html` included. A rewrite pointing at
+// /index.html therefore resolves to nothing, and Vercel answers NOT_FOUND — which is exactly
+// what happened for six days: every deep link 404'd in production the moment cleanUrls
+// landed alongside these pages.
+//
+// These four need no exclusion in that rewrite and must not be given one. Rewrites are
+// applied only AFTER the filesystem check, so /privacy is served as a real file before the
+// rewrite is consulted. An exclusion list was added here once anyway, and hid the real cause
+// for the whole six days. `scripts/smoke-routes.sh` asserts both halves — deep links reach
+// the app, these four stay static — against a real deployment.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
