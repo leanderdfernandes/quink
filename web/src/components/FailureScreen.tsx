@@ -76,15 +76,18 @@ export default function FailureScreen({
         // than stacking a second error on top of the first.
         if (detail?.detail?.code === 'video_purged') {
           setPurged(true)
+          setBusy(false)
           return
         }
         setRetryFailed(detail?.detail?.message ?? 'Could not start that again just yet.')
+        setBusy(false)
         return
       }
+      // Deliberately leaves `busy` set: the caller swaps this screen for the run it just
+      // started, and re-arming the button in the gap is how one retry became five.
       onRetryStarted((await res.json()).job_id as string)
     } catch {
       setRetryFailed('Could not start that again just yet.')
-    } finally {
       setBusy(false)
     }
   }

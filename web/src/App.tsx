@@ -399,6 +399,19 @@ export default function App() {
       return
     }
 
+    // Signed in, but the help center has not resolved. The wall below is a SIGN-IN screen:
+    // showing it to someone already signed in is indistinguishable from having been logged
+    // out, and it is reachable from the failure screen's "Upload a different recording".
+    // Hold the recording and re-resolve instead. A full reload rather than navigate(),
+    // because if the URL is already '/' a router navigation is a no-op and would strand
+    // them on a blank 'loading' screen; the reload re-runs the resolver and loadPending()
+    // picks the file back up, exactly as it does after the real wall.
+    if (session) {
+      await savePending({ file: first, context, extra: rest.length })
+      window.location.assign('/')
+      return
+    }
+
     setLanding('article')
     // Persist before the wall: Google OAuth is a full redirect and would drop the File.
     // Only the FIRST file crosses the wall — the rest are re-dropped after, because
@@ -532,6 +545,11 @@ export default function App() {
     queue.dismiss()
     setFailureCode(null)
     setError(null)
+    setWatchItemId(null)
+    // Drop the dead article from the URL. Without this the failed article id is still in
+    // the path, so the moment the new upload moves phase back to 'kb' the article route
+    // wins the render race below and puts them right back on the run they just abandoned.
+    if (kb) navigate(`/app/${kb.id}`)
     setPhase('upload')
   }
 
@@ -636,7 +654,10 @@ export default function App() {
       <>
         <Upload
           onSubmit={handleSubmit}
-          onHome={() => setPhase('home')}
+          // The MARKETING home, which carries a "Log in" button — so sending a signed-in
+          // user there reads as having been logged out. Anyone with a help center goes
+          // back to it instead.
+          onHome={() => setPhase(kb ? 'kb' : 'home')}
           runsLeft={runsLeft}
           onCapped={() => setShowUpgrade(true)}
           saved={kb?.product_name ? product : null}

@@ -269,6 +269,12 @@ export default function Editor({
   // the job has to be looked up or the build bar has no stage and never ends.
   const [foundJobId, setFoundJobId] = useState<string | null>(null)
 
+  // The run a RETRY just started. It has to win over the `jobId` prop: that prop is the
+  // queue item's job, which is the FAILED one, so without this the failure screen keeps
+  // polling the dead row and "Try again" looks like it does nothing — while every click
+  // quietly starts another pipeline run behind it.
+  const [retryJobId, setRetryJobId] = useState<string | null>(null)
+
   // A run we watched reach 'done'. Drives the completion line — and it is set from the
   // POLL, so it can only ever be true for someone who was here while it happened. Opening
   // a long-finished article never announces anything.
@@ -296,6 +302,7 @@ export default function Editor({
     // a job id carried over from the last one would have this editor watching a run that
     // has nothing to do with what is on screen.
     setFoundJobId(null)
+    setRetryJobId(null)
     ;(async () => {
       const [{ data: a }, { data: s }] = await Promise.all([
         supabase.from('articles').select('*').eq('id', articleId).single(),
@@ -351,7 +358,7 @@ export default function Editor({
   const peers = usePresence(kb.id, articleId, me)
 
   // --- The run, if there is one ---------------------------------------------------
-  const watchJobId = jobId ?? foundJobId
+  const watchJobId = retryJobId ?? jobId ?? foundJobId
   const gen = useGeneration(watchJobId, articleId, onArticleResolved)
 
   // THE one derived article state (lib/buildState). Everything below reads `building` —
@@ -1151,9 +1158,15 @@ export default function Editor({
     return (
       <FailureScreen
         code={gen.lost ? null : (gen.job?.failure_code ?? null)}
-        jobId={jobId}
+        // The job actually being watched, not the prop — after a retry that is the RETRY.
+        // Retrying the original again would ask the worker to re-run a job whose newer
+        // attempt already failed, and would show support the wrong reference.
+        jobId={watchJobId}
         videoPurged={!!gen.job?.video_purged_at}
-        onRetryStarted={(id) => onRetryStarted?.(id)}
+        onRetryStarted={(id) => {
+          setRetryJobId(id)
+          onRetryStarted?.(id)
+        }}
         onReupload={() => onReupload?.()}
       />
     )

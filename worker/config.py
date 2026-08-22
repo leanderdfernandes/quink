@@ -14,7 +14,17 @@ load_dotenv()
 # The video model drafts; the cheap model polishes; code does everything
 # deterministic. Do NOT add a model call anywhere else (CLAUDE.md §5).
 
-VIDEO_MODEL = "gemini-2.5-flash"
+# MEASURED against gemini-2.5-flash on the eval set (2026-08-22), which is why this moved:
+# on V1 — the repetition video the whole collapse rule exists for — 2.5-flash still emitted
+# four separate "add a question" steps and 3.1-pro collapsed them into one. It is also
+# ~3x faster (34s vs 93s on V1) and uses ~a third of the input tokens, so "bear the cost"
+# turned out not to cost anything.
+#
+# `gemini-2.5-pro` is NOT the upgrade path: it 404s with the same "no longer available to
+# new users" message 2.5-flash-lite gives (LEARNINGS #1) while still appearing in
+# models.list(), and Google's own error text names this model as the replacement.
+# `gemini-3.7-flash` was tried and returned 503 "high demand" on every attempt.
+VIDEO_MODEL = "gemini-3.1-pro-preview"
 
 # NOT "gemini-2.5-flash-lite". That model 404s with "no longer available to new
 # users" while STILL appearing in models.list() — the standard "list models, pick
@@ -301,7 +311,17 @@ FILMSTRIP_WINDOW_SECONDS = 3
 
 # WebP for speed + privacy + size (CLAUDE.md §8). Not a cost play — at ~92% margins
 # halving COGS is noise, so don't over-invest here.
-WEBP_QUALITY = 80
+#
+# 90, not 80: these are screenshots of UI text, where lossy chroma subsampling shows. SSIM
+# against the raw frame goes 0.9977 -> 0.9988 for +28% bytes, and the dense pass encodes no
+# slower (measured: 4.0s vs 4.1s for 99 frames). 95 buys almost nothing on top.
+#
+# Deliberately ONE number for both the step frame and the dense set: a Tier-1 pick promotes
+# a dense frame to BE the step's screenshot (FramePicker onPick writes its path straight
+# onto the step), so a cheaper filmstrip would mean picking a better moment cost you image
+# quality. Lossless was measured and rejected — 2.6x encode time and 2x the bytes on a pass
+# whose bottleneck is already uploading ~100 objects.
+WEBP_QUALITY = 90
 
 # Retry the model exactly once on malformed JSON, then fail loudly with the raw
 # output in the error (CLAUDE.md §5).
@@ -315,8 +335,13 @@ UPLOAD_RETRY_BACKOFF_SECONDS = 1.0
 
 # Stage 1 pushes the whole video inline (tens of MB) over a ~90s job, so dropped
 # connections are routine. Transport errors and 5xx retry; 4xx does not (see gemini.py).
-GEMINI_TRANSPORT_RETRY_ATTEMPTS = 3
-GEMINI_TRANSPORT_BACKOFF_SECONDS = 2.0
+#
+# 4 x 4s (linear, so ~40s of trying) rather than 3 x 2s (~12s): the failure actually seen in
+# production on 2026-08-22 was a 503 "this model is currently experiencing high demand",
+# three runs in a row. A capacity spike outlasts twelve seconds. The job's own ceiling is
+# JOB_TIMEOUT_MIN (15 min), so this is nowhere near it.
+GEMINI_TRANSPORT_RETRY_ATTEMPTS = 4
+GEMINI_TRANSPORT_BACKOFF_SECONDS = 4.0
 
 # --- Pipeline stages --------------------------------------------------------
 # Must match jobs.stage in the migration and PIPELINE_STAGES in the SPA config.

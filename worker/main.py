@@ -527,6 +527,25 @@ def retry(
             },
         )
 
+    # Already retried, and that attempt is still going. Hand back the SAME job rather than
+    # starting another: the failure screen's button is clickable again the moment the first
+    # call answers, so a user who thinks nothing happened clicks it repeatedly — and every
+    # click used to be a fresh Gemini run, each one taking a thread that blocks on the
+    # account's lane (lanes.py) until the pool is starved and the worker stops answering
+    # anything. Idempotent here rather than only debounced in the SPA, because the SPA is
+    # not a rate limit.
+    live = (
+        pipeline.db()
+        .table("jobs")
+        .select("id")
+        .eq("retry_of", j["id"])
+        .in_("status", ["queued", "running"])
+        .limit(1)
+        .execute()
+    )
+    if live.data:
+        return GenerateResponse(job_id=live.data[0]["id"])
+
     context = j.get("context") or {}
     job_id = _start_run(uid, owner_id, j["kb_id"], j["video_path"], context, retry_of=j["id"])
     background.add_task(

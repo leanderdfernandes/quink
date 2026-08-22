@@ -16,6 +16,26 @@ decision or a trap we already paid for once. Read before repeating a mistake.
   `main.py`. The constant exists precisely so this is one line, not a hunt.
 - **General rule:** presence in `models.list()` is NOT proof a model is callable. Verify by
   actually calling it.
+- **2026-08-22, the same trap on the video side:** `gemini-2.5-pro` 404s with the identical
+  "no longer available to new users" message while listed, and Google's own error text names
+  `gemini-3.1-pro-preview` as the replacement. `gemini-3.7-flash` is listed and callable in
+  principle but returned 503 "high demand" on every attempt across an hour — listed, alive,
+  and still not usable. Measure availability, not just existence.
+
+### 1b. `VIDEO_MODEL` moved to `gemini-3.1-pro-preview` (2026-08-22)
+- Trigger: three production runs in a row died on `gemini-2.5-flash` returning
+  **503 "this model is currently experiencing high demand"**. Not the user's file.
+- Measured on the eval set against 2.5-flash:
+  - **V1 (the repetition video the collapse rule exists for):** 2.5-flash still emitted four
+    separate "add a question" steps; 3.1-pro collapsed them into one. That is the flagship
+    failure mode, fixed by the model rather than by more prompt.
+  - **Speed:** 34s vs 93s on V1, 33s vs 68s on V3.
+  - **Input tokens:** ~a third of 2.5-flash's for the same video.
+- So "let's bear the cost" turned out to cost nothing: faster, fewer tokens, better output.
+- **`media_resolution=HIGH` was tried and rejected:** 262s vs 33s and 3x the tokens on V3,
+  for a byte-identical step list. Do not reach for it as a quality lever.
+- Eval scores are NOT comparable across this change. Re-baseline before reading any run
+  against the 2.5-flash numbers (EVAL-PLAN §1).
 
 ### 2. Float timestamps produce garbage screenshots
 - Asking the video model for `timestamp_seconds` as a float returned 0.05, 0.10, 0.14 for a

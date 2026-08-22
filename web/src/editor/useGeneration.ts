@@ -71,6 +71,12 @@ export function useGeneration(
 
   useEffect(() => {
     if (!jobId && !articleId) return
+    // A new job id means a new run — a retry, in practice. Everything below is about the
+    // PREVIOUS one, and leaving `job` on the failed row keeps the failure screen up until
+    // the first poll answers, which reads as "Try again did nothing".
+    setJob(null)
+    setLost(false)
+    resolved.current = false
     let stop = false
     let fails = 0
     let seenJob = false

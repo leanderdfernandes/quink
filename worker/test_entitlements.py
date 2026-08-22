@@ -65,6 +65,21 @@ class _Query:
     def maybe_single(self):
         return self
 
+    # The trial sweep runs in the background during these tests and chains `.not_.is_()`.
+    # Without it every run prints a real-looking traceback for a query nothing here tests.
+    @property
+    def not_(self):
+        return self
+
+    def limit(self, *_a):
+        return self
+
+    def lt(self, *_a):
+        return self
+
+    def or_(self, *_a):
+        return self
+
     def is_(self, *_a):
         return self
 

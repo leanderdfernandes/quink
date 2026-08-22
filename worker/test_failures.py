@@ -431,7 +431,16 @@ class _RetryDb:
     """Just enough Supabase for POST /api/retry: the job lookup, the object check, and
     the entitlement reads _start_run makes on the way to the insert."""
 
-    def __init__(self, *, status="error", video_path=VIDEO, purged_at=None, object_exists=True):
+    def __init__(
+        self,
+        *,
+        status="error",
+        video_path=VIDEO,
+        purged_at=None,
+        object_exists=True,
+        retry_in_flight=False,
+    ):
+        self.retry_in_flight = retry_in_flight
         self.job = {
             "id": JOB,
             "kb_id": KB,
@@ -462,6 +471,7 @@ class _RetryDb:
             self._insert = None
             self._count = False
             self._single = False
+            self._eq: list = []
 
         def select(self, *_a, **kw):
             self._count = kw.get("count") == "exact"
@@ -471,18 +481,39 @@ class _RetryDb:
             self._insert = payload
             return self
 
-        def eq(self, *_a):
+        def eq(self, *a):
+            # Remembered so execute() can tell the "is a retry already running" lookup
+            # apart from every other jobs query — they differ only by this filter.
+            if a:
+                self._eq.append(a[0])
             return self
 
         def gte(self, *_a):
             return self
 
         def in_(self, *_a):
-            # Silence the background sweeps' queries.
-            self.table = "_sweep"
+            # Silence the background sweeps' queries — but not the retry-in-flight lookup,
+            # which also uses in_() and is the whole point of the guard.
+            if "retry_of" not in self._eq:
+                self.table = "_sweep"
             return self
 
         def lt(self, *_a):
+            return self
+
+        # Same reason as in_() above: the background sweeps run for real under the
+        # TestClient lifespan and chain filters this fake does not otherwise need. Without
+        # them every run prints real-looking tracebacks for queries nothing here asserts on.
+        @property
+        def not_(self):
+            return self
+
+        def or_(self, *_a):
+            self.table = "_sweep"
+            return self
+
+        def is_(self, *_a):
+            self.table = "_sweep"
             return self
 
         def limit(self, *_a):
@@ -503,6 +534,9 @@ class _RetryDb:
             if self.table == "knowledge_bases":
                 return _Result({"owner_id": "owner"})
             if self.table == "jobs":
+                if "retry_of" in self._eq:
+                    # The idempotency guard's lookup.
+                    return _Result([{"id": "job-live"}] if self.db.retry_in_flight else [])
                 if self._single:
                     return _Result(self.db.job)  # the retry lookup
                 return _Result([])  # the spend scan / the quota count
@@ -569,6 +603,20 @@ def test_retry_after_the_purge_says_upload_it_again():
     assert r.json()["detail"]["code"] == failures.VIDEO_PURGED, r.text
     assert db.listed == (KB, "recording.mp4"), "must actually ask Storage"
     assert db.inserted == [], "no job row for a run that cannot happen"
+
+
+def test_a_second_retry_click_does_not_start_a_second_run():
+    """The failure screen's button re-arms as soon as the first call answers, and a user
+    who thinks nothing happened clicks it again. Every click used to be another Gemini run,
+    each taking a thread that then blocks on the account's single lane — which is how the
+    worker stopped answering at all (observed 2026-08-22: four retry rows, two swept as
+    timeouts). Hand back the attempt already running instead."""
+    db = _RetryDb(retry_in_flight=True)
+    r = _retry(db)
+    assert r.status_code == 200, r.text
+    assert r.json()["job_id"] == "job-live", "must return the attempt already in flight"
+    assert db.inserted == [], "a second click must not create a second ledger row"
+    assert started == [], "and must not start a second pipeline run"
 
 
 def test_retry_of_a_job_that_did_not_fail_is_refused():

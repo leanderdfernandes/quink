@@ -68,6 +68,26 @@ class _Query:
         self._filters[f"in.{col}"] = vals
         return self
 
+    # The background sweeps run for real under the TestClient lifespan and chain filters
+    # this fake never needed for what it actually asserts. Without them every run prints
+    # real-looking tracebacks for queries nothing here tests, which is how a genuine
+    # failure gets lost in the noise.
+    @property
+    def not_(self):
+        return self
+
+    def or_(self, *_a):
+        return self
+
+    def is_(self, *_a):
+        return self
+
+    def lt(self, *_a):
+        return self
+
+    def limit(self, *_a):
+        return self
+
     def maybe_single(self):
         return self
 
