@@ -593,9 +593,16 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   rebases onto what is on the server and writes on the user's NEXT edit — an overwrite the
   user chose, with the other author named on screen. `Reload their version` discards the
   local copy only. Neither may silently overwrite anyone.
-- **NOT guarded: publish, delete, discard, undo and frame picks.** They are explicit
-  one-shot actions rather than the debounced text path, and they are recorded as a known
-  gap in OPEN-ITEMS rather than half-covered here.
+- **Replacing the WHOLE step list is one atomic guarded call — `replace_steps` (0038).**
+  Undo, redo and discard all go through it. They used to do a browser-side `delete` then
+  `insert`, which with two editors interleaves as `C1 delete → C2 delete → C1 insert →
+  C2 insert` and DUPLICATES every step in the article; it happened in production. An undo
+  also re-mints every step `id`, so the other editor's row updates then match zero rows and
+  their work survives only in their own tab. The RPC serialises on the article row: the
+  loser writes nothing and re-reads. Never rebuild the step list from the client again.
+- **NOT guarded: publish, delete, frame picks, and the single-row step gestures.** They are
+  explicit one-shot actions touching one row rather than the whole document, and they are
+  recorded as a known gap in OPEN-ITEMS rather than half-covered here.
 - **Presence keys ONE CHANNEL PER CONNECTION, never per user.** Two tabs under one presence
   key leave a permanent ghost — the second untrack never empties the key, verified against
   the live project — and a ghost that never clears teaches people to ignore the signal.

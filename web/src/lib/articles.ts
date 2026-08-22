@@ -1,8 +1,9 @@
 import { supabase } from './supabase'
 import { STORAGE_BUCKET_FRAMES, STORAGE_BUCKET_VIDEOS } from './config'
 import { uniqueArticleSlug } from './slug'
-import type { StepLite } from './pendingEdits'
-import type { Article, ArticleRow } from './types'
+import { newFaqId, resolveFaqs, resolveSteps, type HrefResolver } from './articleLinks'
+import { canonicalBody, type StepLite } from './pendingEdits'
+import type { Article, ArticleRow, Faq, StepRow } from './types'
 
 // Delete an article. The DB row is the source of truth (its steps cascade via FK); Storage
 // cleanup is best-effort afterwards — it closes the orphaned-frames gap the README noted,
@@ -59,17 +60,57 @@ export function publishSnapshot(
   title: string,
   subtitle: string,
   steps: StepLite[],
+  faqs: Faq[] = [],
+  // Where a cross-article link points RIGHT NOW (lib/articleLinks). Optional so a caller
+  // with no article map still produces a valid snapshot — links are then left as authored,
+  // which is what the draft already showed. Every real publish path passes one.
+  href: HrefResolver = () => null,
 ): Article {
+  const resolvedSteps = resolveSteps(steps, href)
   return {
     title,
     subtitle,
-    steps: steps.map((s) => ({
+    steps: resolvedSteps.map((s) => ({
       step_number: s.step_number,
       heading: s.heading,
-      body_text: s.body_text,
+      // Canonical block form. A step still holding raw pipeline prose (the worker wrote
+      // plain sentences until the fix in this commit) would otherwise reach the reader as a
+      // bare text node with no paragraph spacing. Freezing the same form pendingEditCount
+      // compares is also what keeps the count honest across a publish.
+      body_text: canonicalBody(s.body_text),
       screenshot_url: s.screenshot_url,
       annotations: s.annotations ?? [],
     })),
+    faqs: resolveFaqs(faqs, href).map((f) => ({ ...f, a: canonicalBody(f.a) })),
+  }
+}
+
+// The href map for the KB, read once per publish.
+//
+// RLS does the hard part: this select only returns articles in help centers the caller may
+// edit, so "the target is in another KB" resolves to null without a single line asking the
+// question. A draft target resolves to null too — publishing a link to something no reader
+// can open is the same broken promise as publishing a link to nothing.
+export async function articleHrefResolver(
+  kbId: string,
+  articleId?: string,
+): Promise<HrefResolver> {
+  const { data } = await supabase
+    .from('articles')
+    .select('id, slug, visibility')
+    .eq('kb_id', kbId)
+  const bySlug = new Map<string, string>()
+  for (const a of (data ?? []) as Pick<ArticleRow, 'id' | 'slug' | 'visibility'>[]) {
+    // An article never links to itself — the anchor would point at the page it is on.
+    if (a.slug && a.visibility !== 'draft' && a.id !== articleId) bySlug.set(a.id, a.slug)
+  }
+  // Reader URLs are slug-relative and the reader mounts at the help center root, so a bare
+  // `/{slug}` is correct on a subdomain and on a custom domain alike. The /kb/{slug} dev
+  // path renders the same published HTML, where this link is one hop off — a dev-only
+  // wrinkle, not something to encode a second URL shape for.
+  return (id: string) => {
+    const slug = bySlug.get(id)
+    return slug ? `/${slug}` : null
   }
 }
 
@@ -83,7 +124,13 @@ export async function publishArticle(article: ArticleRow, steps: StepLite[]): Pr
   const slug =
     article.slug ||
     (await uniqueArticleSlug(article.kb_id, article.title || 'article', article.id))
-  const snapshot = publishSnapshot(article.title, article.subtitle, steps)
+  const snapshot = publishSnapshot(
+    article.title,
+    article.subtitle,
+    steps,
+    article.faqs ?? [],
+    await articleHrefResolver(article.kb_id, article.id),
+  )
   const { error } = await supabase
     .from('articles')
     .update({
@@ -126,6 +173,11 @@ export async function duplicateArticle(
       subtitle: article.subtitle,
       status: 'ready',
       folder_id: article.folder_id,
+      // The questions come with the copy. Ids are REMINTED: a FAQ id is an anchor target,
+      // and two articles publishing the same `#q-` anchor is a link that lands on whichever
+      // page the reader happens to be on. Nothing points at the copy's rows yet, so there is
+      // no inbound link to preserve.
+      faqs: (article.faqs ?? []).map((f) => ({ ...f, id: newFaqId() })),
     })
     .select()
     .single()
@@ -164,6 +216,55 @@ export async function duplicateArticle(
     if (se) throw se
   }
   return copy.id
+}
+
+// Replace an article's ENTIRE step list, atomically and under the stale-write guard
+// (migration 0038). The one path for undo, redo and discard — the three gestures that throw
+// the whole document away and rebuild it.
+//
+// It used to be a client-side `delete` followed by a client-side `insert`, which had two
+// defects and shipped both. With two admins in one article the four statements interleave, so
+// `C1 delete → C2 delete → C1 insert → C2 insert` leaves every step DUPLICATED; and because
+// the pair is not atomic, a delete that lands followed by an insert that does not leaves an
+// article with no steps at all.
+//
+// `ok: false` is a CONFLICT, not an error: somebody else saved between our last read and now,
+// and the server wrote nothing — no delete, no insert. The caller shows the strip and lets
+// the user choose, exactly as the debounced path does.
+export type ReplaceResult =
+  | { ok: true; updatedAt: string; steps: StepRow[] }
+  | { ok: false }
+
+export async function replaceSteps(
+  articleId: string,
+  baseUpdatedAt: string,
+  title: string,
+  subtitle: string,
+  faqs: Faq[],
+  steps: StepLite[],
+): Promise<ReplaceResult> {
+  const { data, error } = await supabase.rpc('replace_steps', {
+    p_article_id: articleId,
+    p_base_updated_at: baseUpdatedAt,
+    p_title: title,
+    p_subtitle: subtitle,
+    p_faqs: faqs,
+    // The step columns an undo restores TO. Same list as the editor's Snapshot type — if you
+    // add a column to `steps`, it goes here AND in the RPC's insert.
+    p_steps: steps.map((s) => ({
+      step_number: s.step_number,
+      heading: s.heading,
+      body_text: s.body_text,
+      screenshot_url: s.screenshot_url,
+      is_edited: s.is_edited ?? false,
+      timestamp_seconds: s.timestamp_seconds ?? null,
+      annotations: s.annotations ?? [],
+    })),
+  })
+  if (error) throw error
+  const res = data as { ok: boolean; updated_at?: string; steps?: StepRow[] }
+  if (!res?.ok) return { ok: false }
+  return { ok: true, updatedAt: res.updated_at!, steps: (res.steps ?? []) as StepRow[] }
 }
 
 export async function deleteArticle(article: ArticleRow): Promise<void> {

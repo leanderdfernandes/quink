@@ -1,7 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -7 151 151">
-  <style>
-    path { fill: #211F1B; }
-    @media (prefers-color-scheme: dark) { path { fill: #F4F1EA; } }
-  </style>
-  <path d="M58.68 130.14C47.04 130.14 36.84 127.44 28.08 122.04C19.32 116.64 12.42 109.08 7.38 99.36C2.46 89.52 0 78.12 0 65.16C0 52.08 2.46 40.68 7.38 30.96C12.3 21.12 19.14 13.5 27.9 8.1C36.78 2.7 47.04 0 58.68 0C70.56 0 80.94 2.7 89.82 8.1C98.7 13.5 105.6 21.12 110.52 30.96C115.44 40.68 117.9 52.08 117.9 65.16C117.9 78.12 115.38 89.52 110.34 99.36C105.42 109.08 98.52 116.64 89.64 122.04C80.76 127.44 70.44 130.14 58.68 130.14ZM112.14 136.62L62.64 88.38L73.44 77.04L123.3 125.82L112.14 136.62ZM58.68 112.68C67.08 112.68 74.28 110.76 80.28 106.92C86.28 102.96 90.96 97.44 94.32 90.36C97.68 83.16 99.36 74.76 99.36 65.16C99.36 55.44 97.68 47.04 94.32 39.96C90.96 32.76 86.28 27.24 80.28 23.4C74.28 19.44 67.08 17.46 58.68 17.46C50.52 17.46 43.38 19.38 37.26 23.22C31.26 27.06 26.58 32.58 23.22 39.78C19.98 46.86 18.36 55.32 18.36 65.16C18.36 74.88 19.98 83.34 23.22 90.54C26.58 97.62 31.26 103.08 37.26 106.92C43.38 110.76 50.52 112.68 58.68 112.68Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" role="img" aria-label="Quink">
+  <!--
+    The Quink mark: the wordmark's lightning-bolt "i", alone, on a paper disc.
+
+    NO prefers-color-scheme rule, unlike the "Q" mark this replaced. That one was a bare
+    monochrome glyph and had to invert to stay visible on a dark tab strip; this one carries
+    its own background, so it reads the same on both. A badge that supplies its own contrast
+    is the reason to draw the disc at all.
+
+    Colours are the design system's, not new ones: #2F7D57 is the bolt green (the same
+    constant Wordmark.tsx holds) and #F2F2EF is the disc, sampled from Logo/Quink Icon.png.
+
+    The disc path is given its fill EXPLICITLY. The exported source SVG left it off under a
+    root `fill="none"`, so it inherited "none" and the disc rendered invisible — a bolt
+    floating with no badge, which is not the mark.
+  -->
+  <path fill="#F2F2EF" d="M1001 539.5C1001 831.383 794.603 1068 540 1068C285.397 1068 79 831.383 79 539.5C79 247.618 285.397 11 540 11C794.603 11 1001 247.618 1001 539.5Z"/>
+  <path fill="#2F7D57" d="M724.548 532.058C721.985 519.221 714.545 509.963 707.754 510.416L605.887 517.218L646.791 134.012C647.623 120.949 644.844 104.875 637.62 98.8534C630.18 89.5944 623.605 93.2853 617.247 100.214L356.746 540.357C352.302 550.409 349.772 563.586 354.033 576.309C358.293 589.032 365.733 598.291 372.525 597.838L474.391 591.036L433.488 974.242C432.655 987.305 435.435 1003.38 442.658 1009.4C444.573 1012.52 448.184 1015.54 451.58 1015.31C454.976 1015.08 458.155 1011.62 461.334 1008.15L721.834 568.01C726.279 557.958 728.809 544.781 724.548 532.058Z"/>
 </svg>

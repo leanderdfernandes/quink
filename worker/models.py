@@ -137,3 +137,35 @@ def parse_mmss(value: str) -> float:
 def format_mmss(seconds: float) -> str:
     total = int(seconds)
     return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def canonical_body(text: str) -> str:
+    """Turn a model's plain prose into the HTML the editor and the reader both expect.
+
+    `steps.body_text` is rendered by TipTap in the editor and by DOMPurify on the reader --
+    both of them HTML. The model returns "one or two sentences" of plain text, and this used
+    to be stored exactly as returned. TipTap then parsed it into a paragraph the moment the
+    editor mounted, so the same step read as bare prose in the database and as `<p>...</p>`
+    in the editor.
+
+    That gap was visible to customers as a lie: the article list compared the raw rows and
+    reported "4 unpublished edits" on an article nobody had touched, while the editor -- which
+    compared TipTap's normalised copy -- reported it clean. Opening the article silently
+    rewrote the rows and the phantom count changed. Writing the canonical form HERE is the fix
+    at the source; `canonicalBody` in web/src/lib/pendingEdits.ts is its mirror, and exists to
+    settle rows written before this function did.
+
+    Escapes before wrapping, because this is prose being turned into markup: an ampersand or
+    a less-than in a heading is text, not the start of a tag. TipTap escapes the same three.
+    Text that is ALREADY markup is passed through untouched.
+    """
+    s = (text or "").strip()
+    if not s:
+        return ""
+    if s.startswith("<"):
+        return s
+    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Blank lines separate paragraphs, which is what TipTap does with pasted prose. Single
+    # newlines are joined -- a wrapped sentence is one sentence.
+    paras = [" ".join(p.split()) for p in re.split(r"\n\s*\n", s)]
+    return "".join(f"<p>{p}</p>" for p in paras if p)

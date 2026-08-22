@@ -3,7 +3,14 @@ import { supabase } from '../lib/supabase'
 import { publicFrameUrl } from '../lib/storage'
 import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
-import { collectSourceVideo, deleteArticle, publishSnapshot } from '../lib/articles'
+import {
+  articleHrefResolver,
+  collectSourceVideo,
+  deleteArticle,
+  publishSnapshot,
+  replaceSteps,
+} from '../lib/articles'
+import type { HrefResolver } from '../lib/articleLinks'
 import { pendingEditCount } from '../lib/pendingEdits'
 import { createFolder, listFolders } from '../lib/folders'
 import { COPY, helpCenterUrl } from '../lib/config'
@@ -13,6 +20,7 @@ import { usePresence, type Peer } from '../lib/usePresence'
 import { ReaderChrome } from '../reader/ReaderSite'
 import StepThumb from '../components/StepThumb'
 import StepCard from './StepCard'
+import FaqPanel from './FaqPanel'
 import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
 import BuildBar, { type BuildStage } from './BuildBar'
@@ -24,6 +32,7 @@ import type {
   Annotation,
   Article,
   ArticleRow,
+  Faq,
   Folder,
   KnowledgeBase as KB,
   ReaderKb,
@@ -82,8 +91,11 @@ type Props = {
 // any step column missing from it is destroyed by one Ctrl+Z — silently, with no error, and
 // only noticed later. The same list has to appear in five places that rebuild or compare
 // rows:
-//   1. this type          2. snapshotOf()             3. applySnapshot()'s insert
-//   4. discardChanges()'s insert                      5. duplicateArticle() (lib/articles)
+//   1. this type          2. snapshotOf()             3. applySnapshot()
+//   4. discardChanges()                                5. duplicateArticle() (lib/articles)
+// Sites 3 and 4 no longer write the rows themselves: both hand their list to replaceSteps()
+// in lib/articles, which is where the column list for a rebuild now lives (and migration
+// 0038, which does the insert). Add a step column there as well as here.
 // plus pendingEditCount() in lib/pendingEdits.ts, which compares them.
 //
 // If you add a column to `steps`, add it to all of them. This is not hypothetical: is_edited
@@ -97,6 +109,10 @@ type Props = {
 type Snapshot = {
   title: string
   subtitle: string
+  // Site 1 for the article-level fields too, not only for step columns. FAQs are article
+  // content, so an undo that did not carry them would delete a question the user had just
+  // typed and offer nothing to say so.
+  faqs: Faq[]
   steps: Pick<
     StepRow,
     | 'step_number'
@@ -112,6 +128,7 @@ type Snapshot = {
 const snapshotOf = (article: ArticleRow, steps: StepRow[]): Snapshot => ({
   title: article.title,
   subtitle: article.subtitle,
+  faqs: article.faqs ?? [],
   steps: steps.map((s) => ({
     step_number: s.step_number,
     heading: s.heading,
@@ -137,6 +154,7 @@ const PENDING_ARTICLE = {
   folder_id: null,
   source: 'generated',
   source_video_path: null,
+  faqs: [],
   published_content: null,
   published_at: null,
   created_at: '',
@@ -217,6 +235,16 @@ export default function Editor({
   // The publish gate (build spec §7): folders to file into, and the modal that gates
   // first-publish on picking one.
   const [folders, setFolders] = useState<Folder[]>([])
+  // Remount key for the FAQ answer editors. Bumped only by undo and discard, which replace
+  // the array from outside TipTap; ordinary typing never bumps it, same rule as `revs`.
+  const [faqRev, setFaqRev] = useState(0)
+  // The other articles in this KB, for the "link to an article" picker, and the resolver the
+  // dead-link marking reads. Loaded alongside folders — one more small read on a screen that
+  // already does several.
+  const [linkTargets, setLinkTargets] = useState<
+    { id: string; title: string; slug: string | null }[]
+  >([])
+  const [linkHref, setLinkHref] = useState<HrefResolver>(() => () => null)
   const [showPublish, setShowPublish] = useState(false)
   const [recategorize, setRecategorize] = useState(false)
   const [pubFolderId, setPubFolderId] = useState<string | null>(null)
@@ -321,6 +349,26 @@ export default function Editor({
       setSlug(art.slug)
       setPubFolderId(art.folder_id)
       listFolders(kb.id).then((fs) => !cancelled && setFolders(fs))
+      supabase
+        .from('articles')
+        .select('id, title, slug, visibility')
+        .eq('kb_id', kb.id)
+        .then(({ data }) => {
+          if (cancelled) return
+          const rows = (data ?? []) as Pick<
+            ArticleRow,
+            'id' | 'title' | 'slug' | 'visibility'
+          >[]
+          setLinkTargets(
+            rows
+              .filter((r) => r.id !== articleId && r.slug && r.visibility !== 'draft')
+              .map((r) => ({ id: r.id, title: r.title, slug: r.slug })),
+          )
+        })
+      // A function in state has to be wrapped, or useState calls it as an updater.
+      articleHrefResolver(kb.id, articleId).then(
+        (fn) => !cancelled && setLinkHref(() => fn),
+      )
       const lastEdit = Math.max(
         Date.parse(art.updated_at),
         ...rows.map((r) => Date.parse(r.updated_at)),
@@ -425,33 +473,35 @@ export default function Editor({
     if (commitTimer.current) clearTimeout(commitTimer.current)
     await flush()
     try {
-      const del = await supabase.from('steps').delete().eq('article_id', articleId)
-      if (del.error) throw del.error
-      const { data, error } = await supabase
-        .from('steps')
-        .insert(
-          // Four-places rule, site 3. This insert is what an undo restores TO.
-          snap.steps.map((s) => ({
-            article_id: articleId,
-            step_number: s.step_number,
-            heading: s.heading,
-            body_text: s.body_text,
-            screenshot_url: s.screenshot_url,
-            is_edited: s.is_edited,
-            timestamp_seconds: s.timestamp_seconds,
-            annotations: s.annotations ?? [],
-          })),
-        )
-        .select()
-        .order('step_number')
-      if (error || !data) throw error
-      const rows = data as StepRow[]
+      // Four-places rule, site 3 — now ONE guarded, atomic call (migration 0038) instead of
+      // a delete and an insert the browser fired separately. Two admins both pressing Ctrl+Z
+      // used to interleave into `C1 delete → C2 delete → C1 insert → C2 insert` and duplicate
+      // every step in the article; a delete that landed with an insert that did not used to
+      // leave no steps at all. The article patch rides along in the same transaction.
+      if (!articleId || !base.current) return
+      const res = await replaceSteps(
+        articleId,
+        base.current,
+        snap.title,
+        snap.subtitle,
+        snap.faqs,
+        snap.steps,
+      )
+      if (!res.ok) {
+        // Somebody else saved first. The server wrote NOTHING, so there is nothing to roll
+        // back — the history stack keeps its position and the strip lets the user choose.
+        await showConflict()
+        return
+      }
+      base.current = res.updatedAt
+      const rows = res.steps
       setSteps(rows)
-      setArticle((a) => (a ? { ...a, title: snap.title, subtitle: snap.subtitle } : a))
-      await supabase
-        .from('articles')
-        .update({ title: snap.title, subtitle: snap.subtitle })
-        .eq('id', articleId)
+      setArticle((a) =>
+        a ? { ...a, title: snap.title, subtitle: snap.subtitle, faqs: snap.faqs } : a,
+      )
+      // Site 3. `faqs` is written whole because it IS one value — reordering, editing and
+      // deleting a question are all "the array is different now".
+      setFaqRev((r) => r + 1)
       setShotUrls(shotMap(rows))
       setDirty(true)
       clearError()
@@ -490,6 +540,20 @@ export default function Editor({
   // `last_edited_by` / `last_edited_at` ride along on every successful save. Phase 1 added
   // both columns and nothing wrote them; they are what lets the conflict strip name a
   // person instead of saying "someone".
+  // Raise the conflict strip, naming whoever got there first. ONE copy, because there are now
+  // two ways to lose a race — the debounced `claim` below, and the whole-document replacement
+  // undo and discard go through — and a second copy would be a second place for the strip to
+  // say "Someone else" when we could have said a name.
+  const showConflict = useCallback(async () => {
+    const { data: row } = await supabase
+      .from('articles')
+      .select('last_edited_by')
+      .eq('id', articleId!)
+      .maybeSingle()
+    const who = people.find((p) => p.id === row?.last_edited_by)
+    setConflict({ name: who?.name || who?.email?.split('@')[0] || 'Someone else' })
+  }, [articleId, people])
+
   const claim = useCallback(
     async (patch: Partial<ArticleRow> = {}) => {
       // Before the article row exists (the first ~15s of a run) there is nothing to guard
@@ -511,13 +575,7 @@ export default function Editor({
       if (!data || data.length === 0) {
         // Zero rows: someone else saved between our last read and now. REFUSE — nothing is
         // written, including the patch that was riding along.
-        const { data: row } = await supabase
-          .from('articles')
-          .select('last_edited_by')
-          .eq('id', articleId)
-          .maybeSingle()
-        const who = people.find((p) => p.id === row?.last_edited_by)
-        setConflict({ name: who?.name || who?.email?.split('@')[0] || 'Someone else' })
+        await showConflict()
         throw new Error('stale-write')
       }
 
@@ -563,6 +621,13 @@ export default function Editor({
     setArticle((a) => (a ? { ...a, ...patch } : a))
     setDirty(true)
     guarded(null, patch)
+  }
+
+  // FAQ writes ride the SAME 700ms debounce and the same stale-write guard as title and
+  // subtitle — `faqs` is a column on `articles`, so this is an article write and the claim
+  // IS the patch (CLAUDE.md §10k).
+  function saveFaqs(faqs: Faq[]) {
+    saveArticle({ faqs })
   }
 
   function saveStep(id: string, patch: Partial<StepRow>) {
@@ -795,7 +860,16 @@ export default function Editor({
     // The reader renders from published_content, so two hand-rolled copies of this object
     // meant the same article could ship annotated or bare depending on which button was
     // pressed. Add a published field there, not here.
-    const snapshot = publishSnapshot(article.title, article.subtitle, steps)
+    const snapshot = publishSnapshot(
+      article.title,
+      article.subtitle,
+      steps,
+      article.faqs ?? [],
+      // Read fresh, not from the `linkTargets` this editor has been holding: a target may
+      // have been deleted or renamed by someone else while this article was open, and
+      // publish is the moment the links become real URLs.
+      await articleHrefResolver(kb.id, articleId),
+    )
     const now = new Date().toISOString()
     const folderPatch = folderId !== undefined ? { folder_id: folderId } : {}
     const { error } = await supabase
@@ -936,11 +1010,9 @@ export default function Editor({
     applying.current = true
     await flush()
     try {
-      const del = await supabase.from('steps').delete().eq('article_id', articleId)
-      if (del.error) throw del.error
       // Frame provenance, carried across the rebuild. `pub` is the PUBLISHED snapshot,
       // which is the Article contract and deliberately holds neither of these — so this
-      // insert used to reset both to their defaults on every discard, silently.
+      // rebuild used to reset both to their defaults on every discard, silently.
       //
       // Neither is published content, and neither is an "unpublished edit" the user asked
       // to throw away: is_edited means a human chose this FRAME (CLAUDE.md §8, and a
@@ -950,42 +1022,54 @@ export default function Editor({
       // restores a different screenshot_url, the old provenance describes a frame that is
       // no longer there and the defaults are the honest answer.
       const before = new Map(steps.map((s) => [s.step_number, s]))
-      const { data, error } = await supabase
-        .from('steps')
-        .insert(
-          // Four-places rule, site 4 — and the worst of the four, because "discard my
-          // unpublished edits" is a destructive action the user consented to, so anything
-          // extra it destroys is indistinguishable from what they asked for.
-          pub.steps.map((s) => {
-            const kept = before.get(s.step_number)
-            const sameFrame = kept?.screenshot_url === s.screenshot_url
-            return {
-              article_id: articleId,
-              step_number: s.step_number,
-              heading: s.heading,
-              body_text: s.body_text,
-              screenshot_url: s.screenshot_url,
-              // Annotations DO come from the snapshot — they are published content and the
-              // reader renders them, so the published version's annotations are the thing
-              // being restored to.
-              annotations: s.annotations ?? [],
-              is_edited: sameFrame ? (kept?.is_edited ?? false) : false,
-              timestamp_seconds: sameFrame ? (kept?.timestamp_seconds ?? null) : null,
-            }
-          }),
-        )
-        .select()
-        .order('step_number')
-      if (error || !data) throw error
-      const rows = data as StepRow[]
-      const restored = { ...article, title: pub.title, subtitle: pub.subtitle }
+      // Four-places rule, site 4 — and the worst of the four, because "discard my
+      // unpublished edits" is a destructive action the user consented to, so anything extra
+      // it destroys is indistinguishable from what they asked for. Guarded and atomic since
+      // migration 0038, for the same reason undo is: this replaces every step row, and doing
+      // that as a separate delete and insert let a second editor's copy survive the delete
+      // and double the article.
+      if (!articleId || !base.current) return
+      const res = await replaceSteps(
+        articleId,
+        base.current,
+        pub.title,
+        pub.subtitle,
+        pub.faqs ?? [],
+        pub.steps.map((s) => {
+          const kept = before.get(s.step_number)
+          const sameFrame = kept?.screenshot_url === s.screenshot_url
+          return {
+            step_number: s.step_number,
+            heading: s.heading,
+            body_text: s.body_text,
+            screenshot_url: s.screenshot_url,
+            // Annotations DO come from the snapshot — they are published content and the
+            // reader renders them, so the published version's annotations are the thing
+            // being restored to.
+            annotations: s.annotations ?? [],
+            is_edited: sameFrame ? (kept?.is_edited ?? false) : false,
+            timestamp_seconds: sameFrame ? (kept?.timestamp_seconds ?? null) : null,
+          }
+        }),
+      )
+      if (!res.ok) {
+        await showConflict()
+        return
+      }
+      base.current = res.updatedAt
+      const rows = res.steps
+      // Site 4, article level. The published snapshot IS the thing being restored to, and
+      // a pre-0037 snapshot genuinely has no questions — so `?? []` here means "discard the
+      // ones added since", which is exactly what the user asked for.
+      const restored = {
+        ...article,
+        title: pub.title,
+        subtitle: pub.subtitle,
+        faqs: pub.faqs ?? [],
+      }
       setSteps(rows)
       setArticle(restored)
-      const up = await supabase
-        .from('articles')
-        .update({ title: pub.title, subtitle: pub.subtitle })
-        .eq('id', articleId)
-      if (up.error) throw up.error
+      setFaqRev((r) => r + 1)
       setShotUrls(shotMap(rows))
       setDirty(false)
       history.current = { stack: [snapshotOf(restored, rows)], pointer: 0 }
@@ -1073,6 +1157,7 @@ export default function Editor({
             article.title,
             article.subtitle,
             steps,
+            article.faqs ?? [],
           )
         : 0,
     [article, steps],
@@ -1090,6 +1175,10 @@ export default function Editor({
           screenshot_url: s.screenshot_url,
           annotations: s.annotations ?? [],
         })),
+        // The DRAFT questions, unresolved. Preview is what this article looks like now, not
+        // what publishing would freeze — a link whose target has gone still renders as a
+        // link here, and the panel says so in the editor next to it.
+        faqs: article.faqs ?? [],
       }
     : null
 
@@ -1527,6 +1616,22 @@ export default function Editor({
               >
                 + Add a step <kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} ⏎</kbd>
               </button>
+
+              {/* The tail (migration 0037). Below the last step because that is where it is
+                  on the reader — the editor's canvas and the published page are the same
+                  document in the same order, which is the whole reason there is no separate
+                  preview to reconcile. Hidden while a run owns the document: the pipeline
+                  does not author questions, so an empty panel mid-generation would read as
+                  something still to come. */}
+              {!skeleton && !building && (
+                <FaqPanel
+                  faqs={doc.faqs ?? []}
+                  onChange={saveFaqs}
+                  rev={faqRev}
+                  targets={linkTargets}
+                  href={linkHref}
+                />
+              )}
             </div>
           </main>
         </div>

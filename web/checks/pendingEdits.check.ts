@@ -84,4 +84,144 @@ assert.strictEqual(
   0,
 )
 
+// --- FAQs (migration 0037) ------------------------------------------------------------
+// Absent, null and [] all mean "no questions" and none of the three may register on its own.
+// The first case is every article published before 0037: a frozen snapshot with no key.
+assert.strictEqual(pendingEditCount(published, published.title, published.subtitle, same), 0)
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, faqs: null as unknown as undefined },
+    published.title,
+    published.subtitle,
+    same,
+  ),
+  0,
+)
+assert.strictEqual(
+  pendingEditCount({ ...published, faqs: [] }, published.title, published.subtitle, same, []),
+  0,
+)
+
+const faq = { id: 'f_1234abcd', q: 'Can I undo it?', a: '<p>Yes.</p>' }
+const withFaq: Article = { ...published, faqs: [faq] }
+
+// A FAQ added, reworded, reordered or deleted is ONE edit — the count means "how far ahead
+// is the draft", and the tail is one section of the page.
+assert.strictEqual(pendingEditCount(published, published.title, published.subtitle, same, [faq]), 1)
+assert.strictEqual(pendingEditCount(withFaq, published.title, published.subtitle, same, []), 1)
+assert.strictEqual(pendingEditCount(withFaq, published.title, published.subtitle, same, [faq]), 0)
+assert.strictEqual(
+  pendingEditCount(withFaq, published.title, published.subtitle, same, [
+    { ...faq, a: '<p>Yes, Ctrl+Z.</p>' },
+  ]),
+  1,
+)
+// Order is the reader's order, so a swap is a real edit.
+const faq2 = { id: 'f_5678efgh', q: 'Where do I start?', a: '<p>Step one.</p>' }
+assert.strictEqual(
+  pendingEditCount({ ...published, faqs: [faq, faq2] }, published.title, published.subtitle, same, [
+    faq2,
+    faq,
+  ]),
+  1,
+)
+
+// --- article links --------------------------------------------------------------------
+// THE regression this guards. Publish rewrites an article link's href to the target's
+// CURRENT slug, so a draft that links anywhere would otherwise differ from its own published
+// copy forever: the badge would show a count nothing could clear and "Publish changes" would
+// never go away. data-article-id is what is compared; the href is derived from it.
+const draftLink = '<p>See <a href="/old-slug" data-article-id="u-1">this</a>.</p>'
+const pubLink = '<p>See <a href="/new-slug" data-article-id="u-1">this</a>.</p>'
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, faqs: [{ ...faq, a: pubLink }] },
+    published.title,
+    published.subtitle,
+    same,
+    [{ ...faq, a: draftLink }],
+  ),
+  0,
+)
+// Same rule inside a step body.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, steps: [step(1, { body_text: pubLink }), step(2), step(3)] },
+    published.title,
+    published.subtitle,
+    [step(1, { body_text: draftLink }), step(2), step(3)],
+  ),
+  0,
+)
+// But a target that was DELETED is unwrapped at publish, and that IS a difference a reader
+// sees — the anchor is gone and only its text is left.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, faqs: [{ ...faq, a: '<p>See this.</p>' }] },
+    published.title,
+    published.subtitle,
+    same,
+    [{ ...faq, a: draftLink }],
+  ),
+  1,
+)
+// A PLAIN url link carries no data-article-id, is never rewritten, and must still compare
+// literally — its href is content, not a derived value.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, faqs: [{ ...faq, a: '<p><a href="https://a.example">x</a></p>' }] },
+    published.title,
+    published.subtitle,
+    same,
+    [{ ...faq, a: '<p><a href="https://b.example">x</a></p>' }],
+  ),
+  1,
+)
+
+// --- pipeline prose vs TipTap markup ---------------------------------------------------
+// THE "4 unpublished changes" bug. The worker used to store the model's plain sentence, and
+// TipTap reports <p>...</p> the moment the editor mounts. Compared literally, the article
+// list said an untouched article had four pending edits while the editor said it was clean —
+// and opening the article rewrote the rows, so the number changed because you looked at it.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, steps: [step(1, { body_text: '<p>Body 1</p>' }), step(2), step(3)] },
+    published.title,
+    published.subtitle,
+    [step(1, { body_text: 'Body 1' }), step(2), step(3)],
+  ),
+  0,
+)
+// Prose is ESCAPED on the way in, because it is text becoming markup — so a body containing
+// an ampersand still compares equal to the editor's copy of it.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, steps: [step(1, { body_text: '<p>Tools &amp; setup</p>' }), step(2), step(3)] },
+    published.title,
+    published.subtitle,
+    [step(1, { body_text: 'Tools & setup' }), step(2), step(3)],
+  ),
+  0,
+)
+// A real rewrite is still a real edit — the normalisation must not swallow one.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, steps: [step(1, { body_text: '<p>Body 1</p>' }), step(2), step(3)] },
+    published.title,
+    published.subtitle,
+    [step(1, { body_text: 'Body one, reworded' }), step(2), step(3)],
+  ),
+  1,
+)
+// Empty and blank are the same nothing, whichever side they are on.
+assert.strictEqual(
+  pendingEditCount(
+    { ...published, steps: [step(1, { body_text: '' }), step(2), step(3)] },
+    published.title,
+    published.subtitle,
+    [step(1, { body_text: '   ' }), step(2), step(3)],
+  ),
+  0,
+)
+
 console.log('pendingEditCount self-check OK')

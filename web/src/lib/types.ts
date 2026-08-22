@@ -47,10 +47,28 @@ export type Step = {
   annotations: Annotation[]
 }
 
+// One row in an article's "Common questions" tail (migration 0037). `q` is plain text; `a`
+// is TipTap HTML from a deliberately restricted editor — paragraph, bold, italic, link,
+// bullet list, and nothing else.
+//
+// `id` is minted ONCE, client-side, at row creation, and never changes. It is the reader's
+// anchor target (`#q-{id}`), so deriving it from the question text would break every inbound
+// link the first time someone rewords a question.
+export type Faq = {
+  id: string
+  q: string
+  a: string
+}
+
 export type Article = {
   title: string
   subtitle: string
   steps: Step[]
+  // OPTIONAL on the contract, and that is the honest type rather than a convenience. Every
+  // article published before 0037 has a published_content with no `faqs` key at all, and
+  // those snapshots are frozen — nothing rewrites them. The `?` is what forces every read
+  // site to say `?? []` instead of trusting an array that is genuinely not there.
+  faqs?: Faq[]
 }
 
 // --- DB row shapes (what Supabase actually returns) ---------------------------
@@ -92,6 +110,10 @@ export type ArticleRow = {
   source: 'generated' | 'manual'
   // Null once collected. Present only between generation and first publish.
   source_video_path: string | null
+  // The DRAFT "Common questions" (migration 0037). `not null default '[]'` in the database,
+  // so unlike Article['faqs'] this one is always present. The reader never sees this column
+  // — it sees the copy frozen into published_content.
+  faqs: Faq[]
   // Frozen snapshot the reader renders (CLAUDE.md §7 publish). Null until first publish.
   published_content: Article | null
   published_at: string | null

@@ -231,8 +231,10 @@ def test_stage2_failure_ships_an_editable_article():
     assert job["counted_against_quota"] is True, "they got an article — it counts"
     assert failures.DEGRADED_STAGE2 in (job["degraded"] or ""), job["degraded"]
     assert "failure_code" not in job, "a degraded run is not a failure"
-    # Stage 1's own text shipped, unpolished.
-    assert [s["body_text"] for s in db.steps_inserted()] == ["B1", "B2", "B3"]
+    # Stage 1's own text shipped, unpolished. Stored as HTML: body_text is rendered as
+    # markup by both the editor and the reader, so the pipeline writes the canonical form
+    # rather than the raw sentence (models.canonical_body).
+    assert [s["body_text"] for s in db.steps_inserted()] == ["<p>B1</p>", "<p>B2</p>", "<p>B3</p>"]
 
 
 def test_partial_frame_failure_ships_text_only_steps():
@@ -305,7 +307,7 @@ def test_polish_updates_rows_in_place():
     assert not any(op == "delete" for _, op, _, _ in db.calls), "never delete-and-reinsert"
     assert len([1 for t, op, _, _ in db.calls if t == "steps" and op == "insert"]) == 1
     rows = db.steps_final()
-    assert [rows[1]["body_text"], rows[2]["body_text"]] == ["Q1", "Q2"]
+    assert [rows[1]["body_text"], rows[2]["body_text"]] == ["<p>Q1</p>", "<p>Q2</p>"]
     assert rows[1]["screenshot_url"], "polishing must not clear the frame"
 
 
@@ -324,7 +326,7 @@ def test_stage2_renumbering_is_ignored():
     db = _run(_Frames(), _Gemini(stage1=bp, stage2=renumbered))
 
     rows = db.steps_final()
-    assert [rows[1]["body_text"], rows[2]["body_text"]] == ["B1", "B2"], (
+    assert [rows[1]["body_text"], rows[2]["body_text"]] == ["<p>B1</p>", "<p>B2</p>"], (
         "Stage 1's structure wins; Stage 2's text is dropped whole"
     )
     assert db.final_job()["status"] == "done", "not a failure — the article is fine"
