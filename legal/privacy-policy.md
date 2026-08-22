@@ -2,8 +2,8 @@
 
 **Last updated: 13 August 2026**
 
-Quink is operated by Leander Denzil Fernandes, a sole proprietorship registered in India
-(Udyam), trading as Quink at quink.online.
+Quink is operated by Leander Denzil Fernandes, a sole proprietorship registered in India,
+trading as Quink at quink.online.
 
 This policy explains what we collect, why, how long we keep it, and how to get rid of it.
 It is written to be read, not to be survived. If something here is unclear, email
@@ -84,8 +84,8 @@ a human at Quink can see your content.
 | Articles and screenshots — paid plans | Kept until you delete them or close your account |
 | Articles and screenshots — free plan | Help center goes offline 30 days after your first article; content is permanently deleted 7 days after that, at day 37 |
 | Account record | Until you delete your account |
-| Record that someone was an editor of a help center | Until the help center is deleted, or that person deletes their account — see §8 |
-| Processing job records | Retained after account deletion in anonymised form — see §11 |
+| Record that someone was an editor of a help center | Until the help center is deleted, or that person deletes their account |
+| Processing job records | Retained after account deletion in anonymised form |
 | Billing and tax records | Retained for the period required by Indian tax law, currently 6 years, even after account deletion |
 | Server and access logs | Up to 12 months |
 

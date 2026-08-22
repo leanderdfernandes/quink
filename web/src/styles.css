@@ -7202,43 +7202,48 @@ a.rs-crumb-link:hover {
 }
 
 /* --- Legal footer (marketing + app) ---------------------------------------------------
-   Razorpay's activation reviewer looks for footer links, not just live URLs. Quiet and
-   typographic — this is a document trail, not a nav bar. */
+   Razorpay's activation reviewer looks for footer links, not just live URLs — so these are
+   real links, clickable, on every surface. They are also the least important thing on any
+   of those surfaces.
+
+   ONE row at the quietest size in the system, muted until hovered. It was two stacked
+   blocks at 14px on a filled surface, which read as a section of the page on a screen
+   whose only job is making articles. Nothing was removed; it just stopped shouting. */
 .lf {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  padding: 14px 40px 18px;
+  margin-top: 40px;
   border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding: 26px 40px 34px;
-  margin-top: 56px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .lf-compact {
   margin-top: 0;
-  padding: 18px 40px 22px;
+  padding: 12px 40px 14px;
 }
-.lf-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  margin-bottom: 12px;
-}
-.lf-links a {
-  font-size: 14px;
-  color: var(--secondary);
+.lf a {
+  color: inherit;
   text-decoration: none;
 }
-.lf-links a:hover {
-  color: var(--brand-700);
+.lf a:hover {
+  color: var(--secondary);
   text-decoration: underline;
 }
+/* Pushed to the far end on a wide screen, and simply the last item when it wraps. */
 .lf-meta {
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted);
+  margin-left: auto;
 }
 @media (max-width: 640px) {
   .lf,
   .lf-compact {
     padding-left: 20px;
     padding-right: 20px;
+  }
+  .lf-meta {
+    margin-left: 0;
   }
 }
 

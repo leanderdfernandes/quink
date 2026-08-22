@@ -24,19 +24,21 @@ const LINKS: [href: string, label: string][] = [
   ['/contact', 'Contact'],
 ]
 
+// ONE line, not two blocks. These four links have to be REACHABLE — that is the whole
+// requirement — but they are a document trail, not navigation, and a stacked two-row
+// footer gave them the visual weight of a section on every screen in the app. Links and
+// copyright now share a row at the quietest type size in the system.
 export default function LegalFooter({ compact = false }: { compact?: boolean }) {
   return (
-    <footer className={`lf${compact ? ' lf-compact' : ''}`}>
-      <nav className="lf-links" aria-label="Legal">
-        {LINKS.map(([href, label]) => (
-          <a key={href} href={href}>
-            {label}
-          </a>
-        ))}
-      </nav>
-      <p className="lf-meta">
+    <footer className={`lf${compact ? ' lf-compact' : ''}`} aria-label="Legal">
+      {LINKS.map(([href, label]) => (
+        <a key={href} href={href}>
+          {label}
+        </a>
+      ))}
+      <span className="lf-meta">
         © {new Date().getFullYear()} {PRODUCT_NAME}. Made in India.
-      </p>
+      </span>
     </footer>
   )
 }

@@ -3,7 +3,7 @@
 **Last updated: 13 August 2026**
 
 These terms are the agreement between you and Leander Denzil Fernandes, a sole proprietorship
-registered in India (Udyam), trading as Quink at quink.online. By creating an account you
+registered in India, trading as Quink at quink.online. By creating an account you
 agree to them.
 
 ---
