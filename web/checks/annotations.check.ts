@@ -40,23 +40,53 @@ for (const col of ['annotations', 'is_edited', 'timestamp_seconds']) {
   )
 }
 
-// 3 + 4. applySnapshot's insert (undo) and discardChanges' insert (discard to published).
-// Only inserts that rebuild an EXISTING row are in scope: a brand-new blank step (insert,
-// split) legitimately has no annotations and takes the column default. A rebuild is any
-// payload that carries a screenshot forward — if it copies the image, it must copy what is
-// drawn on it.
+// 3 + 4. Undo (applySnapshot) and discard-to-published (discardChanges).
+//
+// Neither writes step rows itself any more. Migration 0038 moved the whole-document rebuild
+// behind ONE atomic, guarded call — two admins pressing Ctrl+Z used to interleave their
+// delete and insert and duplicate every step in the article — so the payload this rule cares
+// about now lives in `replaceSteps` in lib/articles.ts, and these two are checked by the
+// fact that they route through it. Following the subject through the refactor rather than
+// counting inserts in one file: a check that fails at the wrong thing teaches people to
+// ignore it.
+for (const fn of ['async function applySnapshot', 'async function discardChanges']) {
+  const body = editor.slice(editor.indexOf(fn), editor.indexOf(fn) + 3000)
+  assert.ok(
+    body.includes('replaceSteps('),
+    `${fn} must rebuild steps through replaceSteps() — a hand-rolled delete + insert from the browser is not atomic and is not guarded, which is how every step in an article gets duplicated`,
+  )
+  assert.ok(
+    !body.includes("from('steps').delete()") && !body.includes("from('steps')\n        .insert"),
+    `${fn} still writes the steps table directly — that is the unguarded path 0038 replaced`,
+  )
+}
+
+// The rebuild payload itself, wherever it lives. This is the list an undo restores TO.
+const replace = articles.slice(
+  articles.indexOf('export async function replaceSteps'),
+  articles.indexOf('export async function deleteArticle'),
+)
+for (const col of ['annotations', 'is_edited', 'timestamp_seconds', 'screenshot_url', 'heading', 'body_text', 'step_number']) {
+  assert.ok(
+    replace.includes(col),
+    `replaceSteps drops '${col}' — one undo or one discard wipes it from every step in the article`,
+  )
+}
+
+// 4b. duplicateStep still rebuilds a row inside the editor, and still has to carry the
+// column. It is the one rebuild that is genuinely local.
 const inserts = payloadsIn(editor, 'article_id: articleId,').filter(
   (b) => b.includes('screenshot_url: s.screenshot_url') || b.includes('screenshot_url: src.screenshot_url'),
 )
 assert.strictEqual(
   inserts.length,
-  3,
-  `expected applySnapshot + discardChanges + duplicateStep to rebuild rows, found ${inserts.length} — a new one was added and is unchecked`,
+  1,
+  `expected duplicateStep to be the only in-editor row rebuild, found ${inserts.length} — a new one was added and is unchecked`,
 )
 for (const [n, body] of inserts.entries()) {
   assert.ok(
     body.includes('annotations'),
-    `step-rebuilding insert #${n + 1} in Editor.tsx drops 'annotations' — one undo or one discard wipes every shape in the article`,
+    `step-rebuilding insert #${n + 1} in Editor.tsx drops 'annotations' — duplicating a step would lose every shape on it`,
   )
 }
 
@@ -79,11 +109,24 @@ for (const col of ['annotations', 'is_edited', 'timestamp_seconds']) {
 // So the assertion is now in two halves, which together say the same thing the old one
 // meant: the builder carries the columns, and neither path has quietly grown its own
 // snapshot again.
-const builder = articles.slice(
-  articles.indexOf('export function publishSnapshot'),
-  articles.indexOf('export function publishSnapshot') + 700,
-)
-for (const col of ['annotations', 'screenshot_url', 'heading', 'body_text', 'step_number']) {
+// The window is the FUNCTION, not a byte count. It was `+ 700`, and migration 0037's `faqs`
+// argument and its comment pushed `annotations` past that — the check failed on correct code
+// for the second time, which is the same lesson the paragraph above records. Ending at the
+// next top-level `export` follows the subject however the body grows.
+const builderStart = articles.indexOf('export function publishSnapshot')
+const builderEnd = articles.indexOf('\nexport ', builderStart + 1)
+const builder = articles.slice(builderStart, builderEnd === -1 ? undefined : builderEnd)
+for (const col of [
+  'annotations',
+  'screenshot_url',
+  'heading',
+  'body_text',
+  'step_number',
+  // The article tail (0037). Frozen into published_content like everything else here: the
+  // reader renders the snapshot, never `articles.faqs`, so a builder that drops this ships
+  // an article whose questions exist only in the editor.
+  'faqs',
+]) {
   assert.ok(
     builder.includes(col),
     `publishSnapshot omits '${col}' — the reader renders this snapshot, so the live site would lose it`,

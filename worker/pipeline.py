@@ -24,7 +24,7 @@ import frames as frames_mod
 import gemini
 import lanes as lanes_mod
 import prompts
-from models import Blueprint, format_mmss, parse_mmss
+from models import Blueprint, canonical_body, format_mmss, parse_mmss
 
 log = logging.getLogger("quink.pipeline")
 
@@ -462,7 +462,11 @@ def _insert_steps(
             "article_id": article_id,
             "step_number": s.step_number,
             "heading": s.heading,
-            "body_text": s.body_text,
+            # Stored as HTML, not as the raw sentence the model returned. The editor and the
+            # reader both render this as markup, so writing prose here left the database and
+            # the editor disagreeing about the same step -- which surfaced as a phantom
+            # "N unpublished edits" on articles nobody had touched. See canonical_body.
+            "body_text": canonical_body(s.body_text),
             # Centres the Tier-1 filmstrip and lets the eval judge score alignment.
             "timestamp_seconds": seconds_by_step.get(s.step_number),
             # is_edited stays false: this frame was machine-picked. A human pick flips
@@ -504,5 +508,5 @@ def _polish_steps(step_ids: dict[int, str], article: Blueprint) -> None:
         sid = step_ids.get(s.step_number)
         if sid:
             db().table("steps").update(
-                {"heading": s.heading, "body_text": s.body_text}
+                {"heading": s.heading, "body_text": canonical_body(s.body_text)}
             ).eq("id", sid).execute()

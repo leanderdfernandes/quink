@@ -144,14 +144,37 @@ indexable — that is something they pay for.
 > **Prompt:** This is the reader SSR problem. Decide the shape (prerender at publish, an edge
 > function, or a framework move) before building. Out of scope for anything smaller.
 
-### C3. Zero-result reader searches are not captured
+### C3. Zero-result reader searches — CAPTURED (0037), not yet surfaced
 
-Every "no articles match X" is a customer telling you exactly which article to write next,
-and it is discarded. Same lossiness argument as `reader_views` before migration 0031.
+Migration 0037 landed the capture half: `log_reader_search_miss(host_key, q)` is anon,
+derives `kb_id` server-side from the same predicate `reader_kb` resolves with, normalises and
+caps the query, and returns `void` on every path so it cannot be used to probe which help
+centers exist. Rows land in `reader_search_misses`, which is revoked from `anon` and
+`authenticated` outright. The reader fires it 900ms after a settled query returns nothing —
+longer than the 150ms search debounce, so three prefixes of a query that eventually succeeds
+do not become three rows saying the help center failed someone it did not fail. No reader
+identity is stored; see the schema note below.
 
-> **Prompt:** Capture zero-result searches per KB, server-side, on the same anon-RPC pattern
-> as `reader_ping` — debounced, no reader identity stored, its own table. Surface them in the
-> authoring app as "readers searched for this and found nothing".
+Two things are still open:
+
+- **Nothing surfaces it.** The authoring app has no "readers searched for this and found
+  nothing" screen yet. The data is accumulating from day one, which was the point.
+- **There is no rate limit, and that is a real abuse surface.** Anyone holding the anon key
+  (it ships in the browser bundle, by design) can write unbounded rows, one per call, 120
+  chars each. `submit_article_feedback`'s per-article-per-minute count is the shape available;
+  a per-visitor limit is NOT, because nothing identifying is stored and so two readers cannot
+  be told apart. Deliberately left out of 0037 so the limiter is its own reviewable change.
+
+> **Prompt:** Add a per-KB-per-minute cap to `log_reader_search_miss` on the
+> `submit_article_feedback` pattern, then build the authoring-side view.
+
+**No `visitor_hash`, deliberately.** The spec 0037 was built from named one; it is not in the
+schema. Migration 0025 states the promise in the table itself — the reader surface "stores
+NOTHING that could identify a reader ... there is deliberately no column to put such a value
+in" — and `privacy-policy.md` §"Usage information" says "We do not build profiles of your
+readers." A per-visitor hash is exactly such a profile key. A search query is about the help
+center's gap, not about the person who typed it. If a future change wants one, the privacy
+policy changes in the same commit (CLAUDE.md §10) or the change does not ship.
 
 ---
 
@@ -198,11 +221,25 @@ either the spec sentence goes, or activity-based persistence gets built and
 Phase 3 landed the entitlements RPC, presence and the stale-write guard. Three things it
 deliberately does not cover:
 
-- **Only the debounced save path is guarded.** Publish, delete, discard, undo and frame
-  picks write directly and are not conditional on `articles.updated_at`. They are one-shot
-  explicit actions rather than autosave, and the damage from a collision is smaller and
-  visible (you can see which frame is on the step). Worth closing if two-editor use turns
-  out to be common; not worth ten wrapped call sites before it does.
+- **Undo and discard ARE guarded now (migration 0038) — this gap bit, in production.**
+  The bet above ("the damage from a collision is smaller and visible") was wrong for the two
+  gestures that replace the WHOLE step list. Article `a6aa3969` ended up with eleven step
+  rows instead of five: two editors pressed Ctrl+Z, their browser-side `delete` and `insert`
+  interleaved as `C1 delete → C2 delete → C1 insert → C2 insert`, and every step was
+  duplicated. The second, quieter half: an undo re-mints every step's `id`, so the other
+  editor's `update steps where id = …` silently matched zero rows and their heading edits
+  survived only in React state until publish froze them.
+
+  Both now go through `replace_steps` — one transaction, guarded on `articles.updated_at`,
+  which also closes the window where a delete that landed and an insert that did not left an
+  article with no steps at all. `supabase/test_replace_steps.py` reproduces the interleaving
+  with two real connections and proves the loser writes nothing.
+
+- **Still unguarded: publish, delete, frame picks, and the single-row step gestures**
+  (insert, split, duplicate-step, delete-step). These write one row rather than replacing the
+  document, so the worst case is a lost or doubled step rather than a doubled article, and
+  the result is visible on screen. The cheap version of the fix is to route them through
+  `claim()` the way the debounced path does.
 - **The presence channel is public.** Anyone signed in who knows a kb id and an article id
   can join `kb:{kbId}:article:{articleId}` and see who is editing. What travels is a
   display name and an avatar url — never article content — and both ids are already in the
@@ -231,6 +268,17 @@ deliberately does not cover:
   every run — the ~4 minutes the function exists to save.
 - **`removeFrames` hardcodes exactly two levels** (`base`, `base/dense`). A third nesting
   level would break it the same way it broke `purge_kb_storage`.
+- **Migration 0016 recreates `stamp_article_origin` with no live-definition diff.** Audited
+  while writing 0037: it is the ONLY migration in the history that does a `create or replace`
+  on a function an earlier migration (0014) had already defined, without stating what changed.
+  That is precisely the shape that lost the watermark clause across 0024–0026 (§10m, D.4).
+  Every other undiffed `create or replace` — 0003, 0005, 0006, 0031 — is a FIRST definition,
+  where the `or replace` is harmless. Print 0016's body from `pg_proc`, diff it against 0014's
+  and write the result into 0016's header. Do not re-run it.
+- **Publish, delete, discard, undo and frame picks still write FAQs unguarded**, the same
+  known gap D.2 records for the rest of those actions. `articles.faqs` rides the guarded
+  debounced path (§10k) like `title` and `subtitle`; the one-shot actions do not, and now have
+  one more column to lose a race over.
 
 ---
 

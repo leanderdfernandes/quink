@@ -79,6 +79,7 @@ const shell = (title, route, body) => `<!doctype html>
 <meta name="description" content="${esc(title)} for Quink — a hosted help center that fills itself from screen recordings.">
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="canonical" href="https://quink.online/${esc(route)}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

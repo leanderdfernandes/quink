@@ -367,7 +367,17 @@ export default function KnowledgeBase({
     const out: Record<string, Meta> = {}
     for (const a of articles) {
       const st = steps[a.id] ?? []
-      const pending = pendingEditCount(a.published_content, a.title, a.subtitle, st)
+      const pending = pendingEditCount(
+        a.published_content,
+        a.title,
+        a.subtitle,
+        st,
+        // The list badge counts FAQ edits too. Left off, an article whose only unpublished
+        // change is a question reads as clean HERE while the editor's own pill says
+        // otherwise — two counts of the same thing disagreeing, which is the exact failure
+        // pendingEditCount exists as one function to prevent.
+        a.faqs ?? [],
+      )
       const fb = feedback[a.id] ?? null
       const missingShots =
         a.source === 'generated' ? st.filter((s) => !s.screenshot_url).length : 0

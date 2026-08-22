@@ -3588,6 +3588,14 @@ textarea {
   font-size: 13.5px;
   color: var(--muted);
 }
+/* The sub-line under the dead end. Quieter than the line above it: a note about what happens
+   next, not part of the answer. */
+.rs-drop-empty span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: color-mix(in oklab, var(--muted) 72%, var(--paper));
+}
 
 /* --- LISTS: sticky heading rail + capped row column ---------------------------------
    A three-article category stretched across 1600px reads as an empty page. The rail holds
@@ -7701,4 +7709,353 @@ a.rs-crumb-link:hover {
 .ed-conflict-acts .btn {
   padding: 6px 13px;
   font-size: 13px;
+}
+
+/* --- READER: common questions (migration 0037) ---------------------------------------
+   The tail sits between the last step and the feedback widget, on the same measure as the
+   prose. It is a list of questions first and answers second: the questions carry the weight
+   of a heading, an open answer is body copy. */
+.rs-faq {
+  margin: 58px 0 0;
+  max-width: var(--rs-measure);
+}
+.rs-faq-cap {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.021em;
+  color: var(--ink);
+}
+.rs-faq-sub {
+  margin: 3px 0 14px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.rs-faq-i {
+  border-top: 1px solid var(--line, var(--border));
+}
+.rs-faq-i:last-of-type {
+  border-bottom: 1px solid var(--line, var(--border));
+}
+.rs-faq-i > summary {
+  /* The default triangle is replaced by the chevron below, which can animate and sits on the
+     right where a disclosure belongs on a full-width row. */
+  list-style: none;
+  cursor: pointer;
+  padding: 15px 34px 15px 0;
+  position: relative;
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+.rs-faq-i > summary::-webkit-details-marker {
+  display: none;
+}
+.rs-faq-i > summary:hover {
+  color: var(--brand);
+}
+.rs-faq-i > summary::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 22px;
+  width: 8px;
+  height: 8px;
+  border-right: 1.8px solid var(--muted);
+  border-bottom: 1.8px solid var(--muted);
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 0.18s ease;
+}
+.rs-faq-i[open] > summary::after {
+  transform: rotate(-135deg);
+  top: 26px;
+}
+.rs-faq-i > summary:focus-visible {
+  outline: 2px solid var(--brand-ring);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.rs-faq-a {
+  padding: 0 34px 18px 0;
+}
+.rs-faq-a p {
+  margin: 0 0 11px;
+}
+.rs-faq-a > :last-child {
+  margin-bottom: 0;
+}
+
+/* --- EDITOR: the FAQ panel -----------------------------------------------------------
+   Same control vocabulary as the step card: nothing at rest, tools on hover, one grip. */
+.ed-faq {
+  margin: 46px 0 0;
+  padding: 26px 0 0;
+  border-top: 1px solid var(--border);
+}
+.ed-faq-hd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ed-faq-hd h2 {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+}
+.ed-faq-n {
+  font-family: var(--rs-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.ed-faq-hint {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ed-faq-row {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--subtle);
+}
+.ed-faq-row.is-dragging {
+  /* A drop target needs a surface while a row is in flight; without one the pointer is over
+     child text nodes and dragenter fires unevenly. */
+  background: color-mix(in oklab, var(--brand-600) 4%, transparent);
+}
+.ed-faq-grip {
+  padding-top: 6px;
+}
+.ed-faq-row:hover .ed-faq-grip {
+  color: var(--muted);
+}
+.ed-faq-body {
+  flex: 1;
+  min-width: 0;
+}
+.ed-faq-q {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  padding: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: -0.012em;
+}
+.ed-faq-q:focus {
+  outline: none;
+}
+.ed-faq-q::placeholder {
+  color: color-mix(in oklab, var(--muted) 52%, var(--paper));
+}
+.ed-faq-a {
+  margin-top: 6px;
+}
+.ed-faq-a .ProseMirror {
+  outline: none;
+  color: var(--secondary);
+  font-size: 15px;
+  line-height: 1.62;
+}
+.ed-faq-a .ProseMirror p {
+  margin: 0 0 8px;
+}
+.ed-faq-a .ProseMirror > :last-child {
+  margin-bottom: 0;
+}
+.ed-faq-a .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: color-mix(in oklab, var(--muted) 52%, var(--paper));
+}
+.ed-faq-a .ProseMirror a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* A link whose target no longer resolves. The chip is a pseudo-element rather than a second
+   decoration, so there is one thing to position instead of two — and it lands inline, right
+   where the author is already looking. Nothing is unwrapped in the draft: publish degrades
+   it to plain text, and this is the warning that says so before it happens. */
+.ed-faq-a .ProseMirror .faq-a-dead {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, var(--danger) 60%, transparent);
+}
+.ed-faq-a .ProseMirror .faq-a-dead::after {
+  content: "Target removed";
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--danger) 10%, var(--paper));
+  color: var(--danger);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  vertical-align: 1px;
+}
+.ed-faq-warn {
+  margin: 7px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+.ed-faq-tools {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+  padding-top: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.ed-faq-row:hover .ed-faq-tools,
+.ed-faq-row:focus-within .ed-faq-tools {
+  opacity: 1;
+}
+.ed-faq-tools button {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.ed-faq-tools button:hover {
+  border-color: var(--brand-300);
+  color: var(--brand);
+  background: var(--brand-50);
+}
+.ed-faq-tools button.danger:hover {
+  border-color: color-mix(in oklab, var(--danger) 40%, var(--border));
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 9%, var(--paper));
+}
+.ed-faq-add {
+  margin-top: 14px;
+  padding: 9px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ed-faq-add:hover {
+  border-color: var(--brand-300);
+  color: var(--brand);
+}
+.ed-faq-link {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  z-index: 4;
+  width: 268px;
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-md);
+}
+.ed-faq-link-cap {
+  margin: 0 0 6px;
+  font-family: var(--rs-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ed-faq-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 168px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.ed-faq-link-list button {
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ed-faq-link-list button:hover {
+  background: var(--brand-50);
+  color: var(--brand);
+}
+.ed-faq-link-none {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.ed-faq-link-url {
+  display: flex;
+  gap: 6px;
+}
+.ed-faq-link-url input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+}
+.ed-faq-link-url input:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.ed-faq-link-url button,
+.ed-faq-unlink {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.ed-faq-link-url button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ed-faq-unlink {
+  margin-top: 10px;
+  width: 100%;
+}
+.ed-faq-unlink:hover {
+  border-color: color-mix(in oklab, var(--danger) 40%, var(--border));
+  color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .ed-faq-link {
+    right: auto;
+    left: 0;
+    width: min(268px, 100%);
+  }
 }

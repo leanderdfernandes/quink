@@ -15,6 +15,7 @@ import {
   fetchReaderArticles,
   fetchReaderKb,
   groupCategories,
+  logSearchMiss,
   pingReader,
   searchReader,
   submitFeedback,
@@ -239,6 +240,10 @@ export function ReaderChrome({
   const [ratios, setRatios] = useState<Record<number, Ratio>>({})
   const searchRef = useRef<HTMLDivElement>(null)
   const missingRef = useRef<HTMLInputElement>(null)
+  // The FAQ row named by `#q-{id}`, if any. Someone arriving from a shared link lands with
+  // the answer already open — a link to a question that resolves to a collapsed row has not
+  // actually taken them anywhere.
+  const [openFaq, setOpenFaq] = useState<string | null>(null)
   const watermark = kb.watermark
   const initial = (kb.name.trim()[0] || 'Q').toUpperCase()
   const searching = !!query?.trim()
@@ -278,6 +283,54 @@ export function ReaderChrome({
     setSending(false)
     setFeedback('sent')
   }
+
+  // Deep link into one answer. Runs when the article changes, not only on mount: navigating
+  // between articles inside the SPA keeps this component alive, so a mount-only effect would
+  // work exactly once per page load.
+  //
+  // The scroll waits a frame — <details open> has to lay out before the row has a position
+  // to scroll to, and scrolling to a collapsed row lands short by the height of the answer.
+  useEffect(() => {
+    const id = decodeURIComponent(window.location.hash.replace(/^#q-/, ''))
+    if (!window.location.hash.startsWith('#q-') || !id) {
+      setOpenFaq(null)
+      return
+    }
+    setOpenFaq(id)
+    const t = requestAnimationFrame(() =>
+      document.getElementById(`q-${id}`)?.scrollIntoView({ block: 'center' }),
+    )
+    return () => cancelAnimationFrame(t)
+  }, [activeSlug])
+
+  // FAQPage structured data, for the retrieval crawlers that read it. Ten lines, and it goes
+  // in only when there is something to describe.
+  //
+  // This is NOT a rich-result feature any more — Google retired FAQ rich results for
+  // general sites — so no copy anywhere may promise the customer a search-result treatment.
+  // It is here because assistants and answer engines still parse it.
+  useEffect(() => {
+    const rows = view === 'article' ? (article?.faqs ?? []) : []
+    const id = 'rs-faq-jsonld'
+    document.getElementById(id)?.remove()
+    if (rows.length === 0) return
+    const el = document.createElement('script')
+    el.id = id
+    el.type = 'application/ld+json'
+    el.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: rows.map((f) => ({
+        '@type': 'Question',
+        name: f.q,
+        // Text, not HTML: this is a machine-readable copy, and shipping the raw stored
+        // markup into a JSON string is the one place sanitization would be skipped.
+        acceptedAnswer: { '@type': 'Answer', text: plain(f.a) },
+      })),
+    })
+    document.head.appendChild(el)
+    return () => el.remove()
+  }, [view, article])
 
   // Dismiss the search dropdown on an outside click.
   useEffect(() => {
@@ -387,7 +440,13 @@ export function ReaderChrome({
               ))}
             </>
           ) : (
-            <div className="rs-drop-empty">No articles match “{query}”</div>
+            /* The dead end now says the miss went somewhere. It costs nothing and it is
+               true — log_reader_search_miss has already recorded it by the time this has
+               been on screen a second. */
+            <div className="rs-drop-empty">
+              No articles match “{query}”
+              <span>We’ll use this to work out what’s missing.</span>
+            </div>
           )}
         </div>
       )}
@@ -503,6 +562,8 @@ export function ReaderChrome({
   /* ---------------- ARTICLE ---------------- */
   if (view === 'article' && article) {
     const steps = article.steps
+    // Absent (any snapshot frozen before 0037), null, or [] — all the same nothing.
+    const faqs = article.faqs ?? []
     const showSpine = steps.length > 1
     return (
       <div {...shellProps}>
@@ -640,6 +701,45 @@ export function ReaderChrome({
                   </section>
                 )
               })}
+
+              {/* Common questions (migration 0037). The order of the tail is fixed and
+                  means something: answers, then "did that work", then where to go next.
+                  Asking whether the article helped BEFORE the questions were offered asks
+                  too early.
+
+                  Renders nothing at all when there are none — no heading, no "no questions
+                  yet". An empty section on a reader's page is the author's todo list leaking
+                  onto the public site. Absent, null and [] are all the same nothing: every
+                  article published before 0037 has no `faqs` key in its frozen snapshot. */}
+              {faqs.length > 0 && (
+                <section className="rs-faq" aria-labelledby="rs-faq-cap">
+                  <h2 className="rs-faq-cap" id="rs-faq-cap">
+                    Common questions
+                  </h2>
+                  <p className="rs-faq-sub">Answers that don’t belong in a step</p>
+                  {faqs.map((f) => (
+                    /* <details>, not a button and a state hash. Native disclosure gives
+                       keyboard operation, the right ARIA and find-in-page expansion for
+                       free, and — the reason it matters here — `open` is a plain attribute,
+                       so the deep-link below is one boolean rather than a scroll manager. */
+                    <details
+                      className="rs-faq-i"
+                      key={f.id}
+                      id={`q-${f.id}`}
+                      open={openFaq === f.id}
+                    >
+                      <summary>{f.q || 'Untitled question'}</summary>
+                      <div
+                        className="rs-prose rs-faq-a"
+                        // The SAME sanitizer the step bodies go through. A second render
+                        // path for the same kind of stored HTML is a second place to forget
+                        // it, and this HTML reaches the same public page.
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(f.a) }}
+                      />
+                    </details>
+                  ))}
+                </section>
+              )}
 
               {/* Was this helpful — writes to article_feedback through the anon RPC
                   (migration 0025). Nothing identifying is sent or stored, so the copy can
@@ -919,6 +1019,9 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<ReaderSearchHit[]>([])
   const pinged = useRef(false)
+  // Held outside the effect body only so the cleanup can cancel a miss that is still pending
+  // when the next keystroke arrives.
+  const missTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const view: 'home' | 'category' | 'article' = articleSlug
     ? 'article'
@@ -990,13 +1093,21 @@ export default function ReaderSite({ hostKey }: { hostKey?: string } = {}) {
     let cancelled = false
     const t = setTimeout(async () => {
       const r = await searchReader(kb.id, query)
-      if (!cancelled) setHits(r.map((h) => ({ ...h, catName: slugToCat.get(h.slug) ?? '' })))
+      if (cancelled) return
+      setHits(r.map((h) => ({ ...h, catName: slugToCat.get(h.slug) ?? '' })))
+      // A settled query that found nothing. Logged on a LONGER timer than the search
+      // itself, so a miss is only recorded once the reader has stopped typing — the 150ms
+      // search debounce fires happily on "h", "ho", "how", and three prefixes of a query
+      // that eventually succeeds are three rows saying the help center failed someone it
+      // did not fail. Fire-and-forget: nothing here is awaited and nothing renders from it.
+      if (r.length === 0) missTimer.current = setTimeout(() => logSearchMiss(kbKey, query), 900)
     }, 150)
     return () => {
       cancelled = true
       clearTimeout(t)
+      if (missTimer.current) clearTimeout(missTimer.current)
     }
-  }, [kb, query, categories])
+  }, [kb, kbKey, query, categories])
 
   // Clear the query when the route changes (navigating from a result).
   useEffect(() => {
@@ -1119,6 +1230,10 @@ function setCanonical(href: string) {
 const QUINK_ICONS: [rel: string, href: string, type?: string][] = [
   ['icon', '/favicon.ico'],
   ['icon', '/favicon.svg', 'image/svg+xml'],
+  // setFavicon strips apple-touch-icon along with the rest, so this has to be in the restore
+  // list or navigating from a KB that HAS a logo back to one that doesn't leaves the
+  // home-screen icon blank. Must stay in step with index.html and scripts/build-legal.mjs.
+  ['apple-touch-icon', '/apple-touch-icon.png'],
 ]
 
 function setFavicon(href: string | null) {

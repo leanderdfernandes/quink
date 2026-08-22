@@ -118,3 +118,23 @@ export async function submitFeedback(
   })
   return !error && data === true
 }
+
+// A search that found nothing (migration 0037).
+//
+// Fire-and-forget by construction, exactly like pingReader: nothing awaits it, nothing
+// renders from it, and both outcomes are swallowed. A reader typing into a search box must
+// never be able to tell that this exists, let alone be slowed by it.
+//
+// It takes the HOST KEY, not a kb id — the RPC derives the KB server-side from the same
+// predicate reader_kb resolves with, so a caller cannot file a miss against a help center it
+// names itself, and gets `void` back whether the host was real, offline or invented.
+//
+// Normalising (lower, collapse, trim, cap) happens IN the function, not here. A client-side
+// copy would be a second definition of what counts as the same query, and the two would
+// disagree the first time either changed.
+export function logSearchMiss(hostKey: string, query: string): void {
+  supabase.rpc('log_reader_search_miss', { host_key: hostKey, q: query }).then(
+    () => {},
+    () => {},
+  )
+}
