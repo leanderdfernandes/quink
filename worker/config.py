@@ -309,6 +309,47 @@ DENSE_FRAME_FPS = 1
 # The worker doesn't slice the window; it just needs the dense set to cover it.
 FILMSTRIP_WINDOW_SECONDS = 3
 
+# --- Settle-pick (frames.pick_settled_second) -------------------------------
+# Gemini samples video at 1fps (measured: a 99s recording bills ~99 frames of video
+# tokens), so Stage 1 cannot name a moment finer than a whole second — and a second is
+# the difference between a menu closed, opening, and open. The 2026-08-22 eval left
+# exactly two misses after the prompt fix, both sub-second: a field caught at "delet",
+# and a tab that switches between one sampled second and the next.
+#
+# So code does the sub-second part, which is what code is for (CLAUDE.md §5: "the video
+# model drafts, the cheap model polishes, code does everything deterministic"). NOT a
+# third model call.
+#
+# Search FORWARD only, and not far. Backwards is where the pre-action screen lives — the
+# exact failure the prompt rewrite just fixed — and a wide window wanders onto a different
+# screen entirely, which is worse than a slightly blurred one.
+SETTLE_WINDOW_SECONDS = 1.0
+# How finely the window is probed. 10fps over 1s = 11 candidates; below ~6 the keystroke
+# case slips between samples, above ~15 buys nothing a screen recording can show.
+SETTLE_SAMPLE_FPS = 10
+# Candidates are compared as tiny greyscale thumbnails: enough to see a menu appear or a
+# character land, far too coarse for compression noise to register as motion. Also what
+# keeps this cheap — 11 frames at this width is well under a megabyte of raw pixels.
+SETTLE_THUMB_WIDTH = 160
+# Fixed height too, so the raw stream splits on a known frame size. Aspect ratio is not
+# preserved on purpose — the same squash applies to every frame, so it cancels out of every
+# comparison, and inferring the height back out of the byte count is a bug waiting to happen.
+SETTLE_THUMB_HEIGHT = 90
+# HOW MANY pixels changed, not by how much on average. This distinction is the whole
+# function: a mean over the frame is the wrong instrument here and was measured being
+# wrong. A character landing in a text field moves ~20 of 14,400 pixels by ~100 levels,
+# which is a MEAN difference of 0.14 — so a mean-based threshold loose enough to ignore
+# codec noise is also loose enough to ignore every real UI transition. The first version
+# of this shipped at mean < 1.0 and moved timestamps by 0.10s on average, i.e. did nothing.
+#
+# A pixel counts as changed above this many levels (0-255) — above sensor/codec dither on
+# a static screen, below any visible edit.
+SETTLE_PIXEL_DELTA = 12
+# ...and the frame counts as settled while fewer than this FRACTION of pixels changed.
+# 0.2% of a 160x90 thumbnail is ~26 pixels: smaller than one character, so a single
+# keystroke registers, while a blinking cursor does not.
+SETTLE_STILL_FRACTION = 0.002
+
 # WebP for speed + privacy + size (CLAUDE.md §8). Not a cost play — at ~92% margins
 # halving COGS is noise, so don't over-invest here.
 #

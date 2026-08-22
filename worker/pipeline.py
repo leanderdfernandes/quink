@@ -280,6 +280,12 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         for step in blueprint.steps:
             seconds = seconds_by_step[step.step_number]
             try:
+                # The sub-second half of choosing a moment. Stage 1 can only name whole
+                # seconds — Gemini samples video at 1fps — so a timestamp that is right to
+                # the second still lands mid-keystroke or mid-transition. This nudges it
+                # forward to where the screen stopped moving, and cannot make it worse: it
+                # never raises and returns `seconds` unchanged on every failure path.
+                seconds = frames_mod.pick_settled_second(local_video, seconds, duration)
                 local = frames_mod.extract_frame(
                     local_video, seconds, tmpdir / f"step-{step.step_number}.webp"
                 )
@@ -291,7 +297,11 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
                 # in `screenshots` only AFTER the row has it: this dict decides both the
                 # total-wipeout failure and the frames_partial degrade, so a step whose
                 # write failed has to count as missing, not as done.
-                _set_screenshot(step_ids, step.step_number, path)
+                #
+                # `seconds` goes with it: the row must say where the picture actually came
+                # from, or the frame picker centres its filmstrip on a moment that is not
+                # the one on screen — and the eval scores alignment against the same column.
+                _set_screenshot(step_ids, step.step_number, path, seconds)
                 screenshots[step.step_number] = path
             except Exception as e:
                 log.warning("job %s: step %s frame failed: %s", job_id, step.step_number, e)
@@ -470,10 +480,20 @@ def _insert_steps(
     return ids
 
 
-def _set_screenshot(step_ids: dict[int, str], step_number: int, path: str) -> None:
+def _set_screenshot(
+    step_ids: dict[int, str], step_number: int, path: str, seconds: float
+) -> None:
+    """The frame and the moment it came from, written together.
+
+    They are one fact. `timestamp_seconds` centres the Tier-1 filmstrip and is what the
+    eval scores alignment against, so a row whose timestamp disagrees with its own
+    screenshot sends the frame picker to the wrong part of the recording.
+    """
     sid = step_ids.get(step_number)
     if sid:
-        db().table("steps").update({"screenshot_url": path}).eq("id", sid).execute()
+        db().table("steps").update(
+            {"screenshot_url": path, "timestamp_seconds": seconds}
+        ).eq("id", sid).execute()
 
 
 def _polish_steps(step_ids: dict[int, str], article: Blueprint) -> None:

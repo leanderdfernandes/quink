@@ -82,6 +82,40 @@ decision or a trap we already paid for once. Read before repeating a mistake.
   one sampled second and the next. Those need a deterministic settle-pick in ffmpeg, not
   more prompt.
 
+### 1e. The settle-pick, and two lessons about measuring it (2026-08-22)
+- `frames.pick_settled_second` nudges a step's timestamp forward, at most
+  `SETTLE_WINDOW_SECONDS`, to the first moment the screen has stopped changing. One extra
+  ffmpeg pass per step (~80ms, the same as the full-res extraction already being done),
+  no model call. Forward only: backwards is the pre-action screen, which is the failure
+  the prompt rewrite exists to fix.
+- **A MEAN pixel difference is the wrong instrument and it silently certified nothing.**
+  First version thresholded on mean abs difference < 1.0 over a 160x90 greyscale frame.
+  A character landing in a text field moves ~20 of 14,400 pixels, i.e. a mean of 0.14 —
+  so a threshold loose enough to ignore codec noise also ignores every real UI change.
+  Measured over 210 sampled seconds of the eval set: mean shift 0.11s, max 0.4s. It did
+  nothing. Now it COUNTS pixels that changed beyond `SETTLE_PIXEL_DELTA` and thresholds
+  on the fraction — small local changes are the whole point, and a mean buries them.
+- **The self-check certified it anyway, because the fixture was unrealistic.** It built a
+  clip whose middle segment was a full-frame `testsrc`, which changes every pixel — the
+  one thing a mean CAN see. A test that passes on a function measured to be inert is a
+  test of the mechanism, not of the behaviour. The fixture now slides a small white box
+  over black (a local luminance change, like a real edit) and asserts directly that a
+  still frame and a changing one produce different numbers. `testsrc` was wrong twice
+  over: it fills the frame, and its colour bars flatten to nearly uniform grey, so it
+  scored 5 changed pixels out of 14,400.
+- **What it is worth:** it fires on roughly one step in six, because most timestamps
+  already land on a settled screen. When it fires it is decisive — V7 step 2 moved 5.0s
+  to 5.3s, turning a screenshot of a GREYED-OUT Delete button with a no-entry cursor into
+  one of the enabled button. Rare, valuable, and incapable of making things worse (forward
+  only, capped, returns the input unchanged on every failure path).
+- **The eval cannot measure it, and that is a fact about the eval.** Runs B and C used the
+  IDENTICAL Stage 1 prompt and differed only in frame extraction, yet segmentation moved
+  1.14 and faithfulness 0.57 between them — Gemini is non-deterministic and the harness is
+  n=1 per video. So a change that shifts ~1 step in 6 by <=0.7s is below the noise floor by
+  construction, and more runs will not rescue it. Read per-video DIRECTION across many
+  videos, never a mean delta of less than about one point. The A->B prompt result stands on
+  5 of 6 videos moving the same way, not on the mean.
+
 ### 2. Float timestamps produce garbage screenshots
 - Asking the video model for `timestamp_seconds` as a float returned 0.05, 0.10, 0.14 for a
   15-second video — every screenshot was the opening frame.

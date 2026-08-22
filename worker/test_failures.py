@@ -161,6 +161,12 @@ class _Frames:
             raise self.probe_error
         return self.duration
 
+    def pick_settled_second(self, _video, seconds, _duration):
+        # Pass-through. The real one is proved by frames.py's own _demo against a video
+        # with a known transition; what THIS suite cares about is that the frame pass
+        # still degrades correctly around it.
+        return seconds
+
     def extract_frame(self, _video, seconds, out_path: Path):
         # step-N.webp -> N
         n = int(out_path.stem.split("-")[1])
