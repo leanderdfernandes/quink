@@ -38,6 +38,26 @@ export default defineConfig(({ command, mode }) => {
           'in the deploy environment and rebuild.',
       )
     }
+    // The pair that actually took production down on 2026-08-22, because this check
+    // covered the other two variables and not these.
+    //
+    // lib/supabase.ts throws at MODULE LOAD when either is missing, and main.tsx imports
+    // it transitively — so the bundle dies during evaluation, before React mounts and
+    // before a single request goes out. The symptom is a white screen with an EMPTY
+    // network tab, which looks like a dead host rather than a missing string.
+    //
+    // A failed build is the strictly better outcome: Vercel keeps serving the previous
+    // deployment, so the site stays up while somebody reads the error.
+    for (const name of ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']) {
+      if (!(env[name] || process.env[name])) {
+        throw new Error(
+          `${name} is not set. lib/supabase.ts throws at module load without it, so the ` +
+            'build would succeed and then white-screen every visitor with no network ' +
+            'activity at all. Set it in the deploy environment and rebuild — and make ' +
+            "sure it is the key for THIS environment's Supabase project, not the other one.",
+        )
+      }
+    }
   }
   return { plugins: [react()] }
 })
