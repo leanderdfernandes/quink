@@ -37,6 +37,51 @@ decision or a trap we already paid for once. Read before repeating a mistake.
 - Eval scores are NOT comparable across this change. Re-baseline before reading any run
   against the 2.5-flash numbers (EVAL-PLAN §1).
 
+### 1c. The eval could not see the screenshots — and had been unrunnable for a month
+- `frame_relevance` was scored by a TEXT-ONLY judge given the article JSON and the
+  ground-truth note. No image. Its own reasons said "plausibly" and "likely" because it was
+  inferring from the timestamp — so the dimension was `timestamp_accuracy` under a second
+  name, and the one thing users complain about ("the screenshots don't match") was
+  unmeasured by the whole harness. `score_frame_validity` is not a substitute: decodes /
+  not blank / not duplicated, nothing more.
+- **Fix:** every step's frame is attached to the judge call as an image at `detail: "high"`,
+  labelled by step number, SCOPED to `frame_relevance` alone — the ground truth stays the
+  only authority for what happened, or scores stop being comparable across runs.
+- Three drifts found the moment it was run again, all dating from migration 0027:
+  the runner sent the product context FLAT (worker wants it nested under `product`) so every
+  video 422'd; it uploaded to `{owner_id}/…` when objects are `{kb_id}/…` and `_start_run`
+  403s otherwise; and `append_csv` keyed on `path.exists()`, so an existing-but-EMPTY
+  results.csv never got a header and every later run died `KeyError: 'run_id'`.
+  It also read `job["error"]` — a column dropped in 0020 — so every failure reported
+  "pipeline error: None".
+- **The eval runner is the "second copy" CLAUDE.md §10 warns about.** It broke silently on
+  the day the request shape changed, and nothing noticed for a month, so every change since
+  `collapse-v2` shipped unmeasured. Run it after touching the request shape, not just after
+  touching a prompt.
+
+### 1d. The screenshot was early, every single time (2026-08-22)
+- With the frame-aware judge, baseline `frame_relevance` was **3.33** while
+  `timestamp_accuracy` was a perfect **5.00**. Every timestamp landed inside its
+  ground-truth window and the picture was still wrong.
+- **All six misses were in the SAME direction — the frame precedes the action's effect:**
+  the three-dots icon instead of the open menu, the Submit button instead of the
+  confirmation, the Questions tab instead of Responses, an empty field instead of the typed
+  text. Not one was late.
+- **Cause was the prompt, not the model.** `TIMESTAMPS` said *"choose the moment the action
+  is clearly visible on screen, not the moment just before it begins"* — which names the
+  instant of the CLICK. A click's effect (menu opens, tab switches, dialog appears) lands a
+  beat later, and it is the effect a reader needs to see. The model was obeying precisely.
+- **Fix:** the block now describes the PICTURE rather than the event — screen must be
+  settled, the named control visible, dialogs fully open, results actually on screen, and
+  "when torn between two seconds, choose the LATER one".
+- **Measured, same model and same everything else:** `frame_relevance` **3.33 -> 4.67**
+  like-for-like on the six videos scored in both runs (V3 2->5, V5 3->5, V1/V6 4->5,
+  V7 3->4, V8 4->4). No dimension regressed. So "more prompt is not free" did not bite here.
+- Two misses survive, and both are sub-second problems the model cannot resolve at Gemini's
+  1 fps video sampling: a field caught mid-word ("delet"), and a tab that switches between
+  one sampled second and the next. Those need a deterministic settle-pick in ffmpeg, not
+  more prompt.
+
 ### 2. Float timestamps produce garbage screenshots
 - Asking the video model for `timestamp_seconds` as a float returned 0.05, 0.10, 0.14 for a
   15-second video — every screenshot was the opening frame.

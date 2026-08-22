@@ -16,6 +16,7 @@ is recorded and the run continues.
 """
 
 import argparse
+import base64
 import csv
 import hashlib
 import json
@@ -53,6 +54,11 @@ BLANK_FRAME_FRACTION = 0.95          # >this share of one exact colour = blank/s
 # empty (mostly-white) real UI page can trip this; the 0.95 threshold keeps that
 # rare. Upgrade path: perceptual/edge-density check if false positives show up.
 FRAME_HIST_WIDTH = 480
+
+# The judge reads UI text out of these frames — "is the Publish dialog open" is not a
+# question you can answer from a 512px thumbnail. "high" costs the judge more tokens and
+# nothing in the product; it is the whole reason the images are attached at all.
+JUDGE_IMAGE_DETAIL = "high"
 
 JUDGE_DIMS = [
     "segmentation", "faithfulness", "timestamp_accuracy",
@@ -188,13 +194,52 @@ def _strip_fences(text: str) -> str:
     return re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text.strip(), flags=re.I).strip()
 
 
-def run_judge(client, article_json: str, context: dict, ground_truth: str) -> dict:
+def _judge_content(prompt: str, frames: list[tuple[int, bytes | None]]) -> list[dict]:
+    """The prompt, then every step's screenshot as a labelled image part.
+
+    The label matters as much as the image: without "STEP n", a judge handed five
+    pictures has to guess the alignment, and a misaligned frame scores as a wrong frame.
+    A step whose frame is missing says so IN TEXT and contributes no image, so the
+    remaining images stay aligned with their step numbers.
+
+    Sent as WebP data URLs — the bytes are already in hand from the frame-validity fetch,
+    so scoring costs no extra round trip to Storage.
+    """
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for step_no, data in frames:
+        if not data:
+            content.append({"type": "text", "text": f"STEP {step_no} SCREENSHOT: missing"})
+            continue
+        content.append({"type": "text", "text": f"STEP {step_no} SCREENSHOT:"})
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": "data:image/webp;base64," + base64.b64encode(data).decode(),
+                "detail": JUDGE_IMAGE_DETAIL,
+            },
+        })
+    return content
+
+
+def run_judge(
+    client,
+    article_json: str,
+    context: dict,
+    ground_truth: str,
+    frames: list[tuple[int, bytes | None]],
+) -> dict:
     """One judge call per video. Retry once on malformed/incomplete JSON, then fail
     loudly with the raw output (CLAUDE.md §5).
 
     The judge is OpenAI, not Gemini, on purpose — see JUDGE_MODEL in judge_prompt.py.
     json_object mode should make fences impossible, but _strip_fences stays: the
-    fallback costs one regex and the failure it guards is a whole run."""
+    fallback costs one regex and the failure it guards is a whole run.
+
+    `frames` are attached as images so `frame_relevance` scores the PICTURE rather than
+    re-scoring the timestamp. They are scoped to that one dimension by the prompt — see
+    the module docstring in judge_prompt.py for why widening that would silently break
+    comparability with every earlier run.
+    """
     prompt = JUDGE_PROMPT.format(
         ground_truth=ground_truth,
         context=json.dumps(context, indent=2),
@@ -205,7 +250,7 @@ def run_judge(client, article_json: str, context: dict, ground_truth: str) -> di
     for attempt in range(2):
         resp = client.chat.completions.create(
             model=JUDGE_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": _judge_content(prompt, frames)}],
             response_format={"type": "json_object"},
         )
         last_raw = resp.choices[0].message.content or ""
@@ -307,11 +352,31 @@ def process_video(args, db, judge_client, gt: dict, run_dir: Path) -> dict:
 
     # Stable path, NOT per-run: the same frozen video re-uploaded each run is ~4min of
     # dead time. Shared across runs on purpose — see upload_video.
-    storage_path = f"{args.owner_id}/{EVAL_VIDEO_PREFIX}/{gt['video_file']}"
+    #
+    # Keyed by KB, not by owner. Storage objects are "{kb_id}/…" (CLAUDE.md §10b) and
+    # _start_run refuses anything else with a 403 — a valid owner could otherwise point
+    # video_path at another KB's prefix and have the worker process it with the service
+    # role. This runner was still writing "{owner_id}/…" from before that rule existed.
+    storage_path = f"{args.kb_id}/{EVAL_VIDEO_PREFIX}/{gt['video_file']}"
     upload_video(db, video_path_local, storage_path)
 
+    # The product context is NESTED under `product` (migration 0027 / models.GenerateRequest)
+    # and was still being sent flat here, so every video 422'd before a byte of Gemini was
+    # spent — the regression guard has been unrunnable since that migration. `recording` is
+    # the per-file tier and the frozen ground-truth notes carry none, so it stays empty:
+    # inventing one per video would change what every run is grounded on.
     ctx = gt["context"]
-    payload = {"kb_id": args.kb_id, "video_path": storage_path, **ctx}
+    payload = {
+        "kb_id": args.kb_id,
+        "video_path": storage_path,
+        "product": {
+            "product_name": ctx["product_name"],
+            "description": ctx["description"],
+            "audience": ctx["audience"],
+            "tone": ctx["tone"],
+        },
+        "recording": "",
+    }
     r = httpx.post(args.base_url + GENERATE_PATH, json=payload, timeout=60,
                    headers={"Authorization": f"Bearer {args.access_token}"})
     r.raise_for_status()
@@ -319,7 +384,14 @@ def process_video(args, db, judge_client, gt: dict, run_dir: Path) -> dict:
 
     job = poll_job(db, job_id, args.timeout)
     if job["status"] == "error":
-        raise RuntimeError(f"pipeline error: {job.get('error')}")
+        # failure_code, NOT `error`: that column was dropped in migration 0020 and must not
+        # come back (CLAUDE.md §10g), so this read had been returning None for every failed
+        # video — "pipeline error: None", which diagnoses nothing. failure_detail is
+        # deliberately unreadable by clients, but the runner holds the SERVICE ROLE, so it
+        # can have it; this is a developer tool and the whole point is to say what broke.
+        raise RuntimeError(
+            f"pipeline error [{job.get('failure_code')}]: {job.get('failure_detail')}"
+        )
 
     article_id = job["article_id"]
     art = db.table(ARTICLES_TABLE).select("title,subtitle,status").eq("id", article_id).single().execute().data
@@ -345,7 +417,7 @@ def process_video(args, db, judge_client, gt: dict, run_dir: Path) -> dict:
     step_count_delta = len(steps) - gt["expected_step_count"]
 
     # Judge.
-    judged = run_judge(judge_client, json.dumps(article, indent=2), ctx, gt["raw"])
+    judged = run_judge(judge_client, json.dumps(article, indent=2), ctx, gt["raw"], frames)
 
     return {
         "video_id": video_id, "job": job, "article": article,
@@ -376,7 +448,12 @@ def failed_row(run_id, prompt_version, video_id, error) -> list:
 
 
 def append_csv(path: Path, rows: list[list]) -> None:
-    new = not path.exists()
+    # SIZE, not existence. An existing but EMPTY results.csv (a `touch`, a run that died
+    # before writing, a cleared file) skipped the header forever — and then every later
+    # run died in previous_run_stats with KeyError: 'run_id', because DictReader took the
+    # first data row as the header. The regression guard cannot be a thing that breaks
+    # permanently on an empty file.
+    new = not path.exists() or path.stat().st_size == 0
     with path.open("a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if new:

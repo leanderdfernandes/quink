@@ -4,6 +4,23 @@ The judge did NOT see the video. It scores the generated article against the
 hand-written ground-truth note, which is the authoritative record of what
 happened. Deterministic dimensions (frame_validity, step_count_delta) are
 computed in code, never here — see run_eval.py.
+
+IT DOES, however, see the SCREENSHOTS (2026-08-22). Every step's frame is attached
+to the judge call as an image. Before this, `frame_relevance` was scored by a
+text-only judge reasoning about whether a timestamp *would plausibly* land on the
+right screen — which made it `timestamp_accuracy` under a second name, and left the
+one thing users actually complain about ("the screenshots don't match") unmeasured
+by the entire harness. `score_frame_validity` in run_eval.py is not a substitute:
+it only asks whether a frame decodes, is not blank, and is not a duplicate.
+
+THE IMAGES ARE SCOPED TO `frame_relevance` AND NOTHING ELSE. The ground truth stays
+the sole authority on what happened in the recording, because it is the only record
+that cannot drift. A judge that started scoring faithfulness or segmentation off the
+screenshots would be scoring the article against a different source than every run
+before it, and the numbers would silently stop being comparable.
+
+Scores before and after 2026-08-22 are comparable on every dimension EXCEPT
+`frame_relevance`, which now measures something the old number did not.
 """
 
 # Named constant, never an inline model string (CLAUDE.md §10 convention, same
@@ -23,8 +40,14 @@ JUDGE_MODEL = "gpt-5-mini"
 JUDGE_PROMPT = """You are scoring a step-by-step help article that was auto-generated from a screen
 recording. You did NOT see the video. Score ONLY against the GROUND TRUTH below —
 it is the authoritative record of what actually happened on screen. Do not assume
-anything the ground truth does not state, and do NOT claim visual confidence: you
-are reasoning from the ground truth's written notes, not from the images.
+anything the ground truth does not state.
+
+ONE EXCEPTION: each step's SCREENSHOT is attached to this message as an image,
+labelled with its step number. Those images are evidence for the `frame_relevance`
+dimension and for NOTHING ELSE. Do not let them influence segmentation,
+faithfulness, timestamp_accuracy, terminology or instructional_quality — for those,
+the ground truth is the only authority, and a screenshot showing something the
+ground truth does not mention is not evidence that it happened.
 
 Return ONLY valid JSON, no markdown fences, in EXACTLY this shape (every key required):
 {{
@@ -57,10 +80,25 @@ Scoring rules:
   the FIRST occurrence per the ground truth's window/COLLAPSED_TIMESTAMP note. If every
   timestamp is at or near 00:00, that is the opening-frame failure: score 1.
 
-- frame_relevance (1-5): For each step, compare the step's description AND its emitted
-  timestamp against the ground truth's frame_should_show for that step. You cannot see
-  the image — you are judging whether the timestamp would plausibly land on the screen
-  the ground truth says should be shown. Reason about it; do not assert visual certainty.
+- frame_relevance (1-5): LOOK AT THE ATTACHED SCREENSHOT for each step. Compare what
+  the image ACTUALLY shows against that step's frame_should_show in the ground truth,
+  and against the step's own heading and body. Judge the picture, not the timestamp —
+  timestamp_accuracy already scores the number.
+  Grade down, and NAME the step, for any of:
+    · The control or screen the step tells the reader to use is not visible in the image.
+    · The screen is caught MID-CHANGE: a menu part-way open, a dialog fading, a page
+      still loading, a field half-typed. A frame at the exact instant of the action is
+      still a bad screenshot if the screen had not settled.
+    · The image shows the state BEFORE the step's action, so it is indistinguishable
+      from the previous step's screenshot.
+    · The step describes a result (a confirmation, a saved state, a new screen) and the
+      image was taken before that result appeared.
+  Anchors, apply literally:
+    5 = every step's image shows what the ground truth says it should, settled and legible
+    4 = one step's image is off — early, mid-transition, or missing the named control
+    3 = several are off, or one is on a completely different screen
+    2 = most images do not show what their step is about
+    1 = the images bear no relation to the steps
 
 - terminology (1-5): Uses the product's real terms from the CONTEXT. Specifically: are
   the ground truth's Control labels reproduced VERBATIM while user-specific data is

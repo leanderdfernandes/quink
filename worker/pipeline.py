@@ -12,6 +12,7 @@ import logging
 import tempfile
 import time
 from datetime import datetime, timezone
+from collections.abc import Callable
 from pathlib import Path
 
 from google.genai import types
@@ -99,28 +100,38 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _upload_frame(local: Path, storage_path: str) -> str:
-    """Upload one WebP frame, retrying transient transport failures.
+def _storage_retry[T](what: str, call: "Callable[[], T]") -> T:
+    """Run one Storage transfer, retrying transient transport failures.
 
-    A run uploads ~50+ frames back to back over one HTTP/2 connection and the server
-    will occasionally reset a stream mid-flight (observed: StreamReset error_code:1).
-    Without a retry, one blip discards a completed ~60s Gemini run — so retry the
-    upload rather than the whole job. Fails loudly after the last attempt.
+    A run moves a video in and ~50+ frames out over one HTTP/2 connection, and the
+    server will occasionally reset a stream mid-flight (observed: StreamReset
+    error_code:1 on upload, WinError 10035 on download). Without a retry, one blip
+    discards a whole run — so retry the TRANSFER rather than the job. Fails loudly
+    after the last attempt.
     """
-    data = local.read_bytes()
-    for attempt in range(config.UPLOAD_RETRY_ATTEMPTS):
+    for attempt in range(config.STORAGE_RETRY_ATTEMPTS):
         try:
-            db().storage.from_(config.BUCKET_FRAMES).upload(
-                storage_path,
-                data,
-                {"content-type": "image/webp", "upsert": "true"},
-            )
-            return storage_path
+            return call()
         except Exception as e:
-            if attempt == config.UPLOAD_RETRY_ATTEMPTS - 1:
-                raise RuntimeError(f"upload of {storage_path} failed: {e}") from e
-            time.sleep(config.UPLOAD_RETRY_BACKOFF_SECONDS * (attempt + 1))
-    return storage_path  # unreachable; keeps the type checker happy
+            if attempt == config.STORAGE_RETRY_ATTEMPTS - 1:
+                raise RuntimeError(f"{what} failed after "
+                                   f"{config.STORAGE_RETRY_ATTEMPTS} attempts: {e}") from e
+            log.warning("%s failed (attempt %s), retrying: %s", what, attempt + 1, e)
+            time.sleep(config.STORAGE_RETRY_BACKOFF_SECONDS * (attempt + 1))
+    raise RuntimeError("unreachable")
+
+
+def _upload_frame(local: Path, storage_path: str) -> str:
+    data = local.read_bytes()
+    _storage_retry(
+        f"upload of {storage_path}",
+        lambda: db().storage.from_(config.BUCKET_FRAMES).upload(
+            storage_path,
+            data,
+            {"content-type": "image/webp", "upsert": "true"},
+        ),
+    )
+    return storage_path
 
 
 def run(
@@ -173,7 +184,15 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         # --- Stage: analyzing --------------------------------------------------
         set_stage(job_id, config.STAGE_ANALYZING, started)
 
-        video_bytes = db().storage.from_(config.BUCKET_VIDEOS).download(video_path)
+        # Retried like every other Storage transfer. This was the ONE network hop in the
+        # pipeline with no retry: Gemini retries, frame uploads retry, and the fetch of the
+        # recording itself did not — so a transient socket reset killed the run at Stage 1
+        # and told the user "something went wrong while building your article. This one's
+        # on us." Cost a video in the 2026-08-22 eval baseline (WinError 10035).
+        video_bytes = _storage_retry(
+            f"download of {video_path}",
+            lambda: db().storage.from_(config.BUCKET_VIDEOS).download(video_path),
+        )
         if len(video_bytes) > config.MAX_INLINE_BYTES:
             # The File API fallback isn't built. Fail loudly rather than silently
             # truncate or hang (CLAUDE.md §5). The SPA rejects oversize files at the

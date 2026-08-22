@@ -327,11 +327,15 @@ WEBP_QUALITY = 90
 # output in the error (CLAUDE.md §5).
 JSON_RETRY_ATTEMPTS = 2
 
-# A run uploads ~50+ frames over one HTTP/2 connection; Storage occasionally resets a
-# stream mid-flight. Retry the individual upload so one blip doesn't discard a finished
-# ~60s Gemini run.
-UPLOAD_RETRY_ATTEMPTS = 3
-UPLOAD_RETRY_BACKOFF_SECONDS = 1.0
+# A run moves a video IN and ~50+ frames OUT over one HTTP/2 connection; Storage
+# occasionally resets a stream mid-flight. Retry the individual transfer so one blip
+# doesn't discard a finished ~60s Gemini run.
+#
+# Named STORAGE_, not UPLOAD_: the download of the recording is governed by these too now.
+# It was the one network hop in the pipeline with no retry at all, and a WinError 10035
+# mid-download failed a whole eval video on 2026-08-22.
+STORAGE_RETRY_ATTEMPTS = 3
+STORAGE_RETRY_BACKOFF_SECONDS = 1.0
 
 # Stage 1 pushes the whole video inline (tens of MB) over a ~90s job, so dropped
 # connections are routine. Transport errors and 5xx retry; 4xx does not (see gemini.py).
