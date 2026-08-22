@@ -19,6 +19,17 @@ export default defineConfig(({ command, mode }) => {
   if (command === 'build') {
     const env = loadEnv(mode, process.cwd(), '')
     const workerUrl = env.VITE_WORKER_URL || process.env.VITE_WORKER_URL
+    // Same failure shape as VITE_WORKER_URL and the same reason: a missing value is
+    // invisible until runtime, and the thing it silences (the staging banner) is a safety
+    // control. lib/config.ts throws too — this just moves the failure to the build, where
+    // somebody is already looking.
+    const appEnv = env.VITE_APP_ENV || process.env.VITE_APP_ENV
+    if (appEnv !== 'production' && appEnv !== 'staging') {
+      throw new Error(
+        `VITE_APP_ENV is ${appEnv || 'not set'}. It must be "production" or "staging" — ` +
+          'a staging build that identifies as production renders no staging banner.',
+      )
+    }
     if (!workerUrl) {
       throw new Error(
         'VITE_WORKER_URL is not set. A production build without it falls back to ' +

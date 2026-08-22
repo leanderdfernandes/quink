@@ -8,6 +8,12 @@ etiquette, the email) and **not** the demo legal rules (`legal/LEGAL-IMPLEMENTAT
 noindex, takedown, purge). It is the mechanical steps, and it links to those rather than
 restating them, so there is one source of truth per question.
 
+> ⚠️ **Every query in this file runs against production.** Confirm the Supabase project
+> name in the dashboard header before you paste. Schema changes never happen here — see
+> `CLAUDE.md`.
+
+The staging project and its fixtures are `docs/ENVIRONMENTS.md` and `db/seed.sql`.
+
 ---
 
 ## Demo KBs

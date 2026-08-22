@@ -93,19 +93,24 @@ def _is_local_origin(origin: str) -> bool:
 
 
 def _refuse_if_serving_real_users() -> None:
-    """The stub hands out DNS records that don't exist. If this worker is serving a deployed
-    SPA rather than localhost, that means a customer pasting `cname.example-stub.invalid`
-    into their registrar and waiting forever for a domain that can never resolve.
+    """The stub hands out DNS records that don't exist. If this worker is serving REAL
+    USERS, that means a customer pasting `cname.example-stub.invalid` into their registrar
+    and waiting forever for a domain that can never resolve.
 
     DOMAIN_VERIFIER falls back to "stub" whenever it is unset — including when the env var
     name is merely misspelled — so the misconfiguration is silent and looks like working
-    software. Fail with the reason instead of a plausible-looking record."""
-    remote = [o for o in config.ALLOWED_ORIGINS if not _is_local_origin(o)]
-    if remote:
+    software. Fail with the reason instead of a plausible-looking record.
+
+    "Real users" is config.IS_PRODUCTION, not "is any allowed origin non-local". The old
+    test was a proxy for the same question and answered it wrong in one direction: staging
+    is a deployed origin with no customers behind it, and refusing there means the domain
+    flow is the one thing staging exists for and cannot exercise. Production is unaffected —
+    it was refusing before and refuses now."""
+    if config.IS_PRODUCTION:
         raise DomainError(
-            f"This worker is in stub mode (DOMAIN_VERIFIER={config.DOMAIN_VERIFIER!r}) but "
-            f"is serving {remote[0]}. Set DOMAIN_VERIFIER=vercel — check the spelling of the "
-            "env var itself, an unrecognized name silently falls back to stub. "
+            f"This worker is in stub mode (DOMAIN_VERIFIER={config.DOMAIN_VERIFIER!r}) on "
+            f"APP_ENV={config.APP_ENV!r}. Set DOMAIN_VERIFIER=vercel — check the spelling "
+            "of the env var itself, an unrecognized name silently falls back to stub. "
             "No DNS record was issued."
         )
 
@@ -583,21 +588,22 @@ def _selfcheck() -> None:
     assert _first(["cname.vercel-dns.com"]) == "cname.vercel-dns.com"
     assert _first([]) is None and _first(None) is None
 
-    # Stub mode must refuse to issue records when the worker is serving a real origin —
-    # that combination is always a misconfigured DOMAIN_VERIFIER, and the symptom is a
-    # customer pasting an .invalid CNAME at their registrar.
-    origins = config.ALLOWED_ORIGINS
+    # Stub mode must refuse to issue records in PRODUCTION — that combination is always a
+    # misconfigured DOMAIN_VERIFIER, and the symptom is a customer pasting an .invalid
+    # CNAME at their registrar. Staging is allowed to use it: that is how the flow is
+    # driven by hand with no Vercel account.
+    was_prod = config.IS_PRODUCTION
     try:
-        config.ALLOWED_ORIGINS = ["https://quink.online"]
+        config.IS_PRODUCTION = True
         try:
             StubHosting().attach("docs.acme.com")
-            raise AssertionError("stub must refuse to serve a deployed origin")
+            raise AssertionError("stub must refuse to issue records in production")
         except DomainError as e:
             assert "DOMAIN_VERIFIER" in str(e)
-        config.ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
-        assert StubHosting().attach("docs.acme.com")  # local dev is fine
+        config.IS_PRODUCTION = False
+        assert StubHosting().attach("docs.acme.com")  # staging + local dev are fine
     finally:
-        config.ALLOWED_ORIGINS = origins
+        config.IS_PRODUCTION = was_prod
 
     assert _is_local_origin("http://localhost:5173")
     assert _is_local_origin("http://127.0.0.1:8000")

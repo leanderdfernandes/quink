@@ -15,6 +15,7 @@ interface (real DNS vs stub) so the whole flow is testable locally with no DNS.
 
 import asyncio
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -48,8 +49,74 @@ log = logging.getLogger("quink")
 DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$")
 
 
+ALLOWED_ENVS = ("production", "staging")
+
+# What a non-production worker may spend in a day. Not in config.py: it is a ceiling ON
+# a config value, not a setting anyone deploys.
+STAGING_SPEND_CAP_USD = 2.0
+
+
+def _assert_env_coherent() -> None:
+    """Refuse to boot into a configuration that can hurt a customer. Raises on the first
+    problem, naming the variable AND the environment.
+
+    A worker that does not boot is a page in Render's log. A worker that boots into the
+    wrong configuration mails real customers from a staging deploy, or swallows every
+    production email into a developer's inbox, and looks healthy the whole time.
+
+    Every rule here is one that CANNOT be caught later: by the time the trial sweep sends,
+    the message is already gone.
+    """
+    env = config.APP_ENV
+    if env not in ALLOWED_ENVS:
+        raise RuntimeError(
+            f"APP_ENV={env!r} is not one of {ALLOWED_ENVS}. Set it on this deploy — "
+            "there is no default, because the default would have to be a guess."
+        )
+
+    # The staging catch-all. Non-production without it can reach a real address; production
+    # WITH it silently redirects every customer email to one inbox, which is the worse of
+    # the two and the one nobody notices for a month.
+    if not config.IS_PRODUCTION and not config.EMAIL_REDIRECT_TO:
+        raise RuntimeError(
+            f"EMAIL_REDIRECT_TO is unset on APP_ENV={env!r}. A non-production worker must "
+            "not be able to mail a customer — set it to your own address."
+        )
+    if config.IS_PRODUCTION and config.EMAIL_REDIRECT_TO:
+        raise RuntimeError(
+            f"EMAIL_REDIRECT_TO={config.EMAIL_REDIRECT_TO!r} is set on APP_ENV={env!r}. "
+            "Every customer email would be delivered to that address instead. Unset it."
+        )
+
+    # Razorpay. Read from the environment rather than a constant so this rule is armed
+    # BEFORE payments land: whatever the key is eventually called, a live key on a
+    # non-production deploy takes a real payment. Skipped entirely while none is set.
+    if not config.IS_PRODUCTION:
+        live = [
+            k
+            for k, v in os.environ.items()
+            if k.startswith("RAZORPAY") and v.startswith("rzp_") and not v.startswith("rzp_test_")
+        ]
+        if live:
+            raise RuntimeError(
+                f"{live[0]} is not an rzp_test_ key on APP_ENV={env!r}. A non-production "
+                "deploy must never hold a live payment key."
+            )
+
+        if config.DAILY_SPEND_CAP_USD > STAGING_SPEND_CAP_USD:
+            raise RuntimeError(
+                f"DAILY_SPEND_CAP_USD={config.DAILY_SPEND_CAP_USD} exceeds "
+                f"{STAGING_SPEND_CAP_USD} on APP_ENV={env!r}. Staging spends real Gemini "
+                "money against the same key — cap it low."
+            )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Nothing else runs until the environment is coherent — not the hosting client, not the
+    # sweeps. This is the only check whose failure mode is invisible in production.
+    _assert_env_coherent()
+
     # Build the hosting client up front: a deploy missing VERCEL_TOKEN should fail here,
     # not silently accept domains that can never go live.
     domain.hosting()

@@ -3,6 +3,23 @@
 
 import { PLANS } from './plans'
 
+// WHICH DEPLOYMENT IS THIS. The single source of truth on the web side, mirroring
+// APP_ENV / IS_PRODUCTION in worker/config.py. Vite inlines it at BUILD time, so it must be
+// set in the deploy environment (Vercel > Settings > Environment Variables) per branch.
+//
+// No default, and it THROWS at module load rather than assuming. A staging build that
+// silently identifies as production renders no staging banner — which is the one thing
+// standing between an operator and editing what they believe is test data. vite.config.ts
+// refuses the build too, so this throw is the second net, not the first.
+export const APP_ENV = import.meta.env.VITE_APP_ENV as 'production' | 'staging'
+if (APP_ENV !== 'production' && APP_ENV !== 'staging') {
+  throw new Error(
+    `VITE_APP_ENV is ${APP_ENV ?? 'unset'} — it must be "production" or "staging". ` +
+      'Set it in the deploy environment and rebuild.',
+  )
+}
+export const IS_PRODUCTION = APP_ENV === 'production'
+
 // Brand direction is being revisited (CLAUDE.md §12); the wordmark is not locked.
 // One constant so renaming is one line.
 export const PRODUCT_NAME = 'Quink'

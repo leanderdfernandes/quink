@@ -23,6 +23,18 @@ VIDEO_MODEL = "gemini-2.5-flash"
 # one line to change — that is why the constant exists.
 TEXT_MODEL = "gemini-3.1-flash-lite"
 
+# --- Environment ------------------------------------------------------------
+# The single source of truth for "which deployment is this". Everything that must differ
+# between production and staging keys off these two names rather than off an inference
+# (a hostname, an origin list, whether a key happens to be set).
+#
+# REQUIRED, with NO default. A missing APP_ENV is a boot failure, never a silent fallback
+# to production behaviour: the worker holds the service role key for whichever database it
+# was pointed at, and "assume production" is the one guess that can email real customers
+# and spend real money. main.py checks the rest of the coherence rules at startup.
+APP_ENV = os.environ["APP_ENV"]
+IS_PRODUCTION = APP_ENV == "production"
+
 # --- Secrets / environment --------------------------------------------------
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
@@ -103,7 +115,11 @@ LANES: dict[str, int] = {
 # Global, plan-independent kill switch on a day's Gemini spend — `internal` included.
 # Deliberate: a bug in the reverse-demo loop running against an unlimited account is
 # exactly how a runaway bill happens. $5 is ~250 articles/day, far above legitimate use.
-DAILY_SPEND_CAP_USD = 5.0
+#
+# Read from the environment so staging can be capped far lower than production without a
+# code change — main.py refuses to boot a non-production worker above $2. The DEFAULT is
+# unchanged: unset, this is still the $5 production ceiling.
+DAILY_SPEND_CAP_USD = float(os.environ.get("DAILY_SPEND_CAP_USD", "5.0"))
 
 # What one generation is assumed to cost, per minute of source video (Stage 1's video
 # tokens dominate). It only has to be roughly right — its single job is to drive the cap
@@ -199,6 +215,14 @@ RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 # (hello@) sitting in the From line: replies reached us either way, which is exactly why
 # nobody would have noticed the day one of the two stopped being read.
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "support@quink.online")
+
+# Non-production catch-all. When set, mailer.py delivers EVERY message to this one address
+# and prepends the real recipient to the subject as "[-> real@example.com]", so a staging
+# worker can exercise the trial templates end to end without a single message reaching a
+# customer. main.py refuses to boot: non-production with this UNSET, or production with it
+# SET — the second is the dangerous one, a production deploy silently swallowing every
+# customer email into a developer's inbox.
+EMAIL_REDIRECT_TO = os.environ.get("EMAIL_REDIRECT_TO", "").strip()
 
 EMAIL_FROM = os.environ.get("EMAIL_FROM", f"Quink <{SUPPORT_EMAIL}>")
 EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO", SUPPORT_EMAIL)

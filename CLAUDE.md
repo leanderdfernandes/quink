@@ -625,6 +625,30 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   all call it. It is SECURITY INVOKER and revoked from clients, so it only resolves inside
   a definer function.
 
+## 10m. Environments (locked)
+
+- **Migrations run on staging first, always.** A numbered migration is applied to the
+  staging project, the resulting object is diffed against its live definition, and only
+  then applied to production. Production's SQL editor is for *data* — reads and the
+  documented `OPERATIONS.md` writes. It is never used to alter schema, and never to
+  `create or replace` a function. This is the specific control for `OPEN-ITEMS.md` D.4:
+  the watermark clause was lost across 0024–0026 exactly because the final function body
+  was assumed rather than observed.
+- **Staging is replayed, never restored.** The staging database is built by running
+  `0001…N` from empty. It is never seeded from a production dump — a dump carries the
+  *result* of the migrations, which is what would have hidden D.4.
+- **`APP_ENV` / `VITE_APP_ENV` are the only way either half learns which deployment it
+  is.** Required, no default, and both refuse to start rather than guess. Nothing may
+  re-derive the environment from a hostname, an origin list or whether a key happens to
+  be set — that is what `domain._refuse_if_serving_real_users()` used to do, and it
+  answered wrong for staging. `worker/main.py:_assert_env_coherent()` holds the rules that
+  cannot be caught later (mail catch-all, live payment keys, the spend cap); a worker that
+  boots into the wrong configuration looks healthy the entire time. The full variable
+  ledger is `docs/ENVIRONMENTS.md`, and it changes in the same commit the variable does.
+- **`public.staging_marker` is created by hand and is deliberately in no migration.** It
+  is the only thing that stops `db/seed.sql` running against production, and a migration
+  would carry it there.
+
 ## 11. Working with me
 
 - I come in with drafts and rough concepts, work through tradeoffs conversationally, then lock

@@ -279,15 +279,22 @@ def send_once(
             )
             return True
 
+        # The staging catch-all, applied at the send boundary and nowhere else: templates,
+        # markers and triggers are untouched, so staging exercises the SAME code production
+        # runs. Unset (production) this is two comparisons and the payload is unchanged.
+        recipient, line = to, subject
+        if config.EMAIL_REDIRECT_TO:
+            recipient, line = config.EMAIL_REDIRECT_TO, f"[→ {to}] {subject}"
+
         try:
             r = httpx.post(
                 RESEND_URL,
                 headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
                 json={
                     "from": config.EMAIL_FROM,
-                    "to": [to],
+                    "to": [recipient],
                     "reply_to": config.EMAIL_REPLY_TO,
-                    "subject": subject,
+                    "subject": line,
                     "text": body,
                     **({"html": html} if html else {}),
                 },
@@ -358,6 +365,7 @@ def demo() -> None:
 
     pipeline.db = lambda: _Db()
     enabled, key, real_post = config.EMAIL_ENABLED, config.RESEND_API_KEY, httpx.post
+    redirect_to = config.EMAIL_REDIRECT_TO
 
     def send(**kw):
         return send_once(
@@ -383,6 +391,9 @@ def demo() -> None:
         # --- real send: payload shape ------------------------------------------------
         rows.clear()
         config.EMAIL_ENABLED, config.RESEND_API_KEY = True, "re_k"
+        # The baseline is PRODUCTION shape. A developer's .env may set the staging
+        # catch-all; these assertions are about what production puts on the wire.
+        config.EMAIL_REDIRECT_TO = ""
 
         def _ok(url, **kw):
             posts.append(kw["json"])
@@ -395,6 +406,29 @@ def demo() -> None:
         assert sent["reply_to"] == config.EMAIL_REPLY_TO, "replies must reach support@"
         assert sent["to"] == ["a@b.com"] and "docs.acme.com" in sent["text"], sent
         assert "do not reply" not in sent["text"].lower(), "these mailboxes are monitored"
+
+        # --- EMAIL_REDIRECT_TO: staging delivers everything to one inbox -------------
+        # The real recipient has to survive into the SUBJECT, or a staging inbox holding
+        # four trial warnings is four identical messages with no way to tell which
+        # fixture account each belongs to.
+        rows.clear()
+        redirect = config.EMAIL_REDIRECT_TO
+        try:
+            config.EMAIL_REDIRECT_TO = "dev@example.com"
+            assert send() is True
+            sent = posts[-1]
+            assert sent["to"] == ["dev@example.com"], sent
+            assert sent["subject"].startswith("[→ a@b.com] "), sent
+            assert "Your custom domain is live" in sent["subject"], sent
+            assert "docs.acme.com" in sent["text"], "the body is NOT rewritten"
+        finally:
+            config.EMAIL_REDIRECT_TO = redirect
+
+        # Unset, the payload is byte-identical to what production sends.
+        rows.clear()
+        config.EMAIL_REDIRECT_TO = ""
+        assert send() is True
+        assert posts[-1]["to"] == ["a@b.com"] and posts[-1]["subject"] == domain_live("x")[0]
 
         # --- the loop/restart case: the marker is on the ROW, not in memory ----------
         before = len(posts)
@@ -428,6 +462,7 @@ def demo() -> None:
         # Restore, so importing this check can't leave httpx or the flags patched for the
         # rest of the process.
         config.EMAIL_ENABLED, config.RESEND_API_KEY = enabled, key
+        config.EMAIL_REDIRECT_TO = redirect_to
         httpx.post = real_post  # type: ignore[assignment]
 
     print("mailer self-check OK")

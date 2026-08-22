@@ -4544,6 +4544,27 @@ a.rs-crumb-link:hover {
   background: rgb(255 255 255 / 22%);
 }
 
+/* --- Staging bar -----------------------------------------------------------
+   Same amber, same height, same type scale as .admin-bar above: both answer "you are
+   not where you think you are", and a second visual language for the same question is
+   how one of them stops being read.
+
+   NOT sticky, unlike the admin bar. This one pushes the layout down and scrolls away
+   with it — it marks the whole deployment, not a state inside one screen, so it does
+   not need to follow you down the page and must never overlay content.
+
+   Renders on the authoring app only. The reader has no equivalent, on purpose. */
+.staging-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  background: var(--warning);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* --- Admin shell ---------------------------------------------------------- */
 .settings-body {
   flex: 1;
