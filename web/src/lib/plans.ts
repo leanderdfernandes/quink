@@ -95,7 +95,14 @@ export type Entitlements = {
   owner_name: string | null
   /** null = uncapped */
   lifetime_runs: number | null
+  /** LIFETIME, off the append-only ledger. The number the free-tier wall is measured against. */
   runs_used: number
+  /**
+   * Runs inside the current billing period. Optional because it arrives with migration 0039
+   * — an SPA deployed ahead of that migration reads `undefined` and the meter falls back to
+   * the lifetime number rather than rendering NaN.
+   */
+  cycle_runs_used?: number
   /** null = no trial clock */
   expiry_days: number | null
   can_invite: boolean
@@ -143,4 +150,48 @@ export async function fetchProfile(
     plan: (data?.plan as PlanId) ?? DEFAULT_PLAN,
     isAdmin: !!data?.is_admin,
   }
+}
+
+// The three shapes of the rail run meter, chosen from the plan CONFIG.
+//
+// Nothing here compares a plan name. `PLANS` is the one tier table (limits in code, prices
+// in the DB — CLAUDE.md §10b), so adding a tier changes one object and this picks the right
+// shape for it automatically. A `plan === 'free'` here would be a second tier table.
+//
+//   lifetime cap (free)      2 of 3 free runs   — the wall they will actually hit
+//   monthly cap  (paid)      13 of 20           — resets with the billing period
+//   no cap       (internal)  43 this cycle      — a number, not a budget: no track, no copy
+//
+// The closing sentence is pricing-spec §3's abundance framing: we meter the cost, never the
+// value. Free users get the shorter version — "the run already happened" explains a mental
+// model they have not formed yet, and the meter is not where to teach it.
+export function runMeter(ent: Entitlements): {
+  used: number
+  cap: number | null
+  count: string
+  copy: string
+} {
+  const limits = limitsFor(ent.plan)
+  // Falls back to the lifetime count when the SPA is running ahead of migration 0039,
+  // which is a slightly stale number rather than a NaN-wide progress bar.
+  const cycle = ent.cycle_runs_used ?? ent.runs_used
+  if (limits.lifetime_runs !== null) {
+    return {
+      used: ent.runs_used,
+      cap: limits.lifetime_runs,
+      count: `${ent.runs_used} of ${limits.lifetime_runs} free runs`,
+      copy: 'Deleted guides still count. Writing by hand is unlimited.',
+    }
+  }
+  if (limits.monthly_runs !== null) {
+    return {
+      used: cycle,
+      cap: limits.monthly_runs,
+      count: `${cycle} of ${limits.monthly_runs}`,
+      copy:
+        'Deleted guides still count — the run already happened. ' +
+        'Writing by hand is unlimited.',
+    }
+  }
+  return { used: cycle, cap: null, count: `${cycle} this cycle`, copy: '' }
 }
