@@ -280,18 +280,14 @@ deliberately does not cover:
   debounced path (§10k) like `title` and `subtitle`; the one-shot actions do not, and now have
   one more column to lose a race over.
 
-- **Two owner-only surfaces still render for a member**, found while gating the rail meter
-  (team-access-spec L7: plan, price, upgrade CTA and payment state are owner-only). Neither
-  was in scope for that change, so both are still live:
-  - The `New article ▾` menu's remaining-runs line says *"2 free video runs left"* to
-    everyone who can edit. The COUNT is defensible — §10b wants the client to refuse work it
-    can already tell will be rejected, and a member about to spend the owner's last run
-    should know. The word **free** is the leak: it names the owner's tier. Drop the word, or
-    gate the line.
-  - `QueueDock`'s held-file CTA reads **"Upgrade to build it"** for a member. The click is
-    already safe — `App.tsx` swaps `UpgradeModal` for `OwnerOnly` when the viewer is not the
-    owner — but the button itself is an upgrade CTA on a member's screen, and a CTA that
-    leads to "ask someone else" should say so in its label.
+- **One owner-only surface still renders for a member**, found while gating the rail meter
+  (team-access-spec L7: plan, price, upgrade CTA and payment state are owner-only). The
+  `New article ▾` menu's remaining-runs line says *"2 free video runs left"* to everyone who
+  can edit. The COUNT is defensible — §10b wants the client to refuse work it can already
+  tell will be rejected, and a member about to spend the owner's last run should know. The
+  word **free** is the leak: it names the owner's tier. Drop the word, or gate the line.
+  (`QueueDock`'s held-file row was the other one and is FIXED: a member gets "Not enough
+  runs left. {Owner} can add more." instead of an Upgrade button — a state, not a sell.)
 - **Migration 0039 is written and NOT APPLIED.** It appends `cycle_runs_used` to
   `kb_entitlements()` so the rail meter can render a monthly cap honestly; without it the
   meter falls back to the lifetime count for `starter`/`growth`, which is a stale number

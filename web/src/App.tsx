@@ -828,6 +828,8 @@ export default function App() {
           onOpenArticle={openArticle}
           onWatchItem={setWatchItemId}
           onUpgrade={() => setShowUpgrade(true)}
+          isOwner={isOwner}
+          ownerName={ownerName}
           onDismiss={queue.dismiss}
           onAddMore={() => setPhase('upload')}
         />
