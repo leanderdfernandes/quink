@@ -288,21 +288,16 @@ deliberately does not cover:
   word **free** is the leak: it names the owner's tier. Drop the word, or gate the line.
   (`QueueDock`'s held-file row was the other one and is FIXED: a member gets "Not enough
   runs left. {Owner} can add more." instead of an Upgrade button — a state, not a sell.)
-- **Migration 0039 is written and NOT APPLIED.** It appends `cycle_runs_used` to
-  `kb_entitlements()` so the rail meter can render a monthly cap honestly; without it the
-  meter falls back to the lifetime count for `starter`/`growth`, which is a stale number
-  rather than a broken one. It must go to staging first (§10m) — the only `SUPABASE_DB_URL`
-  in the repo has no `public.staging_marker`, i.e. it is production, so a staging project
-  ref is needed before this can be applied anywhere.
-
-- **The selection toolbar is on step bodies only.** FAQ answers keep their own `Link`
-  button and side panel, which is now a second link UI over the same mark. Point `FaqPanel`
-  at `SelectionToolbar` and delete `ed-faq-link*` — one surface, one vocabulary. Held back
-  only to keep the toolbar commit revertable on its own.
-- **Step bodies have no dead-link marking.** `FaqPanel` decorates links whose target is
-  gone (`DeadLinks` + `brokenArticleIds`); step bodies now carry the same mark and do not.
-  Correctness is unaffected — publish unwraps a dead anchor either way — but the author
-  sees the breakage in one half of the article and not the other.
+- **Migration 0039 is APPLIED** (2026-08-23), transactionally, via
+  `supabase/apply_migration.py` — fourteen assertions inside the transaction, commit only on
+  a clean pass. It appends `cycle_runs_used` to `kb_entitlements()` so the rail meter can
+  render a monthly cap honestly. It went straight to the database in `.env` **without a
+  staging run**, which §10m forbids, because there is still no staging project: that URL has
+  no `public.staging_marker`. The §10m risk it could not cover is the one D.4 names — a
+  recreated function body silently losing a clause — and that was mitigated by diffing the
+  live body out of `pg_proc` first (identical to 0036, byte for byte) and by asserting every
+  structural fact of the result before committing. **This is not a precedent. Get a staging
+  project**; `apply_migration.py` is a net, not a substitute.
 
 ---
 
