@@ -5,6 +5,20 @@
 --   CHANGE: one column appended, `cycle_runs_used`. Everything else is carried forward
 --           unchanged, including the billed_to_user_id count and the owner-only `plan`.
 --   NOT recreated: owns_kb, can_edit_kb, kb_watermark, plan_flags, person_name, kb_people.
+--   Live flags carried forward verbatim: language sql, stable, security definer,
+--           search_path=public, and the ACL {authenticated=X, service_role=X} — anon has
+--           never held EXECUTE here and must not gain it.
+--
+-- WHY DROP AND CREATE, NOT `create or replace`
+-- --------------------------------------------
+-- Appending a column to a `returns table (...)` IS a return-type change, and Postgres
+-- refuses it (42P13: cannot change return type of existing function). `create or replace`
+-- alone fails outright — it does not silently half-apply — but the fix is a drop, and a
+-- drop takes the grants with it. They are restored at the bottom of this file, explicitly,
+-- rather than being left to whatever the default happens to be.
+--
+-- Wrap the whole file in a transaction when applying it. DROP FUNCTION is transactional in
+-- Postgres, so the SPA never observes a window where the RPC does not exist.
 --
 -- Why this exists
 -- ---------------
@@ -27,7 +41,9 @@
 -- nothing else in this function changes. It is deliberately ONE expression, here, so that
 -- swap is one line rather than a hunt.
 
-create or replace function public.kb_entitlements(p_kb_id uuid)
+drop function if exists public.kb_entitlements(uuid);
+
+create function public.kb_entitlements(p_kb_id uuid)
 returns table (
   is_owner        boolean,
   plan            text,     -- OWNER ONLY. Null for a member.
@@ -68,6 +84,10 @@ as $$
   where kb.id = p_kb_id
     and (public.can_edit_kb(p_kb_id) or public.is_admin())
 $$;
+
+-- Restored verbatim from the live ACL the drop above discarded (0036 lines 280-281).
+revoke execute on function public.kb_entitlements(uuid) from public, anon;
+grant  execute on function public.kb_entitlements(uuid) to authenticated, service_role;
 
 comment on function public.kb_entitlements(uuid) is
   'What this account may know about this help center. Resolves the OWNER''s plan, never the caller''s. `plan` is withheld from a member: limits and usage are operational, billing is not. Two run counts, one ledger — lifetime for the free wall, cycle for the monthly meter.';
