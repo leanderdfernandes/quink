@@ -11,7 +11,7 @@ import DeleteAccountModal from '../components/DeleteAccountModal'
 import LegalFooter from '../components/LegalFooter'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
 import { listInFlightJobs } from '../lib/jobs'
-import { runsLeftFrom, type Entitlements } from '../lib/plans'
+import { runMeter, runsLeftFrom, type Entitlements } from '../lib/plans'
 import type { Person } from '../lib/people'
 import AvatarStack from '../components/AvatarStack'
 import { publicBrandingUrl } from '../lib/storage'
@@ -569,13 +569,19 @@ export default function KnowledgeBase({
     },
   }
 
-  // Only tiers with a lifetime cap get a counter. The unit is video RUNS — writing an
-  // article by hand is unlimited on every tier, so the copy must not imply otherwise.
-  // Usage and the cap come from the SAME read (kb_entitlements), so the meter and the
-  // number beside it can never disagree — they used to be two separate queries.
-  const runs = ent?.runs_used ?? 0
-  const runLimit = ent?.lifetime_runs ?? null
   const left = runsLeftFrom(ent)
+
+  // The run meter. OWNER ONLY (team-access-spec L7) — a member has no lever to act on this
+  // number, so the only thing showing it achieves is hesitation before they record.
+  //
+  // Three shapes, chosen from the PLAN CONFIG and never from the plan's name: a name
+  // comparison is a fourth copy of the tier table that drifts the first time a tier is
+  // added. `ent.plan` is non-null here precisely because this block is owner-only.
+  //
+  // The unit is video RUNS off the append-only ledger, not articles: a deleted guide still
+  // burnt a Gemini call. The old copy said "43 recordings turned into a guide here", which
+  // reads as a content count and made 43-vs-3-articles look like a bug.
+  const meter = !isOwner || !ent ? null : runMeter(ent)
 
   // Runs and days both drain. ONE pill, escalating with the clock (pricing-spec §6).
   // With no plan to read — an admin inside someone else's help center — there is no clock
@@ -841,10 +847,16 @@ export default function KnowledgeBase({
             <ExternalIcon />
             View live site
           </a>
-          <button className="rail-item link" onClick={onOpenDomain}>
-            <GlobeIcon />
-            Domain
-          </button>
+          {/* Owner only. A custom domain points a real website at this help center and
+              stays with the person accountable for it (team-access-spec §2). The screen
+              behind this still explains itself to an admin who arrives with the URL — it
+              is the RAIL entry that is gone, not the answer. */}
+          {isOwner && (
+            <button className="rail-item link" onClick={onOpenDomain}>
+              <GlobeIcon />
+              Domain
+            </button>
+          )}
           {/* Always present, on every plan. Hiding it on free would mean nobody ever learns
               the capability exists — the gated screen behind it is the upgrade surface. */}
           <button className="rail-item link" onClick={onOpenPeople}>
@@ -853,63 +865,56 @@ export default function KnowledgeBase({
             {people.length > 1 && <span className="rail-count">{people.length}</span>}
           </button>
 
-          {/* The trial and the run ledger both exist in the data and appeared nowhere in
-              the app. The header pill is easy to miss and disappears entirely on day 7,
-              when it is replaced by the banner — this panel is where someone can look. */}
-          {/* Owner only. An admin gets the run counter — they need to know when recordings
-              are exhausted — but never the plan name, the countdown or the upgrade link. */}
-          {isOwner && (trial.stage !== 'none' || left !== null) && (
-            <div className="rail-trial">
-              {left !== null && runLimit !== null && (
-                <div
-                  className="rail-meter"
-                  role="img"
-                  aria-label={`${runLimit - left} of ${runLimit} video runs used`}
-                >
-                  <i style={{ width: `${((runLimit - left) / runLimit) * 100}%` }} />
-                </div>
-              )}
-              <p>
-                <b>
-                  {trial.stage === 'none'
-                    ? 'Free plan'
-                    : trial.stage === 'offline'
-                      ? 'Your help center is offline'
-                      : `Free trial · ${plural(trial.daysLeft, 'day')} left`}
-                </b>
-                {left !== null && runLimit !== null
-                  ? `${runLimit - left} of ${runLimit} video runs used. Articles you write by hand don't count.`
-                  : 'Unlimited video runs on your plan.'}
-              </p>
-              <button className="linklike" onClick={onUpgrade}>
-                See plans →
-              </button>
-            </div>
-          )}
+          {/* The run ledger, and nothing else. It sits BELOW a divider with no group
+              heading, outside `Your help center` — a billing meter next to Theming and
+              People read as content configuration, which it is not.
 
-          {/* An admin gets the numbers that change what they can DO — how many recordings
-              this help center has left — and nothing that only the owner can act on. No
-              plan name, no countdown, no upgrade link. The cap is the owner's, resolved by
-              kb_entitlements(); before that existed this line could not show one at all. */}
-          {!isOwner && ent && (runLimit !== null || runs > 0) && (
-            <div className="rail-trial">
-              {left !== null && runLimit !== null && (
-                <div
-                  className="rail-meter"
-                  role="img"
-                  aria-label={`${runLimit - left} of ${runLimit} video runs used`}
-                >
-                  <i style={{ width: `${((runLimit - left) / runLimit) * 100}%` }} />
+              A6: the number is count(*) over the append-only `jobs` ledger keyed on
+              billed_to_user_id, resolved server-side by kb_entitlements(). Never a stored
+              counter, and never joined through kb_id — a claimed demo's runs stay on the
+              account that spent them. */}
+          {meter && (
+            <>
+              <div className="rail-div" />
+              {meter.cap === null ? (
+                <div className="rail-meter">
+                  <div className="rail-meter-head">
+                    <b>AI runs</b>
+                    <span>{meter.count}</span>
+                  </div>
                 </div>
+              ) : (
+                /* A7: the meter is the proactive path into pricing (pricing-spec §6) —
+                   someone reading how much is left is already asking what more costs. */
+                <button className="rail-meter" onClick={onUpgrade}>
+                  <div className="rail-meter-head">
+                    <b>AI runs</b>
+                    <span>{meter.count}</span>
+                  </div>
+                  <div
+                    className="rail-track"
+                    role="img"
+                    aria-label={`${meter.used} of ${meter.cap} AI runs used`}
+                  >
+                    <i
+                      style={{ width: `${Math.min(meter.used / meter.cap, 1) * 100}%` }}
+                    />
+                  </div>
+                  <p>{meter.copy}</p>
+                </button>
               )}
-              <p>
-                <b>Video guides</b>
-                {runLimit === null
-                  ? `${plural(runs, 'recording')} turned into a guide here.`
-                  : `${runLimit - (left ?? 0)} of ${runLimit} used.`}{' '}
-                Writing an article by hand is unlimited.
-              </p>
-            </div>
+              {/* The trial clock stays on this panel. The header pill is easy to miss and
+                  disappears on day 7 when the banner takes over, so this is the one place
+                  someone can go and look. It is a countdown to a bill: owner-only, like
+                  everything else in this block. */}
+              {trial.stage !== 'none' && (
+                <p className="rail-trial">
+                  {trial.stage === 'offline'
+                    ? 'Your help center is offline.'
+                    : `Free trial · ${plural(trial.daysLeft, 'day')} left`}
+                </p>
+              )}
+            </>
           )}
 
           {/* Account deletion. Bottom of the rail, plain text weight, no colour — findable

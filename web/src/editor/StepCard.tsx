@@ -8,6 +8,9 @@ import AnnotateBar from './AnnotateBar'
 import { useAnnotator } from './useAnnotator'
 import AnnotatedImage, { Shape } from '../components/AnnotatedImage'
 import { handlePoints, rectOf, rotAnchorPx, type Natural } from '../lib/annotations'
+import SelectionToolbar from './SelectionToolbar'
+import { ArticleLink } from './marks'
+import type { LinkTarget } from '../lib/articleLinks'
 import { COPY } from '../lib/config'
 import type { Annotation, StepRow } from '../lib/types'
 
@@ -49,6 +52,8 @@ type Props = {
   // the user needs to see what the finished thing will let them do while they wait. It also
   // closes the race where a heading typed mid-run is overwritten by Stage 2.
   readOnly?: boolean
+  /** Other articles in this help center, for the bubble's link picker. */
+  linkTargets: LinkTarget[]
   // Generating, and this step's frame has not landed yet. Distinct from "no screenshot":
   // one is a slot waiting to be filled, the other is a gap to fix.
   awaitingFrame?: boolean
@@ -80,6 +85,7 @@ export default function StepCard({
   onDragEnterCard,
   onDrop,
   readOnly = false,
+  linkTargets,
   awaitingFrame = false,
   settling = false,
 }: Props) {
@@ -118,7 +124,10 @@ export default function StepCard({
         // Disable TipTap's per-editor history so ONE app-level undo (Editor.tsx) covers
         // text and structural gestures together, instead of two competing undo systems.
         undoRedo: false,
+        // Replaced below by the id-carrying variant, same as the FAQ answer editor.
+        link: false,
       }),
+      ArticleLink.configure({ openOnClick: false, autolink: false }),
       // Ghost-text scaffolding so a blank manual step is never a blinking cursor on an
       // empty canvas (ux-spec §4: the step schema is the writing coach).
       Placeholder.configure({ placeholder: 'Describe the action in one line.' }),
@@ -253,6 +262,9 @@ export default function StepCard({
         editor={editor}
         className={`ed-prose${settling ? ' ed-settling' : ''}`}
       />
+      {/* Renders itself out of existence when the selection is collapsed or the editor is
+          read-only, so there is nothing to gate here. */}
+      <SelectionToolbar editor={editor} targets={linkTargets} />
 
       {screenshotUrl ? (
         <div className="ed-shotwrap">

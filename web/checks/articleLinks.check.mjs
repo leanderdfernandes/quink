@@ -53,7 +53,7 @@ globalThis.DOMParser = class {
   }
 }
 
-const { resolveArticleLinks, brokenArticleIds, newFaqId } = await import(
+const { resolveArticleLinks, brokenArticleIds, newFaqId, isExternalUrl, toHref } = await import(
   '../src/lib/articleLinks.ts'
 )
 
@@ -93,5 +93,16 @@ assert.deepStrictEqual([...brokenArticleIds(plainLink, live)], [])
 // text — rewording a question must not break a link someone shared.
 assert.match(newFaqId(), /^f_[0-9a-f]{8}$/)
 assert.notStrictEqual(newFaqId(), newFaqId())
+
+// The link picker's one branch: is this a URL, or is it a search term? Getting it wrong in
+// the permissive direction is the expensive one — "billing settings" becoming a hostname
+// means a link that silently goes nowhere, on a page a customer publishes.
+for (const yes of ['https://acme.com', 'http://a.b/c?d=1', 'www.acme.com/help'])
+  assert.ok(isExternalUrl(yes), yes)
+for (const no of ['', 'acme.com', 'Invite your team', 'billing settings', 'https:// a.com'])
+  assert.ok(!isExternalUrl(no), no)
+
+assert.strictEqual(toHref(' www.acme.com '), 'https://www.acme.com')
+assert.strictEqual(toHref('https://acme.com'), 'https://acme.com')
 
 console.log('articleLinks self-check OK')

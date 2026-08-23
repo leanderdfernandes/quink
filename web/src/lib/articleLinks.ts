@@ -15,6 +15,29 @@ import type { Faq, Step } from './types'
 
 export type HrefResolver = (articleId: string) => string | null
 
+// An article this one can link TO. The sub-line fields are what a picker needs to tell two
+// similarly-titled articles apart; `slug` is a convenience href only — `id` is what gets
+// stored, and publish resolves it.
+export type LinkTarget = {
+  id: string
+  title: string
+  slug: string | null
+  folder: string | null
+  steps: number
+}
+
+// Does the author mean "somewhere else on the web" rather than "an article in here"?
+//
+// Deliberately strict: a bare `docs.acme.com` stays a search term, because most of what
+// gets typed into that field is a few words from an article title and treating those as a
+// hostname would silently link to nothing. `www.` is the one bare form common enough to be
+// unambiguous, and it is the one people paste.
+export const isExternalUrl = (s: string): boolean => /^(https?:\/\/|www\.)\S+$/.test(s.trim())
+
+/** `www.acme.com` -> `https://www.acme.com`. A protocol-less href resolves relative. */
+export const toHref = (s: string): string =>
+  /^www\./i.test(s.trim()) ? `https://${s.trim()}` : s.trim()
+
 // A FAQ row's id — minted once, at row creation, and never changed afterwards.
 //
 // It lives in this module because it is an ANCHOR, not a database key: the reader renders

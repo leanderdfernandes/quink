@@ -1,7 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Vite always defines `import.meta.env` in the browser bundle, so the fallback is dead
+// code there and softens nothing. It exists because the runnable checks in web/checks/
+// import lib modules that transitively reach this file, under plain node where
+// `import.meta.env` is undefined — without it they die on a TypeError instead of on the
+// named error below.
+const env =
+  import.meta.env ??
+  (globalThis as { process?: { env?: Record<string, string> } }).process?.env ??
+  {}
+const url = env.VITE_SUPABASE_URL
+const anonKey = env.VITE_SUPABASE_ANON_KEY
 
 // Fail loudly at boot rather than with an opaque network error six screens deep.
 if (!url || !anonKey) {

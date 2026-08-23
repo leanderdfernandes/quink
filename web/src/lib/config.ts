@@ -196,7 +196,15 @@ export const COPY = {
   // then says where it lives — someone who upgrades on their phone and finds an empty dock
   // stops trusting the product at the exact moment they paid.
   heldFileNote:
-    'No free articles left. Nothing was uploaded and no run was used — this recording is waiting on this device.',
+    'No video runs left. Nothing was uploaded and no run was used — this recording is waiting on this device.',
+  // The same wall, for someone who cannot buy their way past it. It is a STATE, not a sell:
+  // an "Upgrade" button in front of a member is the most literal reading of
+  // team-access-spec L7 there is — asking the one person on the screen who has no card on
+  // file to go and pay. Naming the owner is not billing information; it is the answer to
+  // "who do I ask".
+  heldFileNoteMember: (owner: string | null) =>
+    `Not enough runs left. ${owner ?? 'The owner of this help center'} can add more. ` +
+    'Nothing was uploaded and no run was used — this recording is waiting on this device.',
   generatingTip:
     "You'll be able to swap any screenshot and edit every step before publishing.",
   // The building state (slice: building vs ready). A greyed control on its own tells the

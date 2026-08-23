@@ -10,7 +10,8 @@ import {
   publishSnapshot,
   replaceSteps,
 } from '../lib/articles'
-import type { HrefResolver } from '../lib/articleLinks'
+import type { HrefResolver, LinkTarget } from '../lib/articleLinks'
+import { key } from '../lib/keys'
 import { pendingEditCount } from '../lib/pendingEdits'
 import { createFolder, listFolders } from '../lib/folders'
 import { COPY, helpCenterUrl } from '../lib/config'
@@ -241,10 +242,21 @@ export default function Editor({
   // The other articles in this KB, for the "link to an article" picker, and the resolver the
   // dead-link marking reads. Loaded alongside folders — one more small read on a screen that
   // already does several.
-  const [linkTargets, setLinkTargets] = useState<
-    { id: string; title: string; slug: string | null }[]
-  >([])
+  // Ordered most-recently-edited first, which is what the picker shows on an empty query:
+  // the article someone just came from is the likeliest thing they mean to link to. The
+  // folder arrives as an id and is named below — `folders` loads in parallel with this, so
+  // joining them inside the fetch would race whichever finished second.
+  const [linkRows, setLinkRows] = useState<(Omit<LinkTarget, 'folder'> & {
+    folderId: string | null
+  })[]>([])
   const [linkHref, setLinkHref] = useState<HrefResolver>(() => () => null)
+  const linkTargets = useMemo<LinkTarget[]>(() => {
+    const name = new Map(folders.map((f) => [f.id, f.name]))
+    return linkRows.map(({ folderId, ...r }) => ({
+      ...r,
+      folder: folderId ? (name.get(folderId) ?? null) : null,
+    }))
+  }, [linkRows, folders])
   const [showPublish, setShowPublish] = useState(false)
   const [recategorize, setRecategorize] = useState(false)
   const [pubFolderId, setPubFolderId] = useState<string | null>(null)
@@ -351,18 +363,26 @@ export default function Editor({
       listFolders(kb.id).then((fs) => !cancelled && setFolders(fs))
       supabase
         .from('articles')
-        .select('id, title, slug, visibility')
+        .select('id, title, slug, visibility, folder_id, updated_at, steps(count)')
         .eq('kb_id', kb.id)
+        .order('updated_at', { ascending: false })
         .then(({ data }) => {
           if (cancelled) return
-          const rows = (data ?? []) as Pick<
+          const rows = (data ?? []) as (Pick<
             ArticleRow,
-            'id' | 'title' | 'slug' | 'visibility'
-          >[]
-          setLinkTargets(
+            'id' | 'title' | 'slug' | 'visibility' | 'folder_id'
+          > & { steps: { count: number }[] })[]
+          setLinkRows(
             rows
               .filter((r) => r.id !== articleId && r.slug && r.visibility !== 'draft')
-              .map((r) => ({ id: r.id, title: r.title, slug: r.slug })),
+              .map((r) => ({
+                id: r.id,
+                title: r.title,
+                slug: r.slug,
+                folderId: r.folder_id,
+                // A count embed comes back as one row; no rows means no steps.
+                steps: r.steps[0]?.count ?? 0,
+              })),
           )
         })
       // A function in state has to be wrapped, or useState calls it as an updater.
@@ -1585,6 +1605,7 @@ export default function Editor({
                         articleId={articleId ?? ''}
                         hasVideo={doc.source === 'generated'}
                         readOnly={building}
+                        linkTargets={linkTargets}
                         // Only while the frame pass is still running or yet to start. Once
                         // the run is past `capturing`, an empty slot is a real gap and says
                         // so instead of pretending something is still coming.
@@ -1614,7 +1635,7 @@ export default function Editor({
                 disabled={building}
                 onClick={() => insertStep(steps.length)}
               >
-                + Add a step <kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} ⏎</kbd>
+                + Add a step <kbd>{key('⏎')}</kbd>
               </button>
 
               {/* The tail (migration 0037). Below the last step because that is where it is

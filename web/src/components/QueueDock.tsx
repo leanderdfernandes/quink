@@ -26,6 +26,10 @@ type Props = {
   // By item id, not article id, because the whole point is that there isn't one.
   onWatchItem: (itemId: string) => void
   onUpgrade: () => void
+  // Whether the viewer can act on the wall a held file is sitting behind. A member spends
+  // the OWNER's runs, so the held row names the owner instead of offering a purchase.
+  isOwner: boolean
+  ownerName: string | null
   onDismiss: () => void
   onAddMore: () => void
 }
@@ -92,6 +96,8 @@ export default function QueueDock({
   onOpenArticle,
   onWatchItem,
   onUpgrade,
+  isOwner,
+  ownerName,
   onDismiss,
   onAddMore,
 }: Props) {
@@ -254,10 +260,19 @@ export default function QueueDock({
 
                 {item.state === 'held' && (
                   <div className="dock-held">
-                    <p>{COPY.heldFileNote}</p>
-                    <button type="button" className="dock-held-go" onClick={onUpgrade}>
-                      Upgrade to build it
-                    </button>
+                    {isOwner ? (
+                      <>
+                        <p>{COPY.heldFileNote}</p>
+                        <button type="button" className="dock-held-go" onClick={onUpgrade}>
+                          Upgrade to build it
+                        </button>
+                      </>
+                    ) : (
+                      // No CTA at all. There is nothing an admin can do here, and a button
+                      // that leads to "ask someone else" teaches people the product is
+                      // broken (team-access-spec L7, same call as OwnerOnly).
+                      <p>{COPY.heldFileNoteMember(ownerName)}</p>
+                    )}
                   </div>
                 )}
 
