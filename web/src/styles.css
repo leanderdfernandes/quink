@@ -40,6 +40,15 @@
   --sh-sm: 0 1px 2px rgba(33, 31, 27, 0.06);
   --sh-md: 0 4px 16px rgba(33, 31, 27, 0.08);
   --sh-lg: 0 12px 40px rgba(33, 31, 27, 0.1);
+  --sh-tool: 0 6px 24px rgba(33, 31, 27, 0.22), 0 1px 2px rgba(33, 31, 27, 0.3);
+
+  /* Floating toolbar chrome. Warm ink, never #000 — a black bar on warm paper reads as a
+     browser dialog rather than as part of the product. Teal appears nowhere in it except
+     the active state, which is the whole point of the active state. */
+  --tool-bg: #26231f;
+  --tool-hover: #3a3630;
+  --tool-fg: #f4f1ec;
+  --tool-sep: #413c35;
 
   --font: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
@@ -8084,5 +8093,270 @@ div.rail-meter {
     right: auto;
     left: 0;
     width: min(268px, 100%);
+  }
+}
+
+/* ======================================================================================
+   Selection toolbar — editor-toolbar-prototype.html §1
+   ======================================================================================
+   Floating chrome, mounted on <body> by TipTap's BubbleMenu so the flip and the clamp
+   measure against the viewport. Every value here is a token; the four --tool-* ones are
+   declared at :root above and in design-system.html §06. */
+
+.tb {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: var(--tool-bg);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: var(--sh-tool);
+  animation: tb-in 0.12s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes tb-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+.tb-slot {
+  display: inline-flex;
+  align-items: center;
+}
+.tb button {
+  font-family: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--tool-fg);
+  height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  position: relative;
+  transition: background 0.1s;
+}
+.tb button:hover {
+  background: var(--tool-hover);
+}
+.tb button:focus-visible {
+  outline: 2px solid var(--tool-fg);
+  outline-offset: -2px;
+}
+/* Teal appears nowhere else in the bar, so it can only mean "this mark is on". */
+.tb button.active {
+  background: var(--brand-500);
+  color: #fff;
+}
+.tb-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--tool-sep);
+  margin: 0 4px;
+  flex: none;
+}
+.tb-b {
+  font-weight: 700;
+  font-size: 15px;
+}
+.tb-i {
+  font-style: italic;
+  font-family: Georgia, serif;
+  font-size: 15px;
+}
+.tb-s {
+  text-decoration: line-through;
+  font-size: 14px;
+}
+.tb svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Supplementary only — every button carries its name in aria-label, so a tooltip that
+   never appears costs nothing. */
+.tb button[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s 0.35s;
+  box-shadow: var(--sh-md);
+}
+.tb button[data-tip]:hover::after,
+.tb button[data-tip]:focus-visible::after {
+  opacity: 1;
+}
+
+/* --- link panel ---------------------------------------------------------------------- */
+.tb-link {
+  width: 308px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-lg);
+  overflow: hidden;
+}
+.tb-link-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--subtle);
+}
+.tb-link-in svg {
+  width: 14px;
+  height: 14px;
+  stroke: var(--muted);
+  fill: none;
+  stroke-width: 1.7;
+  flex: none;
+}
+.tb-link input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: transparent;
+}
+.tb-link input::placeholder {
+  color: var(--muted);
+}
+.tb-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 13px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.tb-link-row.cur {
+  background: var(--brand-50);
+}
+.tb-link-ico {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--subtle);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tb-link-ico svg {
+  width: 12px;
+  height: 12px;
+  stroke: var(--secondary);
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tb-link-txt {
+  overflow: hidden;
+}
+.tb-link-txt b {
+  display: block;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-link-txt span {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tb-link-none {
+  margin: 0;
+  padding: 14px 13px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.tb-link-off {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 13px;
+  border: 0;
+  border-top: 1px solid var(--subtle);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--danger);
+  cursor: pointer;
+}
+.tb-link-off:hover {
+  background: var(--subtle);
+}
+.tb-link-foot {
+  border-top: 1px solid var(--subtle);
+  padding: 8px 13px;
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* --- phone --------------------------------------------------------------------------- */
+/* iOS owns the selection handles and draws them over anything floating, so below 640px the
+   bar stops floating and docks. !important because floating-ui writes the position it
+   computed as an inline style on this element, and inline loses only to this.
+   ponytail: `bottom: 0` rather than a visualViewport offset — the keyboard pushes a fixed
+   bar up in current mobile Safari and Chrome. If a browser stops doing that, subscribe to
+   visualViewport.resize and set the offset there. */
+@media (max-width: 640px) {
+  .tb {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    transform: none !important;
+    width: 100%;
+    border-radius: 0;
+    justify-content: space-around;
+    padding: 6px 8px;
+  }
+  .tb button {
+    flex: 1;
+  }
+  .tb button[data-tip]::after {
+    display: none;
+  }
+  .tb-link {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    transform: none !important;
+    width: 100%;
+    border-radius: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb {
+    animation: none;
   }
 }

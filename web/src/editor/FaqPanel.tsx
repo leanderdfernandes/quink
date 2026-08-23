@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import Link from '@tiptap/extension-link'
 import { Extension } from '@tiptap/core'
+import { ArticleLink } from './marks'
 import { Plugin } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { brokenArticleIds, newFaqId, type HrefResolver } from '../lib/articleLinks'
@@ -27,22 +27,6 @@ const SOFT_MAX = 6
 const HARD_MAX = 8
 
 const PLACEHOLDER_Q = 'What do readers get stuck on?'
-
-// The answer editor's mark set, extended so a link can carry WHICH article it points at
-// rather than only where that article happened to live when the link was made.
-const ArticleLink = Link.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      articleId: {
-        default: null,
-        parseHTML: (el: HTMLElement) => el.getAttribute('data-article-id'),
-        renderHTML: (attrs: Record<string, unknown>) =>
-          attrs.articleId ? { 'data-article-id': attrs.articleId } : {},
-      },
-    }
-  },
-})
 
 // Mark links whose target no longer resolves. A decoration rather than a DOM side-effect,
 // because ProseMirror owns that DOM and would wipe an attribute we set behind its back on

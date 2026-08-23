@@ -299,6 +299,15 @@ deliberately does not cover:
   in the repo has no `public.staging_marker`, i.e. it is production, so a staging project
   ref is needed before this can be applied anywhere.
 
+- **The selection toolbar is on step bodies only.** FAQ answers keep their own `Link`
+  button and side panel, which is now a second link UI over the same mark. Point `FaqPanel`
+  at `SelectionToolbar` and delete `ed-faq-link*` — one surface, one vocabulary. Held back
+  only to keep the toolbar commit revertable on its own.
+- **Step bodies have no dead-link marking.** `FaqPanel` decorates links whose target is
+  gone (`DeadLinks` + `brokenArticleIds`); step bodies now carry the same mark and do not.
+  Correctness is unaffected — publish unwraps a dead anchor either way — but the author
+  sees the breakage in one half of the article and not the other.
+
 ---
 
 ## F. Deferred by decision — do not build yet

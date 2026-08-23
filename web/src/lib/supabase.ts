@@ -5,7 +5,10 @@ import { createClient } from '@supabase/supabase-js'
 // import lib modules that transitively reach this file, under plain node where
 // `import.meta.env` is undefined — without it they die on a TypeError instead of on the
 // named error below.
-const env = import.meta.env ?? process.env
+const env =
+  import.meta.env ??
+  (globalThis as { process?: { env?: Record<string, string> } }).process?.env ??
+  {}
 const url = env.VITE_SUPABASE_URL
 const anonKey = env.VITE_SUPABASE_ANON_KEY
 
