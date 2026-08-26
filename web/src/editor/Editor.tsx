@@ -5,7 +5,6 @@ import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
 import {
   articleHrefResolver,
-  collectSourceVideo,
   deleteArticle,
   publishSnapshot,
   replaceSteps,
@@ -921,17 +920,15 @@ export default function Editor({
             visibility: nextVisibility,
             published_content: snapshot as Article,
             ...folderPatch,
-            source_video_path: null,
           }
         : a,
     )
 
-    // Keep the promise made on the upload screen: "We delete the source video once your
-    // article is published." Only on the FIRST publish — re-publishing finds nothing left
-    // to delete and quietly does nothing, which is what makes this idempotent.
-    if (article.source_video_path) {
-      await collectSourceVideo(articleId, article.source_video_path)
-    }
+    // The recording SURVIVES a publish now (PRD "Context & AI Editing" §8) — it is what
+    // "Check the recording" re-reads, and it is collected by the worker's retention sweep
+    // on the plan's window instead. `source_video_path` is deliberately no longer nulled
+    // here: the article state has to keep naming the recording for the step menu to know
+    // whether the action exists at all.
     return true
   }
 

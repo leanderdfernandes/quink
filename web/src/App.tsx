@@ -7,6 +7,8 @@ import { useQueue } from './lib/queue'
 import QueueDock from './components/QueueDock'
 import {
   DEFAULT_PLAN,
+  PLANS,
+  videoRetentionFrom,
   fetchEntitlements,
   fetchProfile,
   lanesFor,
@@ -663,6 +665,15 @@ export default function App() {
           runsLeft={runsLeft}
           onCapped={() => setShowUpgrade(true)}
           saved={kb?.product_name ? product : null}
+          // From the OWNER's plan, so a member uploading into a paid help center is told
+          // the paid retention rather than the free one (§10j: every limit reads the payer).
+          // From this HELP CENTER's entitlements (the owner's plan), never from the
+          // caller's — §10j: the caller and the payer are not the same person. A visitor
+          // with no account yet is a free account in a moment, so free is the right answer
+          // for them and the only place the local table is read.
+          videoRetentionDays={
+            session ? videoRetentionFrom(ent) : PLANS.free.video_retention_days
+          }
           // 4b: only when there is a help center to go back to. Onboarding gets none.
           onBack={kb ? () => setPhase('kb') : undefined}
         />

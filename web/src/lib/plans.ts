@@ -22,6 +22,12 @@ export type PlanLimits = {
   // Inviting teammates. Resolved from the KB OWNER's plan, never the caller's — a
   // free-plan user who is an admin inside a paid help center can invite.
   can_invite: boolean
+  // How long the SOURCE RECORDING is kept after the run that made it. `null` = for the
+  // life of the article. It is the meter for video-grounded editing (PRD §8), which is why
+  // the SPA needs it at all: the upload screen has to state the retention it is promising,
+  // and the step menu has to know whether "Check the recording" can exist. ENFORCED by the
+  // worker's retention sweep — this copy only renders it.
+  video_retention_days: number | null
 }
 
 export const PLANS: Record<PlanId, PlanLimits> = {
@@ -29,26 +35,31 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     lifetime_runs: 3, monthly_runs: null, kbs: 1,
     expiry_days: 30, custom_domain: false, watermark: true, noindex: true,
     can_invite: false,
+    video_retention_days: 7,
   },
   founding: {
     lifetime_runs: null, monthly_runs: 20, kbs: 1,
     expiry_days: null, custom_domain: true, watermark: false, noindex: false,
     can_invite: true,
+    video_retention_days: null,
   },
   starter: {
     lifetime_runs: null, monthly_runs: 20, kbs: 1,
     expiry_days: null, custom_domain: true, watermark: false, noindex: false,
     can_invite: true,
+    video_retention_days: null,
   },
   growth: {
     lifetime_runs: null, monthly_runs: 80, kbs: 5,
     expiry_days: null, custom_domain: true, watermark: false, noindex: false,
     can_invite: true,
+    video_retention_days: null,
   },
   internal: {
     lifetime_runs: null, monthly_runs: null, kbs: 999,
     expiry_days: null, custom_domain: true, watermark: false, noindex: true,
     can_invite: true,
+    video_retention_days: null,
   },
 }
 
@@ -108,6 +119,29 @@ export type Entitlements = {
   can_invite: boolean
   watermark: boolean
   noindex: boolean
+  /**
+   * How long the source recording is kept, in days — null = for the life of the article.
+   * A LIMIT, so it comes back to members too, unlike `plan`. Optional because it arrives
+   * with migration 0041: an SPA deployed ahead of it reads `undefined`, which
+   * videoRetentionFrom() below reads as "we do not know" rather than as "forever".
+   */
+  video_retention_days?: number | null
+}
+
+/**
+ * The retention window to state to THIS caller for THIS help center, or `undefined` when we
+ * genuinely do not know yet (entitlements not loaded, or an SPA running ahead of 0041).
+ *
+ * Never falls back to the caller's own plan. That fallback is the `lanesFor` gap
+ * (OPEN-ITEMS D.2) and it is harmless there — it queues conservatively — but here it would
+ * tell a member inside a paid help center that we delete their recording in a week. A
+ * retention period is a promise; guessing at one is worse than not stating it.
+ */
+export function videoRetentionFrom(
+  ent: Entitlements | null,
+): number | null | undefined {
+  if (!ent) return undefined
+  return ent.video_retention_days
 }
 
 // Null when this account cannot edit the KB — the same answer a stranger's probe gets from

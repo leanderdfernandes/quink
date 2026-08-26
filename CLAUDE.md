@@ -159,10 +159,14 @@ featured tier; Growth is a quiet line, not a card, at launch.
 
 ## 8. Data & privacy decisions (locked)
 
-- **Source video: kept until the article is first published, then deleted.** The Tier-2
-  full-scrub frame-picker needs the video reachable during editing. (This is a deliberate
-  change from the harness's "delete post-processing.") Wire the delete-on-publish hook when
-  publishing ships; until then videos persist — that's expected, note it in code.
+- **Source video: kept on a RETENTION POLICY, not deleted on publish.** SUPERSEDED (2026-08-26,
+  PRD `context-and-editing-prd.md` §8, migrations 0041): publishing no longer collects the
+  recording. Video-grounded editing — "Check the recording", the one edit a general chat
+  model cannot make — re-reads it long after the first publish, and deleting on publish
+  removed that capability at the exact moment a user finished their first article. The
+  window is `PLANS[plan]["video_retention_days"]`: brief on free, life-of-the-article on
+  paid. **Retention is also the meter** — there is one meter in this product, never two, and
+  a video re-read costs a model call plus the storage that made it possible. See §10f.
 - **Screenshots + articles persist indefinitely** — they are the product.
 - **Frames are stored as WebP** (speed + privacy + size). Margin work like this is for speed
   and privacy, not cost — at ~92% margins, halving COGS is noise. Do not over-invest here.
@@ -372,25 +376,44 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
    `free_email_providers` already blunts the cheap version, and building further against it
    is not worth it at this scale. Revisit only if abuse actually appears.
 
-## 10f. Source-video lifecycle (locked — migration 0019)
+## 10f. Source-video lifecycle (locked — migrations 0019, 0041)
 
-- **The recording is deleted on FIRST publish, and the frame picker must keep working
-  without it.** These are one change and must never be separated. Today the picker runs
-  entirely off the 1fps dense frame set, which is separate objects that survive — so this
-  costs nothing. **If a client-side `<video>` scrubber is ever reintroduced, it must
-  degrade to the filmstrip in the same commit**, or publishing silently breaks editing on
-  every published article.
-- **Delete the object, then null `source_video_path` — in that order.** The reverse strands
-  the object with nothing naming it, invisible to both collection paths.
-- **Two collection paths, because publish cannot reach everything.** A successful article's
-  recording goes on first publish; a FAILED job never publishes, so `jobs.video_path` +
-  the 7-day sweep in `retention.py` collects those. `jobs.video_path` is recorded at job
+- **Publishing does NOT collect the recording.** This reverses 0019's rule (see §8). There is
+  no lifecycle deletion anywhere in the SPA any more: `collectSourceVideo` is gone, and the
+  only client-side delete left is `deleteArticle`, which is the user destroying their own
+  content rather than a policy expiring it. **Do not put a lifecycle delete back in the
+  browser** — a policy enforced by whichever screen the user happened to be on is not a
+  policy.
+- **The window is per PLAN and lives in one place.** `PLANS[plan]["video_retention_days"]`
+  in `worker/config.py`, mirrored by `web/src/lib/plans.ts` and by `public.plan_flags()`
+  (0041) so `kb_entitlements()` can tell the SPA what to promise. `None` = life of the
+  article. **The free number is provisional** — PRD §11.4 leaves it open and it currently
+  matches `FAILED_VIDEO_RETENTION_DAYS`, so a free recording lives as long whether the run
+  succeeded or failed. It is one line to change and nothing else reads a window.
+- **The SPA states the window from `kb_entitlements`, never from the caller's plan.** The
+  caller and the payer are not the same person (§10j). Falling back to the caller's plan is
+  the `lanesFor` gap, and it is harmless there and not here: it would tell a member inside a
+  paid help center that we delete their recording in a week. When the window is unknown, the
+  UI states NOTHING. A retention period is a promise; guessing at one is worse than silence.
+- **Delete the object, then null the columns naming it — in that order.** The reverse strands
+  the object with nothing naming it, invisible to every collection path. `retention._purge_video`
+  is the only implementation; both sweeps go through it.
+- **Two sweeps, because there are two reasons a recording stops being worth keeping.**
+  `sweep_source_videos()` collects SUCCEEDED runs past their owner's window;
+  `sweep()` collects FAILED ones, which never make an article and so have no article
+  lifetime, on the flat `FAILED_VIDEO_RETENTION_DAYS`. `jobs.video_path` is recorded at job
   creation because a job that dies before Stage 1 never creates an article to hang it on.
-- **Sweeps are state queries, never scheduled events.** "Failed, older than N days, not yet
-  purged" — so a tick missed to a deploy or an idle-instance recycle self-heals, and
-  running it twice is harmless. The day-30/37 trial sweep must follow the same shape.
-- **`articles.source`, not `source_video_path`, answers "was this generated?"** The video
-  is deleted on publish, so its absence stops meaning anything about the article's origin.
+- **Sweeps are state queries, never scheduled events.** "In this state, older than this
+  ceiling, not yet purged" — so a tick missed to a deploy or an idle-instance recycle
+  self-heals, and running it twice is harmless. The day-30/37 trial sweep follows the same
+  shape.
+- **The frame picker must keep working with the recording gone**, and this has not changed:
+  the picker runs entirely off the 1fps dense frame set, which is separate objects that
+  survive. **If a client-side `<video>` scrubber is ever reintroduced, it must degrade to the
+  filmstrip in the same commit.** Same rule for "Check the recording": with the recording
+  purged the action is ABSENT, never present-and-failing.
+- **`articles.source`, not `source_video_path`, answers "was this generated?"** The recording
+  is eventually collected either way, so its absence stops meaning anything about origin.
 - **`status` is the pipeline lifecycle only** (`generating` → `ready`). Publish state is
   `visibility`. Writing `status='published'` violates the check constraint retired in 0015.
 

@@ -91,22 +91,37 @@ KB_BUCKETS = (BUCKET_FRAMES, BUCKET_VIDEOS, BUCKET_BRANDING)
 # starter and founding are identical today. Correct and temporary: they diverge the moment
 # Starter's price or quota moves and founding stays locked. That divergence is the whole
 # reason founding is its own value rather than "starter with a note".
+# `video_retention_days` — how long the SOURCE RECORDING is kept after the run that made
+# it. It is the meter for video-grounded editing (PRD "Context & AI Editing" §8): re-reading
+# a recording costs a model call plus the storage that made it possible, and retention is
+# the only honest way to cap that without inventing a second currency. `None` means "for the
+# life of the article", which is what a paid plan buys.
+#
+# The free number is PROVISIONAL. PRD §11.4 leaves it open and this is deliberately not an
+# invention: 7 matches FAILED_VIDEO_RETENTION_DAYS below, the sibling case, so a free user's
+# recording lives exactly as long whether their run succeeded or failed. Change this one
+# line when the number is decided — nothing else reads a window.
 PLANS: dict[str, dict] = {
     "free":     {"lifetime_runs": 3,    "monthly_runs": None, "kbs": 1,
                  "expiry_days": 30,   "custom_domain": False,
-                 "watermark": True,  "noindex": True, "can_invite": False},
+                 "watermark": True,  "noindex": True, "can_invite": False,
+                 "video_retention_days": 7},
     "founding": {"lifetime_runs": None, "monthly_runs": 20,   "kbs": 1,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False, "can_invite": True},
+                 "watermark": False, "noindex": False, "can_invite": True,
+                 "video_retention_days": None},
     "starter":  {"lifetime_runs": None, "monthly_runs": 20,   "kbs": 1,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False, "can_invite": True},
+                 "watermark": False, "noindex": False, "can_invite": True,
+                 "video_retention_days": None},
     "growth":   {"lifetime_runs": None, "monthly_runs": 80,   "kbs": 5,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False, "can_invite": True},
+                 "watermark": False, "noindex": False, "can_invite": True,
+                 "video_retention_days": None},
     "internal": {"lifetime_runs": None, "monthly_runs": None, "kbs": 999,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": True, "can_invite": True},
+                 "watermark": False, "noindex": True, "can_invite": True,
+                 "video_retention_days": None},
 }
 
 DEFAULT_PLAN = "free"
@@ -186,11 +201,20 @@ DOMAIN_MAX_BACKOFF_SECONDS = 3600
 DOMAIN_MAX_ATTEMPTS = 40  # ~ days of backoff before -> failed
 DOMAIN_CNAME_TTL = 3600
 
-# --- Source-video retention (ux-spec §9) ------------------------------------
-# A successful article's recording is collected on first publish. A FAILED job never
-# reaches a publish event, so its upload would sit in Storage forever — this is the other
-# collection path. 7 days is deliberately longer than the retry-without-reupload window:
-# re-running a failed job from the stored recording has to still work.
+# --- Source-video retention (PRD "Context & AI Editing" §8) -----------------
+# REVERSED. The recording used to be deleted the moment the article was first published.
+# Video-grounded editing ("Check the recording") re-reads it long after that, so publishing
+# can no longer be the collection event — a user who published on day one would have the one
+# feature only Quink can offer taken away before they ever saw it.
+#
+# What replaces it is a RETENTION POLICY: PLANS[plan]["video_retention_days"] above, swept
+# by retention.sweep_source_videos(). Free keeps recordings briefly and then quietly does
+# not; paid keeps them for the life of the article.
+#
+# This window stays, unchanged, for a different case: a FAILED job never produces an
+# article, so there is no plan-scoped article lifetime to hang its recording on. 7 days is
+# deliberately longer than the retry-without-reupload window — re-running a failed job from
+# the stored recording has to still work.
 FAILED_VIDEO_RETENTION_DAYS = 7
 
 # How often the background loop looks for them. The sweep is a STATE query ("failed, older

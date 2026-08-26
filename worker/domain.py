@@ -477,6 +477,10 @@ async def run_loop() -> None:
         if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
             last_purge = time.monotonic()
             await asyncio.to_thread(retention.sweep)
+            # The retention-policy sweep for SUCCEEDED runs (PRD §8). Same cadence and same
+            # shape as the failed-job one beside it: a state query with a per-plan window,
+            # so a missed tick self-heals and running it twice collects nothing extra.
+            await asyncio.to_thread(retention.sweep_source_videos)
             await asyncio.to_thread(trial.sweep)
         await asyncio.sleep(config.DOMAIN_CHECK_INTERVAL_SECONDS)
 
