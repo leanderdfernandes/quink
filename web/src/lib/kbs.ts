@@ -72,20 +72,43 @@ export async function setLastKb(userId: string, kbId: string): Promise<void> {
 // janky admin panel nobody maintains") and finds it published on their help center home
 // page, from a silent write they never saw. If reader copy is ever seeded from this, it
 // has to be a visible, editable step the user confirms — never a side effect of uploading.
+//
+// Goes through set_product_context() (migration 0040), not a table update: UPDATE on the
+// four columns is revoked from `authenticated`, so a direct write now silently matches
+// zero columns. The RPC is where the 600-char cap and the who/when stamp live.
+//
+// Returns the projection the RPC gives back, merged over the caller's row — NOT the whole
+// KB. The RPC deliberately answers with the seven fields it wrote and nothing else.
 export async function saveProductContext(
-  kbId: string,
+  kb: KnowledgeBase,
   product: ProductContext,
-): Promise<KnowledgeBase | null> {
-  const { data } = await supabase
-    .from('knowledge_bases')
-    .update({
-      product_name: product.product_name,
-      product_description: product.description,
-      audience: product.audience,
-      tone: product.tone,
-    })
-    .eq('id', kbId)
-    .select()
-    .single()
-  return (data as KnowledgeBase | null) ?? null
+): Promise<KnowledgeBase> {
+  const { data, error } = await supabase.rpc('set_product_context', {
+    p_kb_id: kb.id,
+    p_name: product.product_name,
+    p_description: product.description,
+    p_audience: product.audience,
+    p_tone: product.tone,
+  })
+  if (error) throw error
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    product_name: string
+    product_description: string
+    audience: string
+    tone: string
+    updated_at: string
+    updated_by: string | null
+    updated_by_name: string | null
+  } | null
+  if (!row) return kb
+  return {
+    ...kb,
+    product_name: row.product_name,
+    product_description: row.product_description,
+    audience: row.audience,
+    tone: row.tone,
+    product_context_updated_at: row.updated_at,
+    product_context_updated_by: row.updated_by,
+    product_context_updated_by_name: row.updated_by_name,
+  }
 }

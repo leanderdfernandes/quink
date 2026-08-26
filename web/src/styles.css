@@ -8360,3 +8360,22 @@ div.rail-meter {
     animation: none;
   }
 }
+
+/* Section label inside the upload card and Settings → Product. Names what the block is
+   for, with its scope note pushed to the right (prototype v3 `.lbl`). Type stays on the
+   12 / 13 scale — this is a label, not a heading. */
+.up-sect-lbl {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.up-sect-lbl b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.up-sect-lbl span {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}

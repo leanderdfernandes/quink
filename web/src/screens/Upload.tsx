@@ -8,6 +8,7 @@ import {
   DEFAULT_TONE,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_MINUTES,
+  PRODUCT_DESCRIPTION_MAX,
   TONE_OPTIONS,
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
@@ -291,6 +292,13 @@ export default function Upload({
               </div>
             ) : (
               <>
+                {/* Names what the block is FOR before it asks for anything, and says the
+                    answer is kept — the reason nobody is asked twice (PRD §4). Meta on the
+                    right, same weight as the v3 prototype's `.lbl`. */}
+                <div className="up-sect-lbl">
+                  <b>About your product</b>
+                  <span>saved for every guide</span>
+                </div>
                 {saved?.product_name && (
                   /* DECIDED, not deferred: changing product context never re-runs existing
                      articles. It would burn quota the user did not spend and overwrite edits
@@ -350,6 +358,7 @@ export default function Upload({
                     id="description"
                     placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
                     value={description}
+                    maxLength={PRODUCT_DESCRIPTION_MAX}
                     onChange={(e) => setDescription(e.target.value)}
                   />
                 </div>

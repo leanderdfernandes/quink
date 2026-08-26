@@ -42,6 +42,7 @@ import AccountWall from './screens/AccountWall'
 import KnowledgeBaseScreen from './screens/KnowledgeBase'
 import ThemeSettings from './screens/ThemeSettings'
 import DomainSettings from './screens/DomainSettings'
+import ProductSettings from './screens/ProductSettings'
 import People from './screens/People'
 import OwnerOnly from './components/OwnerOnly'
 import Editor from './editor/Editor'
@@ -76,6 +77,7 @@ type Phase =
   | 'kb'
   | 'theme'
   | 'domain'
+  | 'product'
   // Distinct from 'noaccess' on purpose. "You were removed" and "this doesn't exist for
   // you" are the same row state to the software and nothing like each other to the person
   // it happens to — the instinct on losing access is that your work was deleted.
@@ -354,7 +356,7 @@ export default function App() {
       setLanding('article')
       setPhase('generating')
       queueRef.current?.add([pending.file])
-      void saveProductContext(found.id, (pending.context as VideoContext).product)
+      void saveProductContext(found, (pending.context as VideoContext).product)
         .then(setKb)
         .catch(() => {})
       await clearPending()
@@ -395,7 +397,7 @@ export default function App() {
       setLanding('kb')
       setPhase('kb')
       queue.add(chosen)
-      void saveProductContext(kb.id, context.product).then(setKb).catch(() => {})
+      void saveProductContext(kb, context.product).then(setKb).catch(() => {})
       return
     }
 
@@ -807,6 +809,7 @@ export default function App() {
           onOpenArticle={openArticle}
           onOpenTheme={() => setPhase('theme')}
           onOpenDomain={() => setPhase('domain')}
+          onOpenProduct={() => setPhase('product')}
           onSignOut={signOut}
           onUpgrade={() => setShowUpgrade(true)}
           justClaimed={justClaimed}
@@ -838,6 +841,19 @@ export default function App() {
             hitting a wall. Same surface either way — one place decides what upgrading looks
             like, so the two paths cannot drift apart. */}
         {upgradeUi}
+      </>
+    )
+  }
+
+  if (phase === 'product' && kb) {
+    return (
+      <>
+        {adminBar}
+        <ProductSettings
+          kb={kb}
+          onBack={() => setPhase('kb')}
+          onSaved={setKb}
+        />
       </>
     )
   }

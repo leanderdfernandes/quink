@@ -168,6 +168,13 @@ export const TONE_OPTIONS = ['Friendly', 'Concise', 'Formal'] as const
 export const DEFAULT_AUDIENCE = 'New users'
 export const DEFAULT_TONE = 'Friendly'
 
+// Hard cap on the product description (PRD "Context & AI Editing" §4). Mirrors
+// public.product_context_cap() (migration 0040), which is where it is actually ENFORCED —
+// the four product columns are no longer client-writable, so this number is a courtesy to
+// the person typing, not the control. If the two drift, the field stops at one length and
+// set_product_context() refuses at another.
+export const PRODUCT_DESCRIPTION_MAX = 600
+
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
 export const COPY = {

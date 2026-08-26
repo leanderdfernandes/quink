@@ -155,6 +155,13 @@ export type KnowledgeBase = {
   product_description: string
   audience: string
   tone: string
+  // Who last wrote the four fields above, and when (migration 0040). Rendered by
+  // Settings → Product and by nothing else. The NAME is not a column — it comes back from
+  // set_product_context() and is carried on the client-side row only, so it is undefined
+  // on a KB read straight from the table.
+  product_context_updated_at: string | null
+  product_context_updated_by: string | null
+  product_context_updated_by_name?: string | null
   subdomain: string | null
   custom_domain: string | null
   is_published: boolean
