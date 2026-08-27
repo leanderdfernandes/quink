@@ -8612,3 +8612,135 @@ div.rail-meter {
   font-size: 12px;
   color: var(--brand-700);
 }
+
+/* --- "Check the recording" (PRD "Context & AI Editing" §6.3) -------------------------- */
+
+/* THE ONLY ACCENTED ITEM ON A STEP. Hierarchy is how the user learns which action is the
+   product — everything else on the card is neutral, and cutting merge, split and duplicate
+   is what left room for this to be unmissable. */
+.ed-tools button.accent {
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.ed-tools button.accent:hover {
+  background: var(--brand-700);
+  border-color: var(--brand-700);
+  color: #fff;
+}
+.ed-tools button.accent:disabled {
+  opacity: 0.5;
+}
+
+.rck-wait {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The proposal, under the step it is about. Bordered on the brand side so it reads as
+   attached to that step rather than as a new block in the article. */
+.rck {
+  margin: 10px 0 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand-600);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+.rck-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+/* The timestamp range. Monospace because it is a coordinate the user will look up in their
+   own recording, not prose. */
+.rck-range {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-700);
+  background: var(--brand-50);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+.rck-src {
+  font-size: 12px;
+  color: var(--muted);
+}
+/* THE line that carries our authority. Given the weight of body text, not of a caption:
+   the user is being asked to trust a claim about their own recording, and the whole
+   feature is worth nothing if this reads as decoration. */
+.rck-obs {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.rck-same {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.rck-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.rck-was p,
+.rck-now p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.rck-was p {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+.rck-now p {
+  color: var(--ink);
+}
+.rck-lbl {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rck-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+/* TWO VERBS. No "Try again" — a factual correction is not a matter of taste, so rerolling
+   it would be asking the same question of the same seconds and hoping for a different
+   answer. The asymmetry against §6.2's three-verb card is deliberate. */
+.rck-keep,
+.rck-discard {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rck-keep {
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.rck-keep:hover {
+  background: var(--brand-700);
+}
+.rck-discard {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--secondary);
+}
+.rck-discard:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}

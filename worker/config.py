@@ -357,6 +357,26 @@ CLARIFICATION_NOTE_MAX = 600
 # wait that is already interruptible.
 CLARIFICATION_POLL_SECONDS = 2.0
 
+# --- "Check the recording" (PRD "Context & AI Editing" §6.3) ----------------
+# The hero edit: re-read the source video around one step and propose a correction with the
+# evidence. It is the only editing a general chat model cannot do, which is why the source
+# recording is now retained at all (§8, PLANS[...]["video_retention_days"]).
+#
+# How much video the re-read sees, either side of the step's own timestamp. Generous rather
+# than tight: the clip is stream-copied, so the cut lands on the nearest keyframe, and a
+# step's timestamp points at the SETTLED frame — the action that produced it happened a
+# second or two earlier.
+RECHECK_WINDOW_SECONDS = 6
+
+# Runaway protection, and deliberately INVISIBLE at normal usage (PRD §8: no second meter,
+# no user-facing counter). Nobody checks the same step twelve times in an hour on purpose.
+#
+# ponytail: an in-process counter, so it resets on every deploy and is per worker instance —
+# the same limitation lanes.py documents for itself. The real ceiling is
+# DAILY_SPEND_CAP_USD, which this is checked against first. Move it into the database
+# alongside the lane when there is a second instance.
+RECHECK_MAX_PER_ARTICLE_PER_HOUR = 12
+
 # Dense frame set for the Tier-1 filmstrip: 1 frame per second across the whole
 # video. Pure ffmpeg, no model call — "code does everything deterministic".
 DENSE_FRAME_FPS = 1

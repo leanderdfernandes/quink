@@ -41,9 +41,13 @@ INTERNAL_ERROR = "internal_error"
 # Refused in POST /api/generate before a job row exists, so these never reach a jobs row.
 # quota_exceeded is the upgrade modal (pricing-spec §7), NOT a failure screen.
 QUOTA_EXCEEDED = "quota_exceeded"
-# Retry-only: the 7-day retention sweep already collected the recording, so re-running it
-# is impossible and the user has to hand us the file again. A clean state, not an error.
+# Retry-only: the retention sweep already collected the recording, so re-running it is
+# impossible and the user has to hand us the file again. A clean state, not an error.
 VIDEO_PURGED = "video_purged"
+# "Check the recording", asked far too often for one article in one hour (PRD §6.3). NOT a
+# failure and NOT a meter: the copy on the other side is "try that again in a minute" and
+# nothing counts down. Naming a number here would invent the second meter §8 forbids.
+RECHECK_BUSY = "recheck_busy"
 
 # --- Degraded outcomes -----------------------------------------------------
 # The article SHIPS, so these are not failure codes and they do NOT stop the run counting

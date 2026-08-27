@@ -31,6 +31,7 @@ import mailer
 import pipeline
 import prompts
 import purge
+import recheck
 from models import (
     DomainConnectRequest,
     DomainKbRequest,
@@ -38,6 +39,7 @@ from models import (
     GenerateRequest,
     GenerateResponse,
     InviteEmailRequest,
+    RecheckRequest,
     RetryRequest,
 )
 
@@ -558,6 +560,117 @@ def retry(
         lanes.lanes_for(_plan(owner_id)),
     )
     return GenerateResponse(job_id=job_id)
+
+
+@app.post("/api/recheck")
+def recheck_step(
+    req: RecheckRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """Re-read the source recording around one step and propose a correction (PRD §6.3).
+
+    SYNCHRONOUS, unlike /api/generate, and deliberately: this reads a few seconds of video
+    and answers in a couple of them. A job row would put the hero edit behind the same poll
+    loop as a ninety-second generation and pollute the run ledger with rows that are not
+    runs — which would then show up in the dock, in listInFlightJobs and, worst, in the
+    quota query's neighbourhood.
+
+    It costs a model call, so the GLOBAL circuit breaker applies before anything is spent.
+    Its own per-article limit lives in recheck.py and is invisible at normal usage: there is
+    one meter in this product and retention is already it (PRD §8).
+    """
+    article = (
+        pipeline.db()
+        .table("articles")
+        .select("id, kb_id, source_video_path")
+        .eq("id", req.article_id)
+        .maybe_single()
+        .execute()
+    )
+    if not article or not article.data:
+        # Same answer whether it never existed or isn't ours (§10c).
+        raise HTTPException(status_code=404, detail="No such article.")
+    a = article.data
+    _require_editor(authorization, a["kb_id"])
+
+    # THE RECORDING IS GONE. The SPA already hides the action when source_video_path is
+    # null, so reaching here means it was collected between the render and the click. Still
+    # a clean state and never an error screen: absent, never present-and-failing (§10f).
+    if not a["source_video_path"] or not _video_exists(a["source_video_path"]):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": failures.VIDEO_PURGED,
+                "message": "This recording is no longer stored, so it can't be checked.",
+            },
+        )
+
+    step = (
+        pipeline.db()
+        .table("steps")
+        .select("step_number, heading, body_text, timestamp_seconds")
+        .eq("article_id", a["id"])
+        .eq("step_number", req.step_number)
+        .maybe_single()
+        .execute()
+    )
+    if not step or not step.data:
+        raise HTTPException(status_code=404, detail="No such step.")
+    s = step.data
+    if s["timestamp_seconds"] is None:
+        # A hand-uploaded image has no moment in the recording to go back to. The SPA hides
+        # the action for these too; this is the backstop, and it is a state, not a failure.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": failures.VIDEO_PURGED,
+                "message": "This step's image didn't come from the recording, so there's "
+                "nothing to check it against.",
+            },
+        )
+
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        log.error("DAILY SPEND CAP hit — refusing rechecks")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": failures.SPEND_CAP,
+                "message": "We've hit a temporary processing limit. Try again shortly.",
+            },
+        )
+
+    try:
+        return recheck.run(
+            article_id=a["id"],
+            kb_id=a["kb_id"],
+            video_path=a["source_video_path"],
+            step_number=s["step_number"],
+            heading=s["heading"] or "",
+            body_text=s["body_text"] or "",
+            timestamp_seconds=float(s["timestamp_seconds"]),
+            download=lambda p: pipeline._storage_retry(
+                f"download of {p}",
+                lambda: pipeline.db().storage.from_(config.BUCKET_VIDEOS).download(p),
+            ),
+        )
+    except failures.Failed as e:
+        if e.code == failures.RECHECK_BUSY:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": e.code,
+                    "message": "Give that a moment and try again.",
+                },
+            ) from e
+        log.warning("recheck failed [%s]: %s", e.code, e)
+        # Everything else is ours. The step is untouched — there is no silent-write path
+        # here, so a failed recheck costs the user nothing but the click.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": e.code,
+                "message": "I couldn't read that part of the recording just now.",
+            },
+        ) from e
 
 
 # --- Custom domain (build spec §4) ------------------------------------------

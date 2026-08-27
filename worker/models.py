@@ -103,6 +103,18 @@ class GenerateResponse(BaseModel):
     job_id: str
 
 
+class RecheckRequest(BaseModel):
+    """Re-read the source recording around one step (PRD §6.3).
+
+    Addressed by `step_number`, not by a step row id: the id is not in the §6 contract and
+    the step's POSITION is what the user pointed at. Ownership is proved through the
+    article's KB, so neither field is a capability.
+    """
+
+    article_id: str
+    step_number: int
+
+
 class RetryRequest(BaseModel):
     """Re-run a failed job from the recording already in Storage. No file, deliberately:
     a retry that asks for the video again is not a retry."""

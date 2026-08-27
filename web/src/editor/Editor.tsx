@@ -25,8 +25,11 @@ import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
 import BuildBar, { type BuildStage } from './BuildBar'
 import ClarifyPanel from './ClarifyPanel'
+import RecheckCard from './RecheckCard'
 import { useGeneration } from './useGeneration'
 import { submitClarificationAnswers } from '../lib/clarifications'
+import { recheckStep, type RecheckResult } from '../lib/recheck'
+import { canonicalBody } from '../lib/pendingEdits'
 import FailureScreen from '../components/FailureScreen'
 import { degradedNotice } from '../lib/failures'
 import { fetchArticleJob } from '../lib/jobs'
@@ -467,6 +470,42 @@ export default function Editor({
 
   const bumpRev = (id: string) => setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }))
 
+  // --- Check the recording (PRD §6.3) --------------------------------------------
+  // ONE proposal on screen at a time, deliberately. This is a factual claim about a
+  // specific moment; three of them stacked up would be a review queue, which is the shape
+  // this whole product exists to avoid.
+  const [recheck, setRecheck] = useState<{ stepId: string; result: RecheckResult } | null>(null)
+  const [recheckBusy, setRecheckBusy] = useState<string | null>(null)
+
+  async function runRecheck(step: StepRow) {
+    if (recheckBusy) return
+    setRecheck(null)
+    setRecheckBusy(step.id)
+    try {
+      const result = await recheckStep(articleId!, step.step_number)
+      setRecheck({ stepId: step.id, result })
+      clearError()
+    } catch (e) {
+      // Including the rate limit, which is not a failure and says nothing about a count —
+      // naming a number would be the second meter PRD §8 forbids.
+      setOpError(e instanceof Error ? e.message : 'That didn’t work just now.')
+    } finally {
+      setRecheckBusy(null)
+    }
+  }
+
+  // The ONLY write in this feature, and it happens because the user pressed Keep. It goes
+  // through saveStep like any hand edit, so it rides the same conflict guard (§10k) and the
+  // same undo history — an AI correction must not be a privileged kind of change.
+  function keepRecheck(stepId: string, proposed: string) {
+    setRecheck(null)
+    if (!proposed) return
+    saveStep(stepId, { body_text: canonicalBody(proposed) })
+    // TipTap holds its own copy of the body, so the card has to be told the text moved
+    // underneath it — the same remount split and merge used to need.
+    bumpRev(stepId)
+  }
+
   const refreshUndoFlags = () => {
     const h = history.current
     setCanUndo(h.pointer > 0)
@@ -724,70 +763,14 @@ export default function Editor({
     flush()
   }
 
-  // --- Merge into the step above: concat bodies, keep the upper screenshot. ------
-  function mergeUp(index: number) {
-    if (index === 0) return
-    const prevStep = steps[index - 1]
-    const cur = steps[index]
-    const mergedBody = joinBodies(prevStep.body_text, cur.body_text)
-    const next = renumber(
-      steps
-        .map((s, i) => (i === index - 1 ? { ...s, body_text: mergedBody } : s))
-        .filter((_, i) => i !== index),
-    )
-    setSteps(next)
-    bumpRev(prevStep.id)
-    guarded(async () => {
-      const a = await supabase
-        .from('steps')
-        .update({ body_text: mergedBody })
-        .eq('id', prevStep.id)
-      const b = await supabase.from('steps').delete().eq('id', cur.id)
-      if (a.error) throw a.error
-      if (b.error) throw b.error
-    })
-    flush()
-    persistOrder(next)
-  }
-
-  // --- Split at the cursor: current keeps "before", a new step gets "after". -----
-  async function split(index: number, beforeHtml: string, afterHtml: string) {
-    const cur = steps[index]
-    const { data, error } = await supabase
-      .from('steps')
-      .insert({
-        article_id: articleId,
-        step_number: cur.step_number + 1,
-        heading: '',
-        body_text: afterHtml,
-        screenshot_url: null,
-      })
-      .select()
-      .single()
-    if (error || !data) {
-      setOpError('Couldn’t split that step')
-      return
-    }
-    const newStep = data as StepRow
-    const next = renumber([
-      ...steps.slice(0, index),
-      { ...cur, body_text: beforeHtml },
-      newStep,
-      ...steps.slice(index + 1),
-    ])
-    setSteps(next)
-    bumpRev(cur.id)
-    clearError()
-    guarded(async () => {
-      const { error } = await supabase
-        .from('steps')
-        .update({ body_text: beforeHtml })
-        .eq('id', cur.id)
-      if (error) throw error
-    })
-    flush()
-    persistOrder(next)
-  }
+  // Merge, split and duplicate are GONE (PRD "Context & AI Editing" §6.5). Merge existed
+  // to fix our own over-segmentation rather than a user need, and "this is too broken up"
+  // is an instruction, not a structural gesture — it belongs in the steer channel. Their
+  // real payoff is what is left behind: a two-item step menu, where "Check the recording"
+  // cannot be missed.
+  //
+  // They were also three of the four single-row step writes OPEN-ITEMS D.2 records as
+  // unguarded against a concurrent editor, so this shrinks that gap rather than widening it.
 
   // --- Insert an EMPTY step at a position. Different job from split: this is "I missed a
   // step", not "this step covers two things". `at` is the array index it lands on.
@@ -818,38 +801,6 @@ export default function Editor({
         .querySelector<HTMLInputElement>(`#step-${at + 1} .ed-h-in`)
         ?.focus()
     })
-  }
-
-  async function duplicateStep(index: number) {
-    const src = steps[index]
-    const { data, error } = await supabase
-      .from('steps')
-      .insert({
-        article_id: articleId,
-        step_number: src.step_number + 1,
-        heading: src.heading,
-        body_text: src.body_text,
-        screenshot_url: src.screenshot_url,
-        // The copy points at the same human-chosen frame, so it inherits the marker that
-        // protects it from a re-run (§8) — and the shapes drawn on that frame, which are
-        // positioned against the image and are still correct on a copy of it.
-        is_edited: src.is_edited,
-        timestamp_seconds: src.timestamp_seconds,
-        annotations: src.annotations ?? [],
-      })
-      .select()
-      .single()
-    if (error || !data) {
-      setOpError('Couldn’t duplicate that step')
-      return
-    }
-    const copy = data as StepRow
-    const next = renumber([...steps.slice(0, index + 1), copy, ...steps.slice(index + 1)])
-    setSteps(next)
-    setShotUrls((m) => ({ ...m, [copy.id]: shotUrls[src.id] ?? null }))
-    clearError()
-    persistOrder(next)
-    flush()
   }
 
   async function deleteStep(index: number) {
@@ -1628,7 +1579,6 @@ export default function Editor({
                         key={`${s.id}:${revs[s.id] ?? 0}`}
                         step={s}
                         index={i}
-                        isFirst={i === 0}
                         screenshotUrl={
                           // The frames bucket is public (migration 0007), so a step arriving
                           // mid-run costs no round trip to show. Signed URLs stay on the
@@ -1649,10 +1599,8 @@ export default function Editor({
                         settling={gen.settling.has(s.id)}
                         onHeading={(heading) => saveStep(s.id, { heading })}
                         onBody={(body_text) => saveStep(s.id, { body_text })}
-                        onMergeUp={() => mergeUp(i)}
-                        onSplit={(before, after) => split(i, before, after)}
-                        onDuplicate={() => duplicateStep(i)}
                         onDelete={() => deleteStep(i)}
+                        onRecheck={() => runRecheck(s)}
                         onPickFrame={(path) => pickFrame(s.id, path)}
                         onRemoveFrame={() => removeFrame(s.id)}
                         onAnnotate={(annotations) => annotateStep(s.id, annotations)}
@@ -1662,6 +1610,20 @@ export default function Editor({
                         onDragEnterCard={() => onDragEnter(i)}
                         onDrop={onDrop}
                       />
+                      {/* The proposal, under the step it is about. Never a modal and never
+                          applied on arrival — there is no silent-write path in this feature
+                          (PRD §7). */}
+                      {recheck?.stepId === s.id && (
+                        <RecheckCard
+                          result={recheck.result}
+                          current={s.body_text}
+                          onKeep={() => keepRecheck(s.id, recheck.result.proposed_text)}
+                          onDiscard={() => setRecheck(null)}
+                        />
+                      )}
+                      {recheckBusy === s.id && (
+                        <p className="rck-wait">Re-reading that part of the recording…</p>
+                      )}
                       {!building && <InsertHere at={i + 1} onInsert={insertStep} />}
                     </div>
                   ))}
@@ -1719,14 +1681,3 @@ function InsertHere({
   )
 }
 
-// Concatenate two step bodies (both HTML). Keep them as separate paragraphs rather than
-// fusing mid-sentence — the merge target is usually two actions that belong together.
-const EMPTY_HTML = /^(\s*<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+$/i
-
-function joinBodies(a: string, b: string): string {
-  const top = EMPTY_HTML.test(a) ? '' : a.trim()
-  const bottom = EMPTY_HTML.test(b) ? '' : b.trim()
-  if (!top) return bottom
-  if (!bottom) return top
-  return `${top}${bottom}`
-}

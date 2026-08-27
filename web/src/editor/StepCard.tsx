@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { DOMSerializer } from '@tiptap/pm/model'
 import FramePicker from './FramePicker'
 import AnnotateBar from './AnnotateBar'
 import { useAnnotator } from './useAnnotator'
@@ -18,25 +17,38 @@ import type { Annotation, StepRow } from '../lib/types'
 // Body is TipTap, never a textarea — editability is half the product, and the design file's
 // <textarea> is comp shorthand, not a spec (see notes).
 //
-// The control cluster is the four gestures ux-spec §4 actually lists: merge up, split,
-// duplicate, delete. Split and Insert are deliberately different jobs and their labels say
-// so — Split means "this step covers two things" and carries the text below the cursor into
-// a new step; Insert (the hairline between cards, in Editor) means "I missed a step" and
-// makes an empty one.
+// THE CONTROL CLUSTER IS NOW TWO ACTIONS AND A DELETE (PRD "Context & AI Editing" §6.5).
+//
+// Merge, split and duplicate are gone. Merge existed to fix OUR over-segmentation, not a
+// user need, and shipping permanent UI to paper over a pipeline defect is the wrong trade —
+// "this is too broken up" is an instruction, and instructions belong in the steer channel.
+// Split went with it for the same reason. Their real payoff is what is left: with the menu
+// down to two items, "Check the recording" is unmissable, and hierarchy is how the user
+// learns which action is the product.
+//
+// "Check the recording" is the ONLY accented item on the card. Everything else is neutral.
+//
+// DELETE STAYS, against the letter of "two items only", and this is a deliberate
+// divergence: the hover cluster is the sole entry point for deleting a step, and removing
+// it would take away the ability to delete a step at all — a regression §6.5 does not ask
+// for and the PRD never mentions. Flagged in OPEN-ITEMS rather than decided quietly.
+//
+// Drag-to-reorder is untouched. It is one of the three structural gestures CLAUDE.md §9
+// keeps, and the only one this change does not remove.
 
 type Props = {
   step: StepRow
   index: number
-  isFirst: boolean
   screenshotUrl: string | null
   kbId: string
   articleId: string
   onHeading: (heading: string) => void
   onBody: (html: string) => void
-  onMergeUp: () => void
-  onSplit: (beforeHtml: string, afterHtml: string) => void
-  onDuplicate: () => void
   onDelete: () => void
+  // "Check the recording" (§6.3). Absent — not disabled, not failing — when there is no
+  // recording left to check: `hasVideo` is false once the retention sweep collected it, and
+  // a step whose image was hand-uploaded has no moment to go back to either.
+  onRecheck: () => void
   onPickFrame: (newPath: string) => void
   onRemoveFrame: () => void
   onAnnotate: (annotations: Annotation[]) => void
@@ -65,16 +77,13 @@ type Props = {
 export default function StepCard({
   step,
   index,
-  isFirst,
   screenshotUrl,
   kbId,
   articleId,
   onHeading,
   onBody,
-  onMergeUp,
-  onSplit,
-  onDuplicate,
   onDelete,
+  onRecheck,
   onPickFrame,
   onRemoveFrame,
   onAnnotate,
@@ -151,14 +160,10 @@ export default function StepCard({
     if (editor.getHTML() !== next) editor.commands.setContent(next, { emitUpdate: false })
   }, [editor, readOnly, step.body_text])
 
-  // Split at the cursor: serialize the doc before and after the caret to HTML.
-  function splitHere() {
-    if (!editor) return
-    const { state } = editor
-    const pos = state.selection.from
-    const end = state.doc.content.size
-    onSplit(sliceHtml(editor, 0, pos), sliceHtml(editor, pos, end))
-  }
+  // Whether "Check the recording" can exist at all. Two ways it cannot: the recording was
+  // collected by the retention sweep (§10f), or this step's image was hand-uploaded and so
+  // has no moment in the recording to go back to. Either way the action is ABSENT.
+  const canRecheck = hasVideo && step.timestamp_seconds !== null
 
   return (
     <article
@@ -192,34 +197,28 @@ export default function StepCard({
         </div>
       ) : (
         <div className="ed-tools">
-          {!isFirst && (
+          {/* The one accented item on the card. Absent rather than disabled when the
+              recording is gone: a greyed-out button teaches people the feature is broken,
+              where an absent one teaches them nothing at all — which is correct, because
+              there is nothing they can do about a collected recording (§10f). */}
+          {canRecheck && (
             <button
               type="button"
+              className="accent"
               disabled={readOnly}
-              onClick={onMergeUp}
-              title="Join this step onto the one above"
+              onClick={onRecheck}
+              title="Re-read the recording around this step"
             >
-              Merge up
+              Check the recording
             </button>
           )}
-          {/* preventDefault on mousedown keeps focus in the editor, so splitHere reads
-              the real caret position instead of a blurred selection collapsing to 0. */}
           <button
             type="button"
             disabled={readOnly}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={splitHere}
-            title="Cut this step in two at the cursor"
+            onClick={() => setPickerOpen((o) => !o)}
+            title={hasVideo ? 'Pick a different frame' : 'Upload a different image'}
           >
-            Split here
-          </button>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={onDuplicate}
-            title="Make a copy of this step"
-          >
-            Duplicate
+            New screenshot
           </button>
           <button
             type="button"
@@ -529,13 +528,4 @@ function SelectionBox({ a, nat }: { a: Annotation; nat: Natural }) {
       ))}
     </g>
   )
-}
-
-// Serialize a document range [from, to] to an HTML string.
-function sliceHtml(editor: NonNullable<ReturnType<typeof useEditor>>, from: number, to: number) {
-  const slice = editor.state.doc.slice(from, to)
-  const fragment = DOMSerializer.fromSchema(editor.schema).serializeFragment(slice.content)
-  const div = document.createElement('div')
-  div.appendChild(fragment)
-  return div.innerHTML
 }
