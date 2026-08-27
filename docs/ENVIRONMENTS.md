@@ -110,7 +110,16 @@ day-14/7/offline/purge lifecycle). No cron, no scheduler — when the process is
 none of them run.
 
 Render's free tier spins an instance down after ~15 minutes with no inbound request, and a
-cold start takes ~a minute. So a staging worker left alone overnight has run no sweeps, and
+cold start takes ~30 seconds (measured 2026-08-27: a cold `GET /` answered in 26.5s).
+**Production is on that free tier** — CLAUDE.md §4 used to say "~$7/mo", which is Render's
+Starter price and would mean no spin-down at all; it does not, and the difference decides
+whether any of this section applies.
+
+`.github/workflows/keep-worker-awake.yml` pings `/health` every 9 minutes to hold it up.
+That is a workaround and is best-effort: GitHub delays scheduled triggers under load, so the
+interval has headroom rather than precision, and **a scheduled workflow only runs from the
+DEFAULT BRANCH** — a copy of it on `staging` does nothing at all. Delete it the day the
+worker moves to a paid instance. So a staging worker left alone overnight has run no sweeps, and
 the trial fixture will not have gone offline by morning. **This is not a bug to work
 around**: every sweep is a state query ("free, past expiry, not yet offline"), never a
 scheduled event, so a missed tick self-heals on the next boot and running one twice is
