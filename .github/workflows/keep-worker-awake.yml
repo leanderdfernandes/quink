@@ -1,0 +1,71 @@
+# Keep the Render worker from spinning down.
+#
+# WHY THIS EXISTS. Render's free tier stops an instance after ~15 minutes with no inbound
+# request, and a cold start costs ~30 seconds (measured: GET / took 26.5s on a cold
+# instance). Two things break while it is asleep:
+#
+#   * every sweep stops. domain.run_loop() is a single asyncio task in the worker process,
+#     and it is the only driver of all six of them (docs/ENVIRONMENTS.md). Trial warning
+#     emails, the offline/purge lifecycle, video retention and the abandoned-pause release
+#     all simply do not happen overnight.
+#   * the first generation of the day waits ~30s before anything starts, on the screen where
+#     a new user is deciding whether this product works.
+#
+# It also makes two IN-PROCESS mechanisms behave as designed instead of resetting: the
+# per-account lane semaphore (lanes.py) and the per-article recheck rate limit (recheck.py)
+# both live in memory and are wiped by every spin-down.
+#
+# THIS IS BEST-EFFORT, NOT A GUARANTEE. GitHub's scheduled triggers are explicitly delayed
+# under load — commonly by 5-20 minutes, worst on the hour — and runs can be dropped
+# entirely. A */14 schedule against a 15-minute window has no headroom at all and would let
+# the instance sleep unpredictably, which is the worst version of this: awake enough that
+# nobody notices it is sometimes asleep. */9 leaves room for one skipped run plus drift.
+#
+# If keeping it up ever actually matters, the answer is Render's paid Starter tier, which
+# does not spin down at all. This is the free-tier workaround and should be deleted the day
+# that changes.
+name: Keep the Render worker awake
+
+on:
+  schedule:
+    # Every 9 minutes. Not 14: see the note above about GitHub's schedule drift.
+    - cron: '*/9 * * * *'
+  # So it can be fired by hand after a deploy or an incident without waiting for a tick.
+  workflow_dispatch:
+
+# Cold starts take ~30s and ticks are 9 minutes apart, so overlap is near-impossible — but
+# if GitHub ever delivers a backlog at once, run them one at a time rather than in a pile.
+concurrency:
+  group: keep-worker-awake
+  cancel-in-progress: false
+
+# Nothing here reads or writes the repository.
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    # A cold start plus retries, with room to spare. Without this the job's default is 6
+    # HOURS, so a hung connection would occupy a runner all morning.
+    timeout-minutes: 5
+    steps:
+      - name: Ping /health
+        run: |
+          # /health, not / — the worker is a FastAPI app with no root route, so / answers
+          # 404. A 404 still wakes the instance, but it cannot be asserted on, and a ping
+          # that cannot tell "awake" from "broken" is just noise.
+          #
+          # --fail is the load-bearing flag. `curl -s URL > /dev/null` exits 0 on a 502, a
+          # 404 and a 503 alike (verified), so the workflow would sit green while the worker
+          # was down. --fail makes a bad status a failed run, which is the only way this
+          # doubles as an outage signal.
+          #
+          # --retry-all-errors covers the cold-start case: the first request after a
+          # spin-down can time out at the edge while the instance is still booting, and the
+          # retry is what actually gets the 200.
+          curl --silent --show-error --fail \
+               --max-time 90 \
+               --retry 3 --retry-delay 15 --retry-all-errors \
+               --output /dev/null \
+               --write-out 'health %{http_code} in %{time_total}s\n' \
+               https://quink.onrender.com/health

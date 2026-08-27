@@ -58,7 +58,7 @@ Three pieces, each doing the one thing it's best at:
    and editor saves. No custom backend for CRUD.
 2. **Supabase** — auth (Google OAuth primary, email-link fallback), Postgres (RLS on all user
    tables), Storage (video + WebP frames), Realtime (optional).
-3. **Pipeline worker — one thin FastAPI app (Python), on Render (~$7/mo).** The ONLY custom
+3. **Pipeline worker — one thin FastAPI app (Python), on Render.** The ONLY custom
    backend. Owns the expensive/native work: Gemini calls + FFmpeg. Everything else is
    client↔Supabase.
 
