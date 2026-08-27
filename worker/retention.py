@@ -144,6 +144,78 @@ def _sweep_never_started() -> int:
         log.warning("queue sweep closed %s job(s) that never started", closed)
     return closed
 
+def sweep_abandoned_pauses() -> int:
+    """Close paused runs whose WORKER died. Returns how many were released.
+
+    This is NOT a timeout on the pause — PRD §5.4 is explicit that there is none, and
+    sweep_timeouts() skips awaiting rows precisely so a thinking user is never failed. It is
+    the collection path for the other half of that rule: Render spins an idle instance down
+    after ~15 minutes and the pipeline task goes with it, so a job left in `awaiting_input`
+    across that boundary has nobody left to notice when the user answers. Without this it
+    sits at 'running' forever — the stuck spinner §10g exists to eliminate.
+
+    IT CLOSES THEM AS A SUCCESS, not a failure, and that is the honest classification: the
+    article exists, its steps are written and its screenshots are captured. The only thing
+    that never ran is Stage 2, which is polish — which is exactly what `stage2_failed`
+    means, with copy already written for it. The user gets their article with rougher text,
+    which beats a failure screen over a question they walked away from.
+
+    Rows with no article are left alone: there is nothing to hand back, and sweep_timeouts()
+    will collect them once the flag is cleared.
+
+    A benign race exists if the worker is still alive on a very busy instance: the sweep
+    writes 'done', the pipeline then notices the cleared flag, polishes and writes 'done'
+    again. Same terminal state, one wasted cheap call. The ceiling is set far past any
+    session so it effectively cannot happen.
+    """
+    import pipeline
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=config.CLARIFICATION_ABANDON_HOURS)
+    try:
+        res = (
+            pipeline.db()
+            .table("jobs")
+            .select("id, article_id, degraded")
+            .eq("awaiting_input", True)
+            .eq("status", "running")
+            .not_.is_("article_id", "null")
+            .lt("awaiting_input_at", cutoff.isoformat())
+            .limit(200)
+            .execute()
+        )
+    except Exception:
+        log.exception("abandoned-pause sweep query failed")
+        return 0
+
+    closed = 0
+    for job in res.data or []:
+        degraded = sorted({*(job.get("degraded") or "").split(","), failures.DEGRADED_STAGE2} - {""})
+        try:
+            pipeline.db().table("jobs").update(
+                {
+                    "awaiting_input": False,
+                    "status": "done",
+                    "degraded": ",".join(degraded),
+                    # They got an article, so the run counts — the same rule every other
+                    # degraded outcome follows (§10g).
+                    "counted_against_quota": True,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("id", job["id"]).execute()
+            # Without this the article wears the "Generating" badge forever; nothing else
+            # in the system writes that column once the pipeline has let go.
+            pipeline.db().table("articles").update({"status": "ready"}).eq(
+                "id", job["article_id"]
+            ).execute()
+            closed += 1
+        except Exception:
+            log.exception("could not close abandoned pause on job %s", job["id"])
+
+    if closed:
+        log.warning("released %s run(s) abandoned mid-question", closed)
+    return closed
+
+
 def _purge_video(job_id: str, path: str, article_id: str | None) -> bool:
     """Delete one recording and forget it. Returns whether it was collected.
 
@@ -453,6 +525,39 @@ def demo() -> None:
     assert ("update", {"source_video_path": None}) in calls, "must null articles.source_video_path"
 
     pipeline.db = lambda: _Db()  # the timeout checks below expect the single-row fake
+
+    # --- the abandoned pause: a SUCCESS, not a timeout ----------------------
+    # A paused run whose worker died has an article with steps and screenshots; the only
+    # thing that never ran is the polish. Failing it would take a finished article away
+    # from someone over a question they walked away from.
+    calls.clear()
+    rows = [{"id": "p1", "article_id": "a1", "degraded": None}]
+
+    class _Q3(_Q):
+        def execute(self):
+            if self.tbl == "jobs" and calls and calls[-1][0] != "update":
+                return type("R", (), {"data": rows})()
+            return type("R", (), {"data": []})()
+
+    class _Db3(_Db):
+        def table(self, name):
+            return _Q3(name)
+
+    pipeline.db = lambda: _Db3()
+    assert sweep_abandoned_pauses() == 1
+    assert ("eq", "awaiting_input", True) in calls, "only rows actually waiting"
+    assert ("not.is", "article_id", "null") in calls, "nothing to hand back without an article"
+    lt = [c for c in calls if c[0] == "lt" and c[1] == "awaiting_input_at"]
+    assert lt, "measured from when the question appeared, not from job creation"
+    hrs = (datetime.now(timezone.utc) - datetime.fromisoformat(lt[0][2])).total_seconds() / 3600
+    assert abs(hrs - config.CLARIFICATION_ABANDON_HOURS) < 1, hrs
+    wrote = [c[1] for c in calls if c[0] == "update"]
+    assert wrote[0]["status"] == "done", f"a released pause is a success, not a failure: {wrote[0]}"
+    assert failures.DEGRADED_STAGE2 in wrote[0]["degraded"], wrote[0]
+    assert wrote[0]["awaiting_input"] is False
+    assert wrote[1] == {"status": "ready"}, "the article must leave the Generating badge"
+
+    pipeline.db = lambda: _Db()
 
     # --- the timeout sweep: two clocks, two codes (slice 3i) -----------------
     # Correctness is entirely in which rows each half picks. Too broad and it kills healthy

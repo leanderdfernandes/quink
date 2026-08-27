@@ -1,4 +1,5 @@
 import { REFINEMENTS } from '../lib/steer'
+import { AiTag } from '../components/AiMark'
 
 // The diff card for a steered edit (PRD §6.2).
 //
@@ -51,6 +52,9 @@ export default function SteerCard({
 }: Props) {
   return (
     <div className="str-card" role="group" aria-label="Suggested change">
+      {/* Says what this IS before it says what it proposes. Without it the card is a form
+          with two paragraphs in it, and the user has no cue that they are the review. */}
+      <AiTag>Suggested edit</AiTag>
       <p className="str-asked">“{instruction}”</p>
 
       <div className="str-diff">

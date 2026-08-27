@@ -842,7 +842,7 @@ export default function KnowledgeBase({
               claim_kb() while the plan does not. */}
           <button className="rail-item link" onClick={onOpenProduct}>
             <BoxIcon />
-            Product
+            Product details
           </button>
           <button className="rail-item link" onClick={onOpenTheme}>
             <BrandIcon />

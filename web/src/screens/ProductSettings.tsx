@@ -89,7 +89,7 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
       </header>
 
       <div className="settings-single">
-        <h1>Product</h1>
+        <h1>Product details</h1>
         <p className="dm-lede">
           What this help center documents. Every guide you build is written against it, so
           you only fill it in once.

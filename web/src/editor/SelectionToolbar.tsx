@@ -3,6 +3,7 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { key } from '../lib/keys'
 import { isExternalUrl, toHref, type LinkTarget } from '../lib/articleLinks'
+import AiMark from '../components/AiMark'
 
 // The selection toolbar.
 //
@@ -331,6 +332,7 @@ function Bar({
             onMouseDown={(e) => e.preventDefault()}
             onClick={onSteer}
           >
+            <AiMark size={13} />
             Change this…
           </button>
         </span>

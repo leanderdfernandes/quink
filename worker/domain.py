@@ -453,8 +453,8 @@ def sweep() -> None:
 async def run_loop() -> None:
     """Background loop. Started from the app lifespan; ends on shutdown.
 
-    Also carries the failed-video retention sweep, the stuck-job timeout sweep and the
-    free-trial lifecycle sweep — same persistent task, no new infra. All of them are state
+    Also carries the two video-retention sweeps, the stuck-job timeout sweep, the
+    abandoned-pause sweep and the free-trial lifecycle sweep — same persistent task, no new infra. All of them are state
     queries, so a tick missed to a restart or an idle-instance recycle costs nothing but a
     delay.
 
@@ -474,6 +474,10 @@ async def run_loop() -> None:
     while True:
         await asyncio.to_thread(sweep)
         await asyncio.to_thread(retention.sweep_timeouts)
+        # Every tick, like the timeout sweep and for the same reason: both exist so a run
+        # nobody is working on cannot sit at 'running' forever, and an hourly cadence would
+        # leave the stuck spinner up for an hour.
+        await asyncio.to_thread(retention.sweep_abandoned_pauses)
         if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
             last_purge = time.monotonic()
             await asyncio.to_thread(retention.sweep)

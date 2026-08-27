@@ -102,9 +102,10 @@ Vercel account and no DNS.
 ### Render idles the service, which stops every sweep
 
 `domain.run_loop()` is a single asyncio task started from the FastAPI lifespan. It is the
-only driver of **five** sweeps: the domain re-check, `retention.sweep_timeouts()`,
-`retention.sweep()` (failed-video retention), `retention.sweep_source_videos()` (the
-per-plan source-video retention window, CLAUDE.md §10f) and `trial.sweep()` (the
+only driver of **six** sweeps: the domain re-check, `retention.sweep_timeouts()`,
+`retention.sweep_abandoned_pauses()` (a run left mid-question by a user whose worker then
+idled out), `retention.sweep()` (failed-video retention), `retention.sweep_source_videos()`
+(the per-plan source-video retention window, CLAUDE.md §10f) and `trial.sweep()` (the
 day-14/7/offline/purge lifecycle). No cron, no scheduler — when the process is not running,
 none of them run.
 
@@ -122,6 +123,7 @@ cd worker
 .venv/Scripts/python -c "import trial;     print(trial.sweep())"        # trial lifecycle
 .venv/Scripts/python -c "import retention; print(retention.sweep())"    # failed-video purge
 .venv/Scripts/python -c "import retention; print(retention.sweep_source_videos())"  # per-plan
+.venv/Scripts/python -c "import retention; print(retention.sweep_abandoned_pauses())"
 .venv/Scripts/python -c "import retention; print(retention.sweep_timeouts())"
 .venv/Scripts/python -c "import domain;    domain.sweep()"              # custom domains
 ```

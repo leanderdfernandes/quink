@@ -108,6 +108,15 @@ export default function QueueDock({
   const [min, setMin] = useState(false)
   if (!items.length) return null
 
+  // A run holding the WRITE stage for an answer. It is the ONE in-flight state with
+  // something for the user to do, and the only one where nothing at all happens until they
+  // do it — so it takes the dock's title, forces it open, and gets a real button.
+  //
+  // This is the fix for a run that sat paused and unanswered: the question lives inside the
+  // editor, and someone who started the run from the help center is never on that screen.
+  // "Waiting for you" in the same grey as "Capturing screenshots" was not a signal.
+  const awaiting = items.filter((i) => i.state === 'awaiting')
+
   const active = items.filter(
     (i) =>
       i.state === 'queued' ||
@@ -120,14 +129,23 @@ export default function QueueDock({
   const total = items.filter((i) => i.state !== 'held').length
   const queued = items.filter((i) => i.state === 'queued')
 
-  const title = active
+  const title = awaiting.length
+    ? awaiting.length > 1
+      ? `${awaiting.length} guides need an answer`
+      : 'One question before I write it'
+    : active
     ? `Building ${active} recording${active > 1 ? 's' : ''}`
     : held
       ? `${ready} ready · ${held} held`
       : `${ready} ready`
 
   return (
-    <aside className={`dock${min ? ' min' : ''}`} aria-label="Recording queue">
+    <aside
+      className={`dock${min && !awaiting.length ? ' min' : ''}${
+        awaiting.length ? ' dock-asking' : ''
+      }`}
+      aria-label="Recording queue"
+    >
       <button
         className="dock-bar"
         onClick={() => setMin((m) => !m)}
@@ -220,6 +238,21 @@ export default function QueueDock({
                         : `${position + 1} in line`
                       : statusOf(item)}
                   </span>
+                  {/* A real target, not a status word. Everything else in this dock is a
+                      report on work happening on its own; this one is the only row that is
+                      a request. */}
+                  {item.state === 'awaiting' && (
+                    <button
+                      type="button"
+                      className="dock-f-answer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        open()
+                      }}
+                    >
+                      Answer
+                    </button>
+                  )}
                   {(item.state === 'queued' || item.state === 'held') && (
                     <button
                       type="button"

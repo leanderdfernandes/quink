@@ -125,6 +125,14 @@ export default function StepCard({
   // pick is held here until the user says which.
   const [pendingFrame, setPendingFrame] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // True while text is selected inside this step. The selection bubble is placed ABOVE the
+  // selection, which on the first line of a body puts it exactly where `.ed-tools` sits
+  // (top:22px, right:0) — so the two overlapped and the marks became unclickable, which is
+  // how a formatting bar reads as broken.
+  //
+  // The tools lose. They are hover-revealed convenience; the bubble is the thing the user
+  // is deliberately reaching for, and someone mid-selection is not reaching for Delete.
+  const [selecting, setSelecting] = useState(false)
 
   const anno = useAnnotator(
     step.annotations ?? [],
@@ -155,6 +163,14 @@ export default function StepCard({
     ],
     content: step.body_text || '',
     onUpdate: ({ editor }) => onBody(editor.getHTML()),
+    // THE SELECTION HIDES THE STEP TOOLS (see `selecting` below). Tracked here rather than
+    // with a useEditorState subscription: this fires only on selection changes in THIS
+    // card's editor, which is exactly the event, and costs nothing on the other cards.
+    onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection
+      setSelecting(to > from)
+    },
+    onBlur: () => setSelecting(false),
   })
 
   // The run finishing flips this without remounting the editor — a remount would drop the
@@ -186,7 +202,7 @@ export default function StepCard({
 
   return (
     <article
-      className={`ed-card${readOnly ? ' ed-card-live' : ''}${annotating ? ' ed-card-anno' : ''}`}
+      className={`ed-card${readOnly ? ' ed-card-live' : ''}${annotating ? ' ed-card-anno' : ''}${selecting ? ' ed-card-selecting' : ''}`}
       // The tooltip for a locked step, drawn from this attribute in CSS rather than by the
       // browser's own `title` — a native tooltip waits a second, appears at the cursor and
       // would duplicate the styled one. Without any tooltip a locked editor just feels
