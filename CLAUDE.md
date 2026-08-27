@@ -97,7 +97,14 @@ operation.
    the context. Same JSON schema in and out.
 
 **Principle:** the video model drafts, the cheap model polishes, code does everything
-deterministic. **Do not add a model call anywhere else.**
+deterministic. **Do not add a model call anywhere else IN THE PIPELINE.**
+
+Scope stated, because AI editing broke the older wording's letter and not its point: three
+model calls now live OUTSIDE the pipeline — `recheck.py` (the video model, on one clip) and
+`steer.py`'s two scopes (the cheap model, on text). None of them touch generation, none
+create job rows, all three check the global spend cap first, and none may write: every one
+returns a proposal the user accepts or discards. Inside `pipeline.py` the rule is unchanged
+and absolute — two calls, one deterministic step, and nothing added.
 
 **Model IDs are config constants** at the top of the worker, never inline. Same rule for
 prompts, paths, and limits: named constant, not scattered literal.
