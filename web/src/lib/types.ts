@@ -1,3 +1,5 @@
+import type { Clarification } from './clarifications'
+
 // The JSON contract (CLAUDE.md §6). This shape is mirrored by:
 //   - worker/models.py  (Pydantic)
 //   - public.steps      (DB rows)
@@ -114,6 +116,10 @@ export type ArticleRow = {
   // so unlike Article['faqs'] this one is always present. The reader never sees this column
   // — it sees the copy frozen into published_content.
   faqs: Faq[]
+  // Questions Stage 1 asked that never got answered — over the run's cap, or skipped
+  // (migration 0042). Same validated shape as jobs.clarifications; the editor renders them
+  // as one-tap cards and clears the column. Null once there is nothing left to ask.
+  open_clarifications: Clarification[] | null
   // Frozen snapshot the reader renders (CLAUDE.md §7 publish). Null until first publish.
   published_content: Article | null
   published_at: string | null
@@ -298,6 +304,15 @@ export type Job = {
   frames_ready_at: string | null
   // The failed job this one re-attempts, if any. Each attempt is its own ledger row.
   retry_of: string | null
+  // Stage 1's clarification questions, ALREADY VALIDATED by the worker (migration 0042).
+  // Never raw model output: every one passed clarify.py's closed enum and length caps
+  // before it was written. The UI renders our copy templates around the slots — see
+  // lib/clarifications.ts, which holds every word a user reads.
+  clarifications: Clarification[] | null
+  // True while the pipeline is holding the WRITE stage for an answer. Screenshots carry on
+  // regardless. Its sibling columns awaiting_input_at / clarifications_closed_at are the
+  // drop-off measure (PRD §10) and are deliberately not granted to clients.
+  awaiting_input: boolean
 }
 
 // The context form, in two tiers (slice 3b). Split by WHO IT DESCRIBES, not by how often

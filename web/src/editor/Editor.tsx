@@ -24,7 +24,9 @@ import FaqPanel from './FaqPanel'
 import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
 import BuildBar, { type BuildStage } from './BuildBar'
+import ClarifyPanel from './ClarifyPanel'
 import { useGeneration } from './useGeneration'
+import { submitClarificationAnswers } from '../lib/clarifications'
 import FailureScreen from '../components/FailureScreen'
 import { degradedNotice } from '../lib/failures'
 import { fetchArticleJob } from '../lib/jobs'
@@ -155,6 +157,7 @@ const PENDING_ARTICLE = {
   source: 'generated',
   source_video_path: null,
   faqs: [],
+  open_clarifications: null,
   published_content: null,
   published_at: null,
   created_at: '',
@@ -427,6 +430,10 @@ export default function Editor({
   // --- The run, if there is one ---------------------------------------------------
   const watchJobId = retryJobId ?? jobId ?? foundJobId
   const gen = useGeneration(watchJobId, articleId, onArticleResolved)
+  // In flight between pressing the button and the poll seeing awaiting_input clear. Only
+  // disables the button — the panel stays exactly as it is, so a failed release leaves the
+  // answers on screen rather than an empty card.
+  const [releasing, setReleasing] = useState(false)
 
   // THE one derived article state (lib/buildState). Everything below reads `building` —
   // the lock, the pill, the bar, Publish — so no component gets to decide for itself
@@ -1253,6 +1260,11 @@ export default function Editor({
 
   const stage: BuildStage = uploading ? 'uploading' : (gen.job?.stage ?? 'analyzing')
 
+  // The pause (PRD §5.4). `awaiting_input` and not the stage: the stage is still
+  // `capturing`, because screenshots really are still being taken — writing has not begun,
+  // which is exactly the point being made to the user.
+  const awaitingInput = !!gen.job?.awaiting_input && (gen.job?.clarifications?.length ?? 0) > 0
+
   // A run that died BEFORE producing an article has nothing to show and nothing to edit —
   // that is the one case still worth a failure screen. Once steps exist the user is looking
   // at their draft, so the article stays open and editable (2g: the steps exist and are
@@ -1405,6 +1417,33 @@ export default function Editor({
           done={stepsReady}
           total={stepTotal}
           uploadProgress={uploadProgress}
+          awaitingInput={awaitingInput}
+        />
+      )}
+
+      {/* The questions, under the bar and above the article that is assembling behind them.
+          Not a modal: a modal would hide the screenshots landing, which is the evidence that
+          nothing is being held up by the pause. */}
+      {building && awaitingInput && gen.job && (
+        <ClarifyPanel
+          // Remounts if the job changes (a retry), so answers to a previous run's questions
+          // cannot be carried into a new one.
+          key={gen.job.id}
+          clarifications={gen.job.clarifications ?? []}
+          shotsDone={stepsReady}
+          shotsTotal={stepTotal}
+          busy={releasing}
+          onSubmit={async (answers, note) => {
+            setReleasing(true)
+            try {
+              await submitClarificationAnswers(gen.job!.id, answers, note)
+            } catch {
+              // The write stage stays held and the panel stays up — which is the honest
+              // state. Nothing is lost and the button can be pressed again.
+            } finally {
+              setReleasing(false)
+            }
+          }}
         />
       )}
 

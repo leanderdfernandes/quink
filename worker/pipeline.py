@@ -8,6 +8,7 @@ The video model drafts, the cheap model polishes, code does everything determini
 Do NOT add a model call anywhere else.
 """
 
+import contextlib
 import logging
 import tempfile
 import time
@@ -18,6 +19,7 @@ from pathlib import Path
 from google.genai import types
 from supabase import Client, create_client
 
+import clarify
 import config
 import failures
 import frames as frames_mod
@@ -48,6 +50,10 @@ def set_stage(job_id: str, stage: str, started: float | None = None) -> None:
     place a wedged run can notice it is wedged — and noticing in-process means the worker
     STOPS, rather than racing retention.sweep_timeouts() and writing a success over a row
     the sweep already failed.
+
+    `started` is the ADJUSTED origin, not when the run began: `_run` pushes it forward by
+    however long the job spent waiting for the user to answer a clarification (PRD §5.4 —
+    no timeout on the pause). Time somebody else is holding is not time we are hung.
     """
     if started is not None and time.monotonic() - started > config.JOB_TIMEOUT_MIN * 60:
         raise failures.Failed(
@@ -152,14 +158,14 @@ def run(
     waiting for a lane sits at 'queued', which is what the dock renders as "in line".
     """
     try:
-        with lanes_mod.Lane(owner_id, lanes):
+        with lanes_mod.Lane(owner_id, lanes) as lane:
             # Queue time ends HERE. The timeout sweep measures a running job from this
             # stamp, never from created_at — otherwise a job that waited its turn behind
             # other runs gets failed as "hung" for the crime of being in the queue (3i).
             # Written in the same `with` that takes the semaphore because that is the one
             # place that already knows the difference.
             db().table("jobs").update({"started_at": _now()}).eq("id", job_id).execute()
-            _run(job_id, kb_id, video_path, context)
+            _run(job_id, kb_id, video_path, context, lane)
     except failures.Failed as e:
         fail(job_id, e.code, str(e))
         raise
@@ -171,7 +177,17 @@ def run(
         raise
 
 
-def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
+def _run(
+    job_id: str,
+    kb_id: str,
+    video_path: str,
+    context: dict,
+    # Handed in so the clarification wait can give the lane back (PRD §5.4). A job sitting
+    # on a question makes no model call and spends nothing; holding a lane through it would
+    # stall every OTHER recording the same account dropped — on the free tier's single lane,
+    # until the queue sweep failed them for never starting.
+    lane: "lanes_mod.Lane | None" = None,
+) -> None:
     started = time.monotonic()
     # Degraded outcomes: the article ships anyway, so these are NOT failure codes and they
     # do not stop the run counting. Recorded so "how often does Stage 2 fall over" is one
@@ -258,7 +274,36 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         }
 
         article_id = _create_article(kb_id, blueprint, video_path)
-        db().table("jobs").update({"article_id": article_id}).eq("id", job_id).execute()
+
+        # The questions Stage 1 earned, validated (PRD §5, §7). NOTHING reaches the database
+        # straight from model output: clarify.validate() checks each one against the closed
+        # enum, caps every slot and label, drops what fails and ranks what survives.
+        #
+        # Overflow past the cap is NOT discarded — it lands on the article and becomes
+        # one-tap cards in the editor, which is the same question set at a later placement.
+        asked, overflow = clarify.validate(blueprint.clarifications, len(blueprint.steps))
+        # THE PAUSE (PRD §5.4). Set here, before frame extraction, so the questions appear
+        # the moment the READ completes — not on a timer and not when the run is nearly
+        # done. Everything below carries on: the user is holding up the write stage alone.
+        db().table("jobs").update(
+            {
+                "article_id": article_id,
+                "clarifications": asked or None,
+                "awaiting_input": bool(asked),
+                "awaiting_input_at": _now() if asked else None,
+            }
+        ).eq("id", job_id).execute()
+        if overflow:
+            db().table("articles").update({"open_clarifications": overflow}).eq(
+                "id", article_id
+            ).execute()
+        log.info(
+            "job %s: Stage 1 offered %s clarification(s), %s asked, %s carried to the editor",
+            job_id,
+            len(blueprint.clarifications),
+            len(asked),
+            len(overflow),
+        )
 
         # The steps land NOW, from Stage 1, with no screenshots yet — not after Stage 2.
         # Between Stage 1 and the end of a run there used to be no row, no jsonb and no
@@ -317,6 +362,22 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
         if len(screenshots) < len(blueprint.steps):
             degraded.append(failures.DEGRADED_FRAMES)
 
+        # --- The wait (PRD §5.4) -----------------------------------------------
+        # Screenshots are done. Writing is the ONE stage that needs the answers, so this is
+        # where the job waits — and the stage stays at `capturing` while it does, because
+        # writing has not begun. The client renders "Writing your guide — waiting for you"
+        # off `awaiting_input`, not off `stage`.
+        if asked:
+            with lane.paused() if lane else contextlib.nullcontext():
+                answers, waited = _await_answers(job_id)
+        else:
+            answers, waited = {}, 0.0
+        # Time the USER held does not count against JOB_TIMEOUT_MIN: push the deadline's
+        # origin forward by exactly what they took. Without this a run someone answered
+        # after lunch would be swept as hung, and told "no worker progress" — which is not
+        # what happened and blames us for their pause.
+        started += waited
+
         # --- Stage: writing (Stage 2 — the cheap model polishes) ---------------
         set_stage(job_id, config.STAGE_WRITING, started)
 
@@ -330,6 +391,7 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
                     prompts.build_polish_prompt(
                         context_block=prompts.build_context_block(context),
                         article_json=blueprint.model_dump_json(indent=2),
+                        answers_block=prompts.build_answers_block(asked, answers),
                     )
                 ],
                 schema=Blueprint,
@@ -414,6 +476,56 @@ def _run(job_id: str, kb_id: str, video_path: str, context: dict) -> None:
             ).eq("id", job_id).execute()
         finally:
             db().table("jobs").update({"frames_ready_at": _now()}).eq("id", job_id).execute()
+
+
+def _await_answers(job_id: str) -> tuple[dict, float]:
+    """Block until the client clears `awaiting_input`. Returns (answers, seconds waited).
+
+    NO TIMEOUT AND NO AUTO-ADVANCE (PRD §5.4). Writing starts when the user presses the
+    button and at no other moment — a run that quietly wrote itself while somebody was
+    mid-answer would make every question on the screen a lie.
+
+    That is in tension with §10g's "a job must be able to end", and the tension is resolved
+    by making a paused job legible rather than by adding a deadline to it:
+
+      * this wait does not count against JOB_TIMEOUT_MIN (the caller pushes the origin
+        forward by what we return), and
+      * retention.sweep_timeouts() skips rows with `awaiting_input` set,
+
+    so a paused job is never mistaken for a hung one. What the user sees is "waiting for
+    you", which is a state with an action in it, not a spinner. A user who never comes back
+    leaves a row in that state forever, deliberately: it is recoverable — listInFlightJobs
+    finds it on the next load and the dock offers the questions again — and failing it
+    would throw away a completed read plus every screenshot to tidy up a row.
+
+    Polls rather than listens: this worker already polls for everything else, a Realtime
+    subscription is a second transport to keep alive across a restart, and the wait is
+    measured in the seconds a person takes to tap three options.
+    """
+    waited_from = time.monotonic()
+    log.info("job %s: read complete, waiting for the user's answers", job_id)
+    while True:
+        row = (
+            db()
+            .table("jobs")
+            .select("awaiting_input, clarification_answers, status")
+            .eq("id", job_id)
+            .maybe_single()
+            .execute()
+        )
+        data = (row.data if row else None) or {}
+        # The row went away, or something else already failed this job. Stop waiting on a
+        # question nobody will answer — the caller's next set_stage would fight the sweep.
+        if not data or data.get("status") == "error":
+            raise failures.Failed(
+                failures.INTERNAL_ERROR,
+                "job row vanished or was failed while awaiting clarification answers",
+            )
+        if not data.get("awaiting_input"):
+            waited = time.monotonic() - waited_from
+            log.info("job %s: released after %.0fs, writing now", job_id, waited)
+            return (data.get("clarification_answers") or {}), waited
+        time.sleep(config.CLARIFICATION_POLL_SECONDS)
 
 
 def _create_article(kb_id: str, blueprint: Blueprint, video_path: str) -> str:

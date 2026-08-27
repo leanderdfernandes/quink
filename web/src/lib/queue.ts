@@ -28,6 +28,10 @@ export type QueueState =
   | 'queued'
   | 'uploading'
   | 'running'
+  // Running, but holding the WRITE stage for an answer (PRD §5.4). A separate state and not
+  // a flag on `running`, because it is the one in-flight state with something for the user
+  // to DO — the row has to say so and open the questions rather than reading as slow.
+  | 'awaiting'
   // Left the in-flight list; we have not yet read WHICH way it ended. A distinct state
   // because "it stopped running" and "it succeeded" must never be the same statement.
   | 'settling'
@@ -242,7 +246,7 @@ export function useQueue({
             name: 'Your recording',
             file: null,
             recording: '',
-            state: 'running',
+            state: j.awaiting_input ? 'awaiting' : 'running',
             progress: 1,
             jobId: j.id,
             articleId: j.article_id,
@@ -254,10 +258,18 @@ export function useQueue({
         const updated = prev.map((i) => {
           if (!i.jobId || i.state === 'done' || i.state === 'error') return i
           const j = live.get(i.jobId)
-          if (j) return { ...i, state: 'running' as const, stage: j.stage, articleId: j.article_id }
+          if (j)
+            return {
+              ...i,
+              state: (j.awaiting_input ? 'awaiting' : 'running') as QueueState,
+              stage: j.stage,
+              articleId: j.article_id,
+            }
           // Gone from the in-flight list: it finished. Which way is a question for the row
           // itself, resolved below — never guessed here.
-          return i.state === 'running' ? { ...i, state: 'settling' as const } : i
+          return i.state === 'running' || i.state === 'awaiting'
+            ? { ...i, state: 'settling' as const }
+            : i
         })
         return [...updated, ...adopted]
       })
@@ -303,7 +315,9 @@ export function useQueue({
   // --- the lane runner --------------------------------------------------------------
   useEffect(() => {
     if (!kbId) return
-    const active = items.filter((i) => i.state === 'uploading' || i.state === 'running').length
+    const active = items.filter(
+      (i) => i.state === 'uploading' || i.state === 'running' || i.state === 'awaiting',
+    ).length
     if (active >= lanes) return
     const next = items.find((i) => i.state === 'queued' && i.file && !starting.current.has(i.id))
     if (!next) return

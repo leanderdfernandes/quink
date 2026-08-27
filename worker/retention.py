@@ -80,6 +80,13 @@ def _sweep_hung() -> int:
             .table("jobs")
             .select("id")
             .eq("status", "running")
+            # A job WAITING FOR THE USER is not hung (PRD §5.4, migration 0043). The
+            # pipeline is sitting in _await_answers by design, and the screen says
+            # "waiting for you" — failing it would blame us for their pause and throw
+            # away a completed read plus every screenshot. The in-process deadline
+            # excludes the same interval; this is the other half of that rule, for the
+            # case where the process died while paused.
+            .eq("awaiting_input", False)
             # started_at is null on rows written before migration 0028; fall back to
             # created_at for those rather than leaving them un-sweepable forever.
             .or_(f"started_at.lt.{cutoff},and(started_at.is.null,created_at.lt.{cutoff})")
@@ -457,6 +464,9 @@ def demo() -> None:
 
     # HUNG — running only, measured from started_at.
     assert ("eq", "status", "running") in calls, "the hung sweep considers RUNNING jobs only"
+    assert ("eq", "awaiting_input", False) in calls, (
+        "a job waiting for the user is not hung — failing it blames us for their pause"
+    )
     ors = [c for c in calls if c[0] == "or"]
     assert ors, "hung jobs must be selected on started_at, not created_at"
     assert "started_at.lt." in ors[0][1], f"measure work from started_at: {ors[0][1]}"

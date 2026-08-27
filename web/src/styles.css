@@ -8379,3 +8379,236 @@ div.rail-meter {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* --- The pause (PRD "Context & AI Editing" §5.4) --------------------------------------
+   Questions Stage 1 earned, under the build bar and above the article that is still
+   assembling behind them. Deliberately NOT a modal: hiding the screenshots landing would
+   remove the evidence that the pause is holding up one stage and not the machine.
+
+   Type stays on 12 / 13 / 15 / 18. The question is the only 18 on the strip, because it is
+   the only thing being asked. */
+.clar {
+  max-width: 660px;
+  margin: 0 auto;
+  padding: 4px 20px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.clar-found {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--secondary);
+}
+.clar-found b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.clar-grp {
+  margin: 6px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.clar-done {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.clar-ansd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border-radius: var(--r-sm);
+  background: var(--subtle);
+}
+.clar-ansd i {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--brand-600);
+  color: #fff;
+  flex: none;
+}
+.clar-ansd p {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+.clar-ansd button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-600);
+  cursor: pointer;
+}
+.clar-ansd button:hover {
+  color: var(--brand-700);
+}
+
+.clar-q {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 20px;
+  animation: clar-up 0.26s ease-out;
+}
+@keyframes clar-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clar-q {
+    animation: none;
+  }
+}
+/* Evidence, first and in the brand tint. It is the part of the question a user can check
+   against their own recording, which is what stops it reading as invented. */
+.clar-ev {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--brand-700);
+  background: var(--brand-50);
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  margin-bottom: 12px;
+}
+.clar-q h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.clar-opts {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 16px;
+}
+.clar-opt {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: var(--r-pill);
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.clar-opt:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+/* The DEFAULT is the primary — not because it is more correct, but because it is what
+   happens if they walk away, and the screen should agree with the machine about that. */
+.clar-opt.primary {
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.clar-opt.primary:hover {
+  background: var(--brand-700);
+  color: #fff;
+}
+.clar-skip {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 8px 4px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.clar-skip:hover {
+  color: var(--ink);
+}
+.clar-other {
+  display: flex;
+  gap: 7px;
+  margin-top: 12px;
+}
+.clar-other input {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.clar-other input:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.clar-other button {
+  border: 0;
+  background: var(--brand-600);
+  color: #fff;
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.clar-other button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.clar-fb {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.clar-more summary {
+  font-size: 13px;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.clar-more textarea {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 72px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.clar-more textarea:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.clar-shots {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+/* "waiting for you" on the writing phase. Names WHO the machine is waiting on — without it
+   the last row reads as stalled, which points the blame the wrong way. */
+.bbar-waiting {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--brand-700);
+}

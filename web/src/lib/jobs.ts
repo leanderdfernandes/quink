@@ -7,7 +7,10 @@ import type { Job } from './types'
 //
 // Columns are the 0020 allowlist (id, article_id, kb_id, stage, status are all granted).
 // Asking for one that isn't would 401 the whole query, so keep this list honest.
-export type InFlightJob = Pick<Job, 'id' | 'article_id' | 'kb_id' | 'stage' | 'status'>
+export type InFlightJob = Pick<
+  Job,
+  'id' | 'article_id' | 'kb_id' | 'stage' | 'status' | 'awaiting_input'
+>
 
 // The most recent run that produced this article. Read on demand — the frame picker needs
 // it to tell "the frames are still being pulled" apart from "pulling them failed", and
@@ -39,7 +42,11 @@ export async function fetchArticleJob(articleId: string): Promise<ArticleJob | n
 export async function listInFlightJobs(userId: string): Promise<InFlightJob[]> {
   const { data } = await supabase
     .from('jobs')
-    .select('id,article_id,kb_id,stage,status')
+    // `awaiting_input` (migration 0042) is what makes the pause RECOVERABLE. A run holding
+    // the write stage looks identical to a slow one from the outside, so without it a user
+    // who closed the tab mid-question comes back to a dock row that says "capturing
+    // screenshots" forever and no way to reach the question again.
+    .select('id,article_id,kb_id,stage,status,awaiting_input')
     .eq('user_id', userId)
     .in('status', ['queued', 'running'])
     .order('created_at', { ascending: false })

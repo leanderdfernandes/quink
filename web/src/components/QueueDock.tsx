@@ -71,6 +71,10 @@ function statusOf(item: QueueItem): string {
         default:
           return 'Watching your recording'
       }
+    // Names WHO is being waited on. "Capturing screenshots" would be true and useless here
+    // — the row's whole job in this state is to say there is something to come back to.
+    case 'awaiting':
+      return 'Waiting for you'
     case 'settling':
       return 'Finishing'
     case 'done':
@@ -105,7 +109,11 @@ export default function QueueDock({
   if (!items.length) return null
 
   const active = items.filter(
-    (i) => i.state === 'queued' || i.state === 'uploading' || i.state === 'running',
+    (i) =>
+      i.state === 'queued' ||
+      i.state === 'uploading' ||
+      i.state === 'running' ||
+      i.state === 'awaiting',
   ).length
   const ready = items.filter((i) => i.state === 'done').length
   const held = items.filter((i) => i.state === 'held').length
@@ -163,7 +171,10 @@ export default function QueueDock({
             // the video model takes, which is worse than never offering it.
             // NOT `queued`: a file that has not entered a lane stays editable in the dock
             // (3d), and opening it into a locked editor would take that away.
-            const watchable = item.state === 'uploading' || item.state === 'running'
+            const watchable =
+              item.state === 'uploading' ||
+              item.state === 'running' ||
+              item.state === 'awaiting'
             const openable = !!item.articleId || watchable
             const open = () =>
               item.articleId ? onOpenArticle(item.articleId) : onWatchItem(item.id)

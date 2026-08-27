@@ -31,7 +31,12 @@ const POLISH_FLASH_MS = 800
 
 // The columns the client is GRANTED (migration 0020). failure_detail is not among them and
 // asking for it would 401 the whole query — which is the point.
-const JOB_COLUMNS = 'id,kb_id,article_id,stage,status,failure_code,degraded,video_purged_at'
+const JOB_COLUMNS =
+  'id,kb_id,article_id,stage,status,failure_code,degraded,video_purged_at,' +
+  // Migration 0042 granted exactly these two. Its siblings awaiting_input_at and
+  // clarifications_closed_at are NOT granted — they are the drop-off measure, ours not the
+  // customer's — and asking for one would 401 this whole query.
+  'clarifications,awaiting_input'
 
 export type Generation = {
   job: Job | null

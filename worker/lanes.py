@@ -22,6 +22,7 @@ update` over in-flight jobs, or an advisory lock keyed on user_id), not into a b
 here.
 """
 
+import contextlib
 import logging
 import threading
 
@@ -69,6 +70,29 @@ class Lane:
             self._sem.release()
         return False
 
+    @contextlib.contextmanager
+    def paused(self):
+        """Give the lane back for the duration of the block, then take it again.
+
+        For the clarification wait (PRD §5.4), which can last as long as a person takes to
+        answer. A lane bounds SIMULTANEOUS MODEL CALLS — that is the read-then-act window in
+        the docstring above — and a job sitting on a question is making no call and spending
+        nothing. Holding the lane through it would mean one paused run stops every other
+        recording that account dropped, on the free tier's single lane indefinitely, until
+        the queue sweep failed them for never starting.
+
+        Re-acquiring can block, and that is correct: the run is about to make a model call
+        again, which is the thing the lane exists to bound.
+        """
+        if self._sem is None:
+            yield
+            return
+        self._sem.release()
+        try:
+            yield
+        finally:
+            self._sem.acquire()
+
 
 def _demo() -> None:
     """`python lanes.py` — the only thing worth asserting is that the lane actually holds
@@ -96,6 +120,27 @@ def _demo() -> None:
         ["a-in", "a-out", "b-in", "b-out"],
         ["b-in", "b-out", "a-in", "a-out"],
     ), order
+
+    # paused() hands the lane back, so a run holding a question does not stop the account's
+    # other recordings — the free tier has ONE lane and this is the difference between "the
+    # rest are queued behind a question" and "the rest never run".
+    order.clear()
+    holder = Lane("u9", 1)
+    holder.__enter__()
+
+    def other() -> None:
+        with Lane("u9", 1):
+            order.append("second-in")
+
+    with holder.paused():
+        second = threading.Thread(target=other)
+        second.start()
+        second.join(timeout=1)
+        assert order == ["second-in"], f"a paused lane must let the next run through: {order}"
+    # And the pause TAKES IT BACK on the way out — the run is about to call a model again,
+    # which is the thing the lane exists to bound. Getting here at all proves it.
+    holder.__exit__()
+    assert order == ["second-in"]
 
     # A different account is never blocked by this one.
     held = Lane("u2", 1)
