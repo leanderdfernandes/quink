@@ -48,6 +48,9 @@ VIDEO_PURGED = "video_purged"
 # failure and NOT a meter: the copy on the other side is "try that again in a minute" and
 # nothing counts down. Naming a number here would invent the second meter §8 forbids.
 RECHECK_BUSY = "recheck_busy"
+# A steer with nothing to steer toward. Refused before the model call, because "make this
+# better" with an empty field is not an instruction and the answer would be a reroll.
+STEER_EMPTY = "steer_empty"
 
 # --- Degraded outcomes -----------------------------------------------------
 # The article SHIPS, so these are not failure codes and they do NOT stop the run counting

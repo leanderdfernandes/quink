@@ -26,9 +26,18 @@ import PublishModal from './PublishModal'
 import BuildBar, { type BuildStage } from './BuildBar'
 import ClarifyPanel from './ClarifyPanel'
 import RecheckCard from './RecheckCard'
+import SteerField from './SteerField'
+import SteerCard from './SteerCard'
+import ArticleSteerBar, { KeepAllBar } from './ArticleSteerBar'
+import OpenClarifications, { instructionFor } from './OpenClarifications'
 import { useGeneration } from './useGeneration'
-import { submitClarificationAnswers } from '../lib/clarifications'
+import {
+  clearOpenClarifications,
+  submitClarificationAnswers,
+  type Clarification,
+} from '../lib/clarifications'
 import { recheckStep, type RecheckResult } from '../lib/recheck'
+import { steerArticle, steerBlock, type ArticleProposal } from '../lib/steer'
 import { canonicalBody } from '../lib/pendingEdits'
 import FailureScreen from '../components/FailureScreen'
 import { degradedNotice } from '../lib/failures'
@@ -492,6 +501,113 @@ export default function Editor({
     } finally {
       setRecheckBusy(null)
     }
+  }
+
+  // --- Steerable editing (PRD §6.1, §6.4) ----------------------------------------
+  // ONE pending map for BOTH scopes, keyed by step id. A selection edit and an
+  // article-wide edit produce the same thing — a proposal on a step — so they render
+  // through one path and "Keep all" cannot mean something different depending on which
+  // button opened the field.
+  const [steerOpen, setSteerOpen] = useState<{
+    stepId: string
+    selection: string
+    initial: string
+  } | null>(null)
+  const [pending, setPending] = useState<
+    Record<string, { instruction: string; proposed: string }>
+  >({})
+  const [steerBusy, setSteerBusy] = useState<string | null>(null)
+  const [articlePlan, setArticlePlan] = useState<ArticleProposal | null>(null)
+  const [articleBusy, setArticleBusy] = useState(false)
+  const [articleErr, setArticleErr] = useState<string | null>(null)
+
+  async function askSteer(step: StepRow, instruction: string, selection: string) {
+    setSteerOpen(null)
+    setSteerBusy(step.id)
+    try {
+      const out = await steerBlock(articleId!, step.step_number, instruction, selection)
+      setPending((p) => ({
+        ...p,
+        [step.id]: { instruction: out.instruction, proposed: out.proposed_text },
+      }))
+      clearError()
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'That didn’t work just now.')
+    } finally {
+      setSteerBusy(null)
+    }
+  }
+
+  async function askArticleSteer(instruction: string) {
+    setArticleBusy(true)
+    setArticleErr(null)
+    try {
+      const out = await steerArticle(articleId!, instruction)
+      if (!out.steps.length) {
+        // A steer that changes nothing is a real answer and says so — silently showing an
+        // empty plan would read as a failure.
+        setArticleErr('Nothing in the guide needed that change.')
+        return
+      }
+      const byNumber = new Map(steps.map((s) => [s.step_number, s.id]))
+      const next: Record<string, { instruction: string; proposed: string }> = {}
+      for (const p of out.steps) {
+        const id = byNumber.get(p.step_number)
+        if (id) next[id] = { instruction: out.instruction, proposed: p.proposed_text }
+      }
+      setPending((prev) => ({ ...prev, ...next }))
+      setArticlePlan(out)
+    } catch (e) {
+      setArticleErr(e instanceof Error ? e.message : 'That didn’t work just now.')
+    } finally {
+      setArticleBusy(false)
+    }
+  }
+
+  // Keep is the ONLY write in this feature, and it happens because the user pressed it.
+  // It goes through saveStep like a hand edit, so it rides the same conflict guard (§10k)
+  // and the same undo history — an AI change must not be a privileged kind of change.
+  function keepSteer(stepId: string) {
+    const p = pending[stepId]
+    if (!p) return
+    dropPending(stepId)
+    saveStep(stepId, { body_text: canonicalBody(p.proposed) })
+    bumpRev(stepId)
+  }
+
+  // The questions the run never got to ask (§5.4). Answering one composes an instruction
+  // from OUR template and sends it through the same steer call as everything else, so the
+  // answer lands as a diff on the step its evidence points at — reviewable, like every
+  // other AI change. An option whose answer is the default we already applied changes
+  // nothing and just clears itself, because pretending otherwise would be the form field
+  // in a costume that admission test 2 exists to reject.
+  const [openClar, setOpenClar] = useState<Clarification[] | null>(null)
+  useEffect(() => {
+    setOpenClar(article?.open_clarifications ?? null)
+  }, [article?.id, article?.open_clarifications])
+
+  function dismissOpenClar() {
+    setOpenClar(null)
+    if (articleId) void clearOpenClarifications(articleId).catch(() => {})
+  }
+
+  async function answerOpenClar(c: Clarification, optionId: string) {
+    setOpenClar((prev) => (prev ? prev.filter((x) => x !== c) : prev))
+    const instruction = instructionFor(c, optionId)
+    const step = steps[c.evidence.step_index]
+    if (!instruction || !step) return
+    await askSteer(step, instruction, '')
+  }
+
+  function dropPending(stepId: string) {
+    setPending((prev) => {
+      const next = { ...prev }
+      delete next[stepId]
+      // The plan describes the pending set. Once it is empty the bar has nothing to
+      // announce and goes back to being one line.
+      if (!Object.keys(next).length) setArticlePlan(null)
+      return next
+    })
   }
 
   // The ONLY write in this feature, and it happens because the user pressed Keep. It goes
@@ -1557,6 +1673,29 @@ export default function Editor({
               )}
               <div className="ed-divider" />
 
+              {/* Article scope (§6.4). ABOVE the article, collapsible, and never a side
+                  rail: usage is bursty and terminal, so a permanent panel would leave an
+                  empty thread staring at the user and quietly reframe this as a chatbot.
+                  Hidden while the run owns the document — there is nothing settled to
+                  steer yet. */}
+              {!building && !skeleton && articleId && (
+                <ArticleSteerBar
+                  busy={articleBusy}
+                  pending={articlePlan}
+                  error={articleErr}
+                  onSubmit={askArticleSteer}
+                />
+              )}
+
+              {!building && !skeleton && openClar?.length ? (
+                <OpenClarifications
+                  clarifications={openClar}
+                  busy={!!steerBusy}
+                  onAnswer={answerOpenClar}
+                  onDismiss={dismissOpenClar}
+                />
+              ) : null}
+
               {!building && <InsertHere at={0} onInsert={insertStep} first />}
 
               {skeleton
@@ -1601,6 +1740,12 @@ export default function Editor({
                         onBody={(body_text) => saveStep(s.id, { body_text })}
                         onDelete={() => deleteStep(i)}
                         onRecheck={() => runRecheck(s)}
+                        onSteerSelection={
+                          articleId && !building
+                            ? (selection) =>
+                                setSteerOpen({ stepId: s.id, selection, initial: '' })
+                            : undefined
+                        }
                         onPickFrame={(path) => pickFrame(s.id, path)}
                         onRemoveFrame={() => removeFrame(s.id)}
                         onAnnotate={(annotations) => annotateStep(s.id, annotations)}
@@ -1623,6 +1768,38 @@ export default function Editor({
                       )}
                       {recheckBusy === s.id && (
                         <p className="rck-wait">Re-reading that part of the recording…</p>
+                      )}
+                      {steerOpen?.stepId === s.id && (
+                        <SteerField
+                          placeholder="Make this more… · say it as… · add…"
+                          initial={steerOpen.initial}
+                          onSubmit={(instruction) =>
+                            askSteer(s, instruction, steerOpen.selection)
+                          }
+                          onCancel={() => setSteerOpen(null)}
+                        />
+                      )}
+                      {steerBusy === s.id && <p className="rck-wait">Working on it…</p>}
+                      {pending[s.id] && (
+                        <SteerCard
+                          instruction={pending[s.id].instruction}
+                          current={s.body_text}
+                          proposed={pending[s.id].proposed}
+                          busy={steerBusy === s.id}
+                          onKeep={() => keepSteer(s.id)}
+                          onDiscard={() => dropPending(s.id)}
+                          // Pre-filled, never a blind reroll: editing the ask is steering.
+                          onRetry={() => {
+                            const instruction = pending[s.id].instruction
+                            dropPending(s.id)
+                            setSteerOpen({ stepId: s.id, selection: '', initial: instruction })
+                          }}
+                          // The chips DO fire — by this point there is a concrete result to
+                          // react to, which is not true of the quick words under the field.
+                          onRefine={(word) =>
+                            askSteer(s, `${pending[s.id].instruction}, ${word}`, '')
+                          }
+                        />
                       )}
                       {!building && <InsertHere at={i + 1} onInsert={insertStep} />}
                     </div>
@@ -1652,6 +1829,17 @@ export default function Editor({
                 />
               )}
             </div>
+            {/* One decision for a whole change set, so a fourteen-step terminology pass is
+                not fourteen taps. Every diff still stands on its own step and can be taken
+                or left there — this is an accelerator, never the only way through. */}
+            <KeepAllBar
+              count={Object.keys(pending).length}
+              onKeepAll={() => Object.keys(pending).forEach(keepSteer)}
+              onDiscardAll={() => {
+                setPending({})
+                setArticlePlan(null)
+              }}
+            />
           </main>
         </div>
       )}

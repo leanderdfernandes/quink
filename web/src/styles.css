@@ -8744,3 +8744,326 @@ div.rail-meter {
   color: var(--ink);
   border-color: var(--muted);
 }
+
+/* --- Steerable editing (PRD "Context & AI Editing" §6.1, §6.2, §6.4) ------------------ */
+
+/* "Change this…" — the one WORD on a bar of glyphs, after a separator, because it is the
+   one item that opens a conversation instead of toggling a mark. */
+.tb-steer {
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--brand-200);
+}
+.tb-steer:hover {
+  color: #fff;
+}
+
+/* The instruction field. Shared by the bubble and the article bar, so one act cannot grow
+   two affordances. */
+.str {
+  margin: 10px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 12px 14px;
+}
+.str-row {
+  display: flex;
+  gap: 8px;
+}
+.str-in {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+}
+.str-in:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.str-go {
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.str-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.str-quick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+/* Below the field, and they FILL it rather than firing. A chip that fires is a fixed verb
+   in a different hat — it decides for the user what "better" means, which is the thing the
+   field replaces. */
+.str-chip {
+  border: 1px solid var(--border);
+  background: var(--paper);
+  border-radius: var(--r-pill);
+  padding: 4px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.str-chip:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+.str-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.str-cancel {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.str-cancel:hover {
+  color: var(--ink);
+}
+
+/* The diff card. Neutral left edge, unlike the recheck card's brand one: this is a matter
+   of taste and that one is a matter of fact, and the two should not look interchangeable. */
+.str-card {
+  margin: 10px 0 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+/* The instruction, quoted. A result nobody recognises has to be traceable to what they
+   actually asked for, or the only conclusion available is that the tool acted on its own. */
+.str-asked {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--secondary);
+}
+.str-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.str-was p,
+.str-now p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.str-was p {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+.str-now p {
+  color: var(--ink);
+}
+.str-lbl {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* ON THE RESULT, not the trigger. Nobody gets the instruction right first time, and
+   re-articulating from scratch is what makes AI editing feel like work. */
+.str-refine {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.str-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.str-keep,
+.str-again,
+.str-discard {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.str-keep {
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.str-keep:hover {
+  background: var(--brand-700);
+}
+.str-again,
+.str-discard {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--secondary);
+}
+.str-again:hover,
+.str-discard:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.str-keep:disabled,
+.str-again:disabled,
+.str-discard:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Article scope. A bar, collapsed to one line by default — never a rail. Usage is bursty
+   and terminal, so a permanent panel would leave an empty thread staring at the user. */
+.asb {
+  margin: 0 0 18px;
+  width: 100%;
+}
+.asb-shut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.asb-shut:hover {
+  border-color: var(--brand-300);
+  color: var(--brand-700);
+  background: var(--brand-50);
+}
+/* THE PLAN — which steps change and how, said before any diff lands. Without it a
+   multi-step edit feels like the article shifted underneath the user. */
+.asb-plan {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+.asb-asked {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--secondary);
+}
+.asb-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.asb-list li {
+  font-size: 13px;
+  color: var(--ink);
+}
+.asb-list b {
+  margin-right: 8px;
+  font-weight: 600;
+  color: var(--brand-700);
+}
+.asb-note,
+.asb-err {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.asb-err {
+  color: var(--danger, #a8462c);
+}
+/* One decision for a whole change set. Sticky, because a fourteen-step pass is longer than
+   the viewport and the choice has to stay reachable from wherever they are reading. */
+.asb-all {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px auto 0;
+  width: fit-content;
+  padding: 9px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--sh-md, var(--sh-sm));
+  font-size: 13px;
+  color: var(--secondary);
+  z-index: 3;
+}
+
+/* Questions the run never got to ask, carried into the editor. */
+.opc {
+  margin: 0 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+.opc-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.opc-hd button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.opc-hd button:hover {
+  color: var(--ink);
+}
+.opc-q + .opc-q {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.opc-ask {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}

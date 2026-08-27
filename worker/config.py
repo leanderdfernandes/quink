@@ -377,6 +377,21 @@ RECHECK_WINDOW_SECONDS = 6
 # alongside the lane when there is a second instance.
 RECHECK_MAX_PER_ARTICLE_PER_HOUR = 12
 
+# --- Steerable editing (PRD "Context & AI Editing" §6.1, §6.4) --------------
+# The commodity half of editing: any chat model can shorten a paragraph. Unlimited on every
+# tier (PRD §8) — a text edit is ~$0.0002, and a counter here manufactures anxiety over
+# nothing exactly where the product should feel generous.
+#
+# What the user typed, capped. It is fenced as data in the prompt either way; this stops a
+# pasted essay dominating a prompt whose instructions have to stay in charge of it.
+STEER_INSTRUCTION_MAX = 400
+
+# How much longer than its input a replacement may be before it stops being an EDIT.
+# Generous, because "explain why" legitimately turns one sentence into two. It exists for
+# the case where an instruction is read as a writing brief and a two-line step comes back
+# as an essay.
+STEER_LENGTH_CEILING = 2.5
+
 # Dense frame set for the Tier-1 filmstrip: 1 frame per second across the whole
 # video. Pure ffmpeg, no model call — "code does everything deterministic".
 DENSE_FRAME_FPS = 1

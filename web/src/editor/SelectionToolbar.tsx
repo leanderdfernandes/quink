@@ -25,9 +25,19 @@ type Props = {
   editor: Editor | null
   /** Other articles in this help center, for the link picker. */
   targets: LinkTarget[]
+  /**
+   * "Change this…" (PRD §6.1) — the one AI item on the bar, and it is deliberately last
+   * and separated. The marks are instant and local; this one asks a question and comes back
+   * with a proposal, which is a different KIND of act and should not sit in the same run of
+   * buttons as Bold.
+   *
+   * Absent when the parent cannot steer (no article id yet, mid-generation), rather than
+   * present and inert: an item that does nothing teaches people the feature is broken.
+   */
+  onSteer?: (selection: string) => void
 }
 
-export default function SelectionToolbar({ editor, targets }: Props) {
+export default function SelectionToolbar({ editor, targets, onSteer }: Props) {
   // One flag for every reason the bubble should go away: a scroll, Escape, typing, or a
   // drag in progress. Unmounting the whole menu is cheaper and more predictable than
   // persuading the plugin's shouldShow to re-run, and it is what "hide" actually means.
@@ -147,7 +157,17 @@ export default function SelectionToolbar({ editor, targets }: Props) {
         {linking ? (
           <LinkPanel editor={editor} targets={targets} onClose={closeLink} />
         ) : (
-          <Bar editor={editor} onLink={() => setLinking(true)} />
+          <Bar
+            editor={editor}
+            onLink={() => setLinking(true)}
+            onSteer={
+              onSteer &&
+              (() => {
+                const { from, to } = editor.state.selection
+                onSteer(editor.state.doc.textBetween(from, to, ' ').trim())
+              })
+            }
+          />
         )}
       </div>
     </BubbleMenu>
@@ -235,7 +255,15 @@ const ACTIONS: Action[] = [
   },
 ]
 
-function Bar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
+function Bar({
+  editor,
+  onLink,
+  onSteer,
+}: {
+  editor: Editor
+  onLink: () => void
+  onSteer?: () => void
+}) {
   const btns = useRef<(HTMLButtonElement | null)[]>([])
 
   // B2 — the readback is half the feature, and it only works if this subscribes to the
@@ -286,6 +314,27 @@ function Bar({ editor, onLink }: { editor: Editor; onLink: () => void }) {
           </span>
         )
       })}
+      {/* Last, after a separator, and the only item on the bar that is a WORD rather than a
+          glyph — because it is the only one that opens a conversation instead of toggling a
+          mark. The marks are instant and local; this one asks and comes back. */}
+      {onSteer && (
+        <span className="tb-slot">
+          <span className="tb-sep" aria-hidden />
+          <button
+            type="button"
+            ref={(el) => {
+              btns.current[ACTIONS.length] = el
+            }}
+            className="tb-steer"
+            aria-label="Change this with AI"
+            data-tip="Change this…"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={onSteer}
+          >
+            Change this…
+          </button>
+        </span>
+      )}
     </div>
   )
 }

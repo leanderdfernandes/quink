@@ -113,6 +113,12 @@ export const QUOTA_EXCEEDED = 'quota_exceeded'
 export const RECHECK_BUSY = 'recheck_busy'
 export const RECHECK_BUSY_MESSAGE = 'Give that a moment and try again.'
 
+// Nor is `steer_empty`. An instruction field with nothing in it is not a failure of
+// anything — it is a form that has not been filled in, and the field says so where the
+// user is already looking. The button is disabled long before this can fire; the code
+// exists because the worker refuses server-side too, and the SPA is not a validator.
+export const STEER_EMPTY = 'steer_empty'
+
 // --- Degraded runs (CLAUDE.md §10g) ---------------------------------------------
 // A degraded run SHIPPED an article and counted against quota. These are not failures and
 // share nothing with the map above: no heading, no recovery, no screen. One sentence, in a

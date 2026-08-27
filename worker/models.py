@@ -115,6 +115,27 @@ class RecheckRequest(BaseModel):
     step_number: int
 
 
+class SteerBlockRequest(BaseModel):
+    """Edit one step to an instruction (PRD §6.1).
+
+    The step's TEXT is deliberately not a field: the worker reads it from the database. A
+    client-supplied body would be a way to hand the model text that is not in the article.
+    `selection` is context — where the user's attention was — and is capped in the prompt.
+    """
+
+    article_id: str
+    step_number: int
+    instruction: str
+    selection: str = ""
+
+
+class SteerArticleRequest(BaseModel):
+    """The same instruction, article-wide (PRD §6.4)."""
+
+    article_id: str
+    instruction: str
+
+
 class RetryRequest(BaseModel):
     """Re-run a failed job from the recording already in Storage. No file, deliberately:
     a retry that asks for the video again is not a retry."""

@@ -49,6 +49,10 @@ type Props = {
   // recording left to check: `hasVideo` is false once the retention sweep collected it, and
   // a step whose image was hand-uploaded has no moment to go back to either.
   onRecheck: () => void
+  // "Change this…" from the selection bubble (§6.1). Carries the selected text up as
+  // CONTEXT — the worker reads the step's real body from the database, so this is a hint
+  // about where the user's attention was, never the thing being edited.
+  onSteerSelection?: (selection: string) => void
   onPickFrame: (newPath: string) => void
   onRemoveFrame: () => void
   onAnnotate: (annotations: Annotation[]) => void
@@ -84,6 +88,7 @@ export default function StepCard({
   onBody,
   onDelete,
   onRecheck,
+  onSteerSelection,
   onPickFrame,
   onRemoveFrame,
   onAnnotate,
@@ -263,7 +268,11 @@ export default function StepCard({
       />
       {/* Renders itself out of existence when the selection is collapsed or the editor is
           read-only, so there is nothing to gate here. */}
-      <SelectionToolbar editor={editor} targets={linkTargets} />
+      <SelectionToolbar
+        editor={editor}
+        targets={linkTargets}
+        onSteer={onSteerSelection}
+      />
 
       {screenshotUrl ? (
         <div className="ed-shotwrap">

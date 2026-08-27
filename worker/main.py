@@ -32,6 +32,7 @@ import pipeline
 import prompts
 import purge
 import recheck
+import steer
 from models import (
     DomainConnectRequest,
     DomainKbRequest,
@@ -41,6 +42,8 @@ from models import (
     InviteEmailRequest,
     RecheckRequest,
     RetryRequest,
+    SteerArticleRequest,
+    SteerBlockRequest,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -671,6 +674,121 @@ def recheck_step(
                 "message": "I couldn't read that part of the recording just now.",
             },
         ) from e
+
+
+def _editable_article(article_id: str, authorization: str | None) -> dict:
+    """The article row, once the caller is proved able to edit its KB.
+
+    One helper for both steer scopes and nothing else: the two endpoints below differ only
+    in how much of the article they read, and a second copy of this check is a second place
+    to forget it.
+    """
+    res = (
+        pipeline.db()
+        .table("articles")
+        .select("id, kb_id")
+        .eq("id", article_id)
+        .maybe_single()
+        .execute()
+    )
+    if not res or not res.data:
+        # Same answer whether it never existed or isn't ours (§10c).
+        raise HTTPException(status_code=404, detail="No such article.")
+    _require_editor(authorization, res.data["kb_id"])
+    return res.data
+
+
+def _steer_failure(e: failures.Failed) -> HTTPException:
+    if e.code == failures.STEER_EMPTY:
+        return HTTPException(
+            status_code=400,
+            detail={"code": e.code, "message": "Say what you'd like changed."},
+        )
+    log.warning("steer failed [%s]: %s", e.code, e)
+    # Nothing was written — a steer only ever proposes — so a failure costs the user the
+    # click and nothing else. The copy says that rather than apologising for a lost edit.
+    return HTTPException(
+        status_code=502,
+        detail={"code": e.code, "message": "That didn't work just now. Nothing changed."},
+    )
+
+
+@app.post("/api/steer")
+def steer_block(
+    req: SteerBlockRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """Edit ONE step to an instruction (PRD §6.1). Proposes; never writes.
+
+    The step's text is read from the DATABASE, not taken from the request. The browser's
+    copy is what the user is looking at; what has to be edited is what is stored, and a
+    client-supplied body would also be a way to hand the model text that is not in the
+    article at all.
+    """
+    a = _editable_article(req.article_id, authorization)
+    step = (
+        pipeline.db()
+        .table("steps")
+        .select("step_number, body_text")
+        .eq("article_id", a["id"])
+        .eq("step_number", req.step_number)
+        .maybe_single()
+        .execute()
+    )
+    if not step or not step.data:
+        raise HTTPException(status_code=404, detail="No such step.")
+
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": failures.SPEND_CAP,
+                "message": "We've hit a temporary processing limit. Try again shortly.",
+            },
+        )
+    try:
+        return steer.edit_block(
+            body_text=step.data["body_text"] or "",
+            selection=req.selection,
+            instruction=req.instruction,
+        )
+    except failures.Failed as e:
+        raise _steer_failure(e) from e
+
+
+@app.post("/api/steer/article")
+def steer_article(
+    req: SteerArticleRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """Edit the whole article to one instruction (PRD §6.4). Proposes; never writes.
+
+    Comes back with a PLAN as well as the diffs — which steps change and how — because a
+    multi-step edit that just lands feels like the article shifted underneath the user
+    rather than like they steered it.
+    """
+    a = _editable_article(req.article_id, authorization)
+    rows = (
+        pipeline.db()
+        .table("steps")
+        .select("step_number, heading, body_text")
+        .eq("article_id", a["id"])
+        .order("step_number")
+        .execute()
+    ).data or []
+    if not rows:
+        raise HTTPException(status_code=409, detail="That article has no steps yet.")
+
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": failures.SPEND_CAP,
+                "message": "We've hit a temporary processing limit. Try again shortly.",
+            },
+        )
+    try:
+        return steer.edit_article(steps=rows, instruction=req.instruction)
+    except failures.Failed as e:
+        raise _steer_failure(e) from e
 
 
 # --- Custom domain (build spec §4) ------------------------------------------
