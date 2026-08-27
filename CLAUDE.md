@@ -458,6 +458,14 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
   modal (pricing-spec §7), and it fires **at the dropzone on file selection**, before the
   upload — nobody watches a 90-second bar that was doomed from the start. It always says
   manual writing still works, because it does.
+- **A PAUSED job is not a hung one, and still has to be able to end.** The clarification
+  pause has no timeout (PRD §5.4) and `sweep_timeouts()` skips `awaiting_input` rows, so a
+  thinking user is never failed. The other half of that rule is
+  `retention.sweep_abandoned_pauses()`: Render idles an instance out after ~15 minutes and
+  takes the pipeline task with it, so a row left waiting across that boundary has nobody
+  left to notice an answer. It is released as a SUCCESS with `stage2_failed` — the article,
+  its steps and its screenshots all exist; only the polish never ran, which is exactly what
+  that degrade code already means.
 - **A job must be able to end.** The pipeline checks `JOB_TIMEOUT_MIN` at every stage
   boundary so it stops itself; `retention.sweep_timeouts()` (a state query, longer cutoff,
   so it never races the pipeline) catches rows abandoned by a dead worker. Without it a

@@ -357,6 +357,19 @@ CLARIFICATION_NOTE_MAX = 600
 # wait that is already interruptible.
 CLARIFICATION_POLL_SECONDS = 2.0
 
+# When a pause has been abandoned long enough that nobody is coming back.
+#
+# The pause has NO timeout by design (PRD §5.4) and this is not one: it is the collection
+# path for a paused job whose WORKER died. Render spins an idle instance down after ~15
+# minutes, which takes the pipeline task with it — and because sweep_timeouts() skips
+# awaiting rows (correctly, so a thinking user is never failed), such a row would otherwise
+# sit at 'running' forever with nothing able to move it. A stuck spinner with no end is the
+# worst state the product can be in (§10g).
+#
+# Generous, because the cost of firing early is real and the cost of firing late is a row.
+# Six hours is far past any session and well past the idle window.
+CLARIFICATION_ABANDON_HOURS = 6
+
 # --- "Check the recording" (PRD "Context & AI Editing" §6.3) ----------------
 # The hero edit: re-read the source video around one step and propose a correction with the
 # evidence. It is the only editing a general chat model cannot do, which is why the source

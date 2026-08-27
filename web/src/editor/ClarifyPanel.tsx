@@ -9,6 +9,7 @@ import {
   questionFor,
   type Clarification,
 } from '../lib/clarifications'
+import { AiTag } from '../components/AiMark'
 
 // The pause (PRD "Context & AI Editing" §5.4).
 //
@@ -81,6 +82,7 @@ export default function ClarifyPanel({
 
   return (
     <div className="clar">
+      <AiTag>I read your recording</AiTag>
       <p className="clar-found">
         {shotsTotal > 0 ? (
           <>

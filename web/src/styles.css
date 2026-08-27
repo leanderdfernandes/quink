@@ -9067,3 +9067,105 @@ div.rail-meter {
   line-height: 1.5;
   color: var(--ink);
 }
+
+/* --- The selection bubble and the step tools stop fighting ----------------------------
+   `.ed-tools` sits at top:22px / right:0 inside the card. The bubble is placed ABOVE the
+   selection, which for the first line of a step body is the same few pixels — so the marks
+   ended up under "New screenshot" and "Delete" and could not be clicked. A formatting bar
+   you cannot hit reads as broken software.
+
+   The tools lose, and deliberately: they are hover-revealed convenience, while the bubble
+   is what the user deliberately reached for. Nobody mid-selection is aiming for Delete.
+   They come straight back the moment the selection collapses. */
+.ed-card-selecting .ed-tools {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Belt and braces on the stacking order. The bubble is fixed and appended to <body>, so it
+   is in a different stacking context from the card — which means "which one paints on top"
+   was being decided by document order rather than by anything anyone chose. */
+.tb,
+.tb-panel {
+  z-index: 60;
+}
+
+/* --- The AI mark ---------------------------------------------------------------------
+   One tag, one glyph, on every surface where a model produced what is on screen and the
+   user is the review. Its whole value is consistency — the moment it appears on something
+   a model did not write, it stops carrying any meaning at all. */
+.ai-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 3px 9px 3px 7px;
+  border-radius: var(--r-pill);
+  background: var(--brand-50);
+  color: var(--brand-700);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+/* On the recheck card the tag would compete with the timestamp range, which is where that
+   card's authority actually lives — so it is the glyph alone, sitting before the evidence. */
+.rck-ai {
+  display: flex;
+  align-items: center;
+  color: var(--brand-600);
+}
+.opc-hd svg {
+  color: var(--brand-600);
+}
+/* "Change this…" in the selection bubble: glyph plus words, so it does not read as one more
+   formatting toggle in a row of formatting toggles. */
+.tb-steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.asb-shut svg {
+  color: var(--brand-600);
+}
+
+/* --- A run waiting on the user ---------------------------------------------------------
+   The pause is the one state in a run where nothing happens until the person acts, and the
+   question itself lives inside the editor — which someone who started the run from their
+   help center is never looking at. It sat in the same grey as "Capturing screenshots" and
+   was missed completely, so a run stayed paused and unanswered.
+
+   The dock is the only surface that is always on screen during a run, so this is where the
+   ask has to be loud. */
+.dock-asking {
+  border-color: var(--brand-300);
+  box-shadow:
+    0 0 0 3px var(--brand-50),
+    var(--sh-md, var(--sh-sm));
+}
+.dock-asking .dock-bar {
+  color: var(--brand-700);
+  font-weight: 600;
+}
+.dock-f-st.awaiting {
+  color: var(--brand-700);
+  font-weight: 600;
+}
+.dock-f-ic.awaiting .dock-f-dot {
+  background: var(--brand-600);
+}
+.dock-f-answer {
+  flex: none;
+  margin-left: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--brand-600);
+  border-radius: var(--r-pill);
+  background: var(--brand-600);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dock-f-answer:hover {
+  background: var(--brand-700);
+  border-color: var(--brand-700);
+}

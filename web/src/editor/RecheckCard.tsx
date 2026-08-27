@@ -1,4 +1,5 @@
 import type { RecheckResult } from '../lib/recheck'
+import AiMark from '../components/AiMark'
 
 // The diff card for "Check the recording" (PRD §6.3).
 //
@@ -39,6 +40,12 @@ export default function RecheckCard({ result, current, onKeep, onDiscard }: Prop
   return (
     <div className="rck" role="group" aria-label="What the recording shows">
       <div className="rck-hd">
+        {/* The mark, then the EVIDENCE. This card's authority comes from the timestamp and
+            the observation, so the range keeps top billing — the mark only says who is
+            speaking. */}
+        <span className="rck-ai" aria-hidden>
+          <AiMark size={13} />
+        </span>
         <span className="rck-range">
           {result.window.from}–{result.window.to}
         </span>

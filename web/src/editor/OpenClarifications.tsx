@@ -6,6 +6,7 @@ import {
   questionFor,
   type Clarification,
 } from '../lib/clarifications'
+import AiMark from '../components/AiMark'
 
 // Questions that never got asked during the run — over the cap, or skipped — carried into
 // the editor as one-tap cards (PRD §5.4).
@@ -63,6 +64,7 @@ export default function OpenClarifications({
   return (
     <div className="opc">
       <div className="opc-hd">
+        <AiMark size={14} />
         <span>
           {clarifications.length === 1
             ? 'One thing I couldn’t work out'

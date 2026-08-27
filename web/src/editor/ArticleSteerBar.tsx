@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import SteerField from './SteerField'
 import type { ArticleProposal } from '../lib/steer'
+import AiMark, { AiTag } from '../components/AiMark'
 
 // Article-scope steer (PRD §6.4). A COLLAPSIBLE BAR above the article — not a side rail,
 // not a chat panel.
@@ -23,18 +24,13 @@ type Props = {
   onSubmit: (instruction: string) => void
 }
 
-const WandIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M3 21l9-9M12.2 6.2 11 5" />
-  </svg>
-)
-
 export default function ArticleSteerBar({ busy, pending, error, onSubmit }: Props) {
   const [open, setOpen] = useState(false)
 
   if (pending) {
     return (
       <div className="asb asb-plan">
+        <AiTag>Here's what I'd change</AiTag>
         <p className="asb-asked">“{pending.instruction}”</p>
         <ul className="asb-list">
           {pending.plan.map((p) => (
@@ -56,7 +52,7 @@ export default function ArticleSteerBar({ busy, pending, error, onSubmit }: Prop
   if (!open) {
     return (
       <button type="button" className="asb asb-shut" onClick={() => setOpen(true)}>
-        <WandIcon />
+        <AiMark size={15} />
         Change something across the whole guide
       </button>
     )
