@@ -26,23 +26,11 @@ async function removeFrames(kbId: string, articleId: string): Promise<void> {
   }
 }
 
-// Delete the source recording and forget it, in that order.
-//
-// The order is load-bearing: null the column first and a failed delete strands the object
-// in Storage with nothing in the database naming it — unfindable by the publish path and
-// by the failed-job sweep alike. Delete first and the worst case is a row still pointing
-// at a video that is already gone, which the next publish simply retries.
-//
-// One-way. Unpublishing does not bring the recording back — that is the point of the
-// promise on the upload screen, not a gap in it.
-export async function collectSourceVideo(
-  articleId: string,
-  videoPath: string,
-): Promise<void> {
-  const { error } = await supabase.storage.from(STORAGE_BUCKET_VIDEOS).remove([videoPath])
-  if (error) return
-  await supabase.from('articles').update({ source_video_path: null }).eq('id', articleId)
-}
+// collectSourceVideo() is GONE. It was the publish-time collection, and nothing in the SPA
+// deletes a recording for a lifecycle reason any more (PRD "Context & AI Editing" §8) —
+// retention.sweep_source_videos() on the worker owns that, on the owner's plan window.
+// deleteArticle() below still removes the object, because deleting an article is the user
+// destroying their own content, not a policy expiring it.
 
 // THE published snapshot. One builder, both publish paths.
 //
@@ -141,10 +129,11 @@ export async function publishArticle(article: ArticleRow, steps: StepLite[]): Pr
     })
     .eq('id', article.id)
   if (error) throw error
-  // Keeps the upload screen's promise on the first publish; a no-op on every one after.
-  if (article.source_video_path) {
-    await collectSourceVideo(article.id, article.source_video_path)
-  }
+  // Publishing NO LONGER deletes the recording (PRD "Context & AI Editing" §8). It used to,
+  // and that would have taken "Check the recording" away at the exact moment a user
+  // finished their first article — the one editing capability a general chat model cannot
+  // copy, removed on their best day. Collection is a retention policy now, swept by the
+  // worker per plan (retention.sweep_source_videos).
 }
 
 // Take an article off the help center. `visibility` is the only thing that moves —

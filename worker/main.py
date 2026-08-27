@@ -31,6 +31,8 @@ import mailer
 import pipeline
 import prompts
 import purge
+import recheck
+import steer
 from models import (
     DomainConnectRequest,
     DomainKbRequest,
@@ -38,7 +40,10 @@ from models import (
     GenerateRequest,
     GenerateResponse,
     InviteEmailRequest,
+    RecheckRequest,
     RetryRequest,
+    SteerArticleRequest,
+    SteerBlockRequest,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -558,6 +563,232 @@ def retry(
         lanes.lanes_for(_plan(owner_id)),
     )
     return GenerateResponse(job_id=job_id)
+
+
+@app.post("/api/recheck")
+def recheck_step(
+    req: RecheckRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """Re-read the source recording around one step and propose a correction (PRD §6.3).
+
+    SYNCHRONOUS, unlike /api/generate, and deliberately: this reads a few seconds of video
+    and answers in a couple of them. A job row would put the hero edit behind the same poll
+    loop as a ninety-second generation and pollute the run ledger with rows that are not
+    runs — which would then show up in the dock, in listInFlightJobs and, worst, in the
+    quota query's neighbourhood.
+
+    It costs a model call, so the GLOBAL circuit breaker applies before anything is spent.
+    Its own per-article limit lives in recheck.py and is invisible at normal usage: there is
+    one meter in this product and retention is already it (PRD §8).
+    """
+    article = (
+        pipeline.db()
+        .table("articles")
+        .select("id, kb_id, source_video_path")
+        .eq("id", req.article_id)
+        .maybe_single()
+        .execute()
+    )
+    if not article or not article.data:
+        # Same answer whether it never existed or isn't ours (§10c).
+        raise HTTPException(status_code=404, detail="No such article.")
+    a = article.data
+    _require_editor(authorization, a["kb_id"])
+
+    # THE RECORDING IS GONE. The SPA already hides the action when source_video_path is
+    # null, so reaching here means it was collected between the render and the click. Still
+    # a clean state and never an error screen: absent, never present-and-failing (§10f).
+    if not a["source_video_path"] or not _video_exists(a["source_video_path"]):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": failures.VIDEO_PURGED,
+                "message": "This recording is no longer stored, so it can't be checked.",
+            },
+        )
+
+    step = (
+        pipeline.db()
+        .table("steps")
+        .select("step_number, heading, body_text, timestamp_seconds")
+        .eq("article_id", a["id"])
+        .eq("step_number", req.step_number)
+        .maybe_single()
+        .execute()
+    )
+    if not step or not step.data:
+        raise HTTPException(status_code=404, detail="No such step.")
+    s = step.data
+    if s["timestamp_seconds"] is None:
+        # A hand-uploaded image has no moment in the recording to go back to. The SPA hides
+        # the action for these too; this is the backstop, and it is a state, not a failure.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": failures.VIDEO_PURGED,
+                "message": "This step's image didn't come from the recording, so there's "
+                "nothing to check it against.",
+            },
+        )
+
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        log.error("DAILY SPEND CAP hit — refusing rechecks")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": failures.SPEND_CAP,
+                "message": "We've hit a temporary processing limit. Try again shortly.",
+            },
+        )
+
+    try:
+        return recheck.run(
+            article_id=a["id"],
+            kb_id=a["kb_id"],
+            video_path=a["source_video_path"],
+            step_number=s["step_number"],
+            heading=s["heading"] or "",
+            body_text=s["body_text"] or "",
+            timestamp_seconds=float(s["timestamp_seconds"]),
+            download=lambda p: pipeline._storage_retry(
+                f"download of {p}",
+                lambda: pipeline.db().storage.from_(config.BUCKET_VIDEOS).download(p),
+            ),
+        )
+    except failures.Failed as e:
+        if e.code == failures.RECHECK_BUSY:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": e.code,
+                    "message": "Give that a moment and try again.",
+                },
+            ) from e
+        log.warning("recheck failed [%s]: %s", e.code, e)
+        # Everything else is ours. The step is untouched — there is no silent-write path
+        # here, so a failed recheck costs the user nothing but the click.
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": e.code,
+                "message": "I couldn't read that part of the recording just now.",
+            },
+        ) from e
+
+
+def _editable_article(article_id: str, authorization: str | None) -> dict:
+    """The article row, once the caller is proved able to edit its KB.
+
+    One helper for both steer scopes and nothing else: the two endpoints below differ only
+    in how much of the article they read, and a second copy of this check is a second place
+    to forget it.
+    """
+    res = (
+        pipeline.db()
+        .table("articles")
+        .select("id, kb_id")
+        .eq("id", article_id)
+        .maybe_single()
+        .execute()
+    )
+    if not res or not res.data:
+        # Same answer whether it never existed or isn't ours (§10c).
+        raise HTTPException(status_code=404, detail="No such article.")
+    _require_editor(authorization, res.data["kb_id"])
+    return res.data
+
+
+def _steer_failure(e: failures.Failed) -> HTTPException:
+    if e.code == failures.STEER_EMPTY:
+        return HTTPException(
+            status_code=400,
+            detail={"code": e.code, "message": "Say what you'd like changed."},
+        )
+    log.warning("steer failed [%s]: %s", e.code, e)
+    # Nothing was written — a steer only ever proposes — so a failure costs the user the
+    # click and nothing else. The copy says that rather than apologising for a lost edit.
+    return HTTPException(
+        status_code=502,
+        detail={"code": e.code, "message": "That didn't work just now. Nothing changed."},
+    )
+
+
+@app.post("/api/steer")
+def steer_block(
+    req: SteerBlockRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """Edit ONE step to an instruction (PRD §6.1). Proposes; never writes.
+
+    The step's text is read from the DATABASE, not taken from the request. The browser's
+    copy is what the user is looking at; what has to be edited is what is stored, and a
+    client-supplied body would also be a way to hand the model text that is not in the
+    article at all.
+    """
+    a = _editable_article(req.article_id, authorization)
+    step = (
+        pipeline.db()
+        .table("steps")
+        .select("step_number, body_text")
+        .eq("article_id", a["id"])
+        .eq("step_number", req.step_number)
+        .maybe_single()
+        .execute()
+    )
+    if not step or not step.data:
+        raise HTTPException(status_code=404, detail="No such step.")
+
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": failures.SPEND_CAP,
+                "message": "We've hit a temporary processing limit. Try again shortly.",
+            },
+        )
+    try:
+        return steer.edit_block(
+            body_text=step.data["body_text"] or "",
+            selection=req.selection,
+            instruction=req.instruction,
+        )
+    except failures.Failed as e:
+        raise _steer_failure(e) from e
+
+
+@app.post("/api/steer/article")
+def steer_article(
+    req: SteerArticleRequest, authorization: str | None = Header(default=None)
+) -> dict:
+    """Edit the whole article to one instruction (PRD §6.4). Proposes; never writes.
+
+    Comes back with a PLAN as well as the diffs — which steps change and how — because a
+    multi-step edit that just lands feels like the article shifted underneath the user
+    rather than like they steered it.
+    """
+    a = _editable_article(req.article_id, authorization)
+    rows = (
+        pipeline.db()
+        .table("steps")
+        .select("step_number, heading, body_text")
+        .eq("article_id", a["id"])
+        .order("step_number")
+        .execute()
+    ).data or []
+    if not rows:
+        raise HTTPException(status_code=409, detail="That article has no steps yet.")
+
+    if _spend_today_usd() >= config.DAILY_SPEND_CAP_USD:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": failures.SPEND_CAP,
+                "message": "We've hit a temporary processing limit. Try again shortly.",
+            },
+        )
+    try:
+        return steer.edit_article(steps=rows, instruction=req.instruction)
+    except failures.Failed as e:
+        raise _steer_failure(e) from e
 
 
 # --- Custom domain (build spec §4) ------------------------------------------

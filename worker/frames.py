@@ -77,6 +77,39 @@ def extract_frame(video_path: Path, seconds: float, out_path: Path) -> Path:
     return out_path
 
 
+def extract_clip(video_path: Path, start: float, end: float, out_path: Path) -> Path:
+    """The seconds between `start` and `end`, as an mp4. For "Check the recording".
+
+    A step is one moment in a recording that may be six minutes long, and the question being
+    asked is about a few seconds of it. Sending the WHOLE video to answer it would cost
+    roughly what a generation costs and bury the moment in five minutes of other screens —
+    the model would be less accurate AND more expensive, which is a rare combination.
+
+    Stream copy, no re-encode: this clip is read once by a model and thrown away, so there
+    is nothing to gain from touching the pixels. It means the cut lands on the nearest
+    keyframe rather than the exact second, which is why the window is generous and why the
+    range we report to the user is the range we ASKED for.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-ss", f"{max(start, 0):.3f}",
+            "-to", f"{max(end, start + 0.5):.3f}",
+            "-i", str(video_path),
+            "-c", "copy",
+            str(out_path),
+        ],
+        f"clip extraction {start:.1f}-{end:.1f}s",
+    )
+    if not out_path.exists() or out_path.stat().st_size == 0:
+        raise failures.Failed(
+            failures.FRAME_EXTRACTION_FAILED,
+            f"ffmpeg produced no clip for {start:.1f}-{end:.1f}s",
+        )
+    return out_path
+
+
 def extract_dense_set(video_path: Path, out_dir: Path) -> list[tuple[int, Path]]:
     """The 1fps dense set backing the Tier-1 filmstrip (±3s of candidate frames).
 

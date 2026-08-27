@@ -45,6 +45,11 @@ type Props = {
   uploadProgress?: number | null
   // The article-list row: bar only, no phases, no count — the row's status carries those.
   compact?: boolean
+  // The run has read the recording and is holding the WRITE stage for an answer
+  // (PRD §5.4). Screenshots are still landing, so `capturing` stays the current phase and
+  // the writing row is annotated instead — "waiting for you", which names who the machine
+  // is waiting on. Without it the last phase reads as stalled, which is our fault-shaped.
+  awaitingInput?: boolean
 }
 
 export default function BuildBar({
@@ -53,6 +58,7 @@ export default function BuildBar({
   total,
   uploadProgress = null,
   compact = false,
+  awaitingInput = false,
 }: Props) {
   // THE BAR NEVER TRAVELS BACKWARDS. A high-water mark rather than a clamp on the input,
   // because both halves of the fraction can move: a poll can arrive out of order, and if a
@@ -103,6 +109,9 @@ export default function BuildBar({
                 {i < at ? <CheckIcon /> : null}
               </span>
               {p.label}
+              {awaitingInput && p.key === 'words' && (
+                <small className="bbar-waiting">waiting for you</small>
+              )}
             </li>
           ))}
         </ol>

@@ -5,7 +5,6 @@ import { useAutosave } from '../lib/useAutosave'
 import { uniqueArticleSlug } from '../lib/slug'
 import {
   articleHrefResolver,
-  collectSourceVideo,
   deleteArticle,
   publishSnapshot,
   replaceSteps,
@@ -25,7 +24,21 @@ import FaqPanel from './FaqPanel'
 import ShareControls from './ShareControls'
 import PublishModal from './PublishModal'
 import BuildBar, { type BuildStage } from './BuildBar'
+import ClarifyPanel from './ClarifyPanel'
+import RecheckCard from './RecheckCard'
+import SteerField from './SteerField'
+import SteerCard from './SteerCard'
+import ArticleSteerBar, { KeepAllBar } from './ArticleSteerBar'
+import OpenClarifications, { instructionFor } from './OpenClarifications'
 import { useGeneration } from './useGeneration'
+import {
+  clearOpenClarifications,
+  submitClarificationAnswers,
+  type Clarification,
+} from '../lib/clarifications'
+import { recheckStep, type RecheckResult } from '../lib/recheck'
+import { steerArticle, steerBlock, type ArticleProposal } from '../lib/steer'
+import { canonicalBody } from '../lib/pendingEdits'
 import FailureScreen from '../components/FailureScreen'
 import { degradedNotice } from '../lib/failures'
 import { fetchArticleJob } from '../lib/jobs'
@@ -156,6 +169,7 @@ const PENDING_ARTICLE = {
   source: 'generated',
   source_video_path: null,
   faqs: [],
+  open_clarifications: null,
   published_content: null,
   published_at: null,
   created_at: '',
@@ -428,6 +442,10 @@ export default function Editor({
   // --- The run, if there is one ---------------------------------------------------
   const watchJobId = retryJobId ?? jobId ?? foundJobId
   const gen = useGeneration(watchJobId, articleId, onArticleResolved)
+  // In flight between pressing the button and the poll seeing awaiting_input clear. Only
+  // disables the button — the panel stays exactly as it is, so a failed release leaves the
+  // answers on screen rather than an empty card.
+  const [releasing, setReleasing] = useState(false)
 
   // THE one derived article state (lib/buildState). Everything below reads `building` —
   // the lock, the pill, the bar, Publish — so no component gets to decide for itself
@@ -460,6 +478,149 @@ export default function Editor({
   }, [jobStatus])
 
   const bumpRev = (id: string) => setRevs((r) => ({ ...r, [id]: (r[id] ?? 0) + 1 }))
+
+  // --- Check the recording (PRD §6.3) --------------------------------------------
+  // ONE proposal on screen at a time, deliberately. This is a factual claim about a
+  // specific moment; three of them stacked up would be a review queue, which is the shape
+  // this whole product exists to avoid.
+  const [recheck, setRecheck] = useState<{ stepId: string; result: RecheckResult } | null>(null)
+  const [recheckBusy, setRecheckBusy] = useState<string | null>(null)
+
+  async function runRecheck(step: StepRow) {
+    if (recheckBusy) return
+    setRecheck(null)
+    setRecheckBusy(step.id)
+    try {
+      const result = await recheckStep(articleId!, step.step_number)
+      setRecheck({ stepId: step.id, result })
+      clearError()
+    } catch (e) {
+      // Including the rate limit, which is not a failure and says nothing about a count —
+      // naming a number would be the second meter PRD §8 forbids.
+      setOpError(e instanceof Error ? e.message : 'That didn’t work just now.')
+    } finally {
+      setRecheckBusy(null)
+    }
+  }
+
+  // --- Steerable editing (PRD §6.1, §6.4) ----------------------------------------
+  // ONE pending map for BOTH scopes, keyed by step id. A selection edit and an
+  // article-wide edit produce the same thing — a proposal on a step — so they render
+  // through one path and "Keep all" cannot mean something different depending on which
+  // button opened the field.
+  const [steerOpen, setSteerOpen] = useState<{
+    stepId: string
+    selection: string
+    initial: string
+  } | null>(null)
+  const [pending, setPending] = useState<
+    Record<string, { instruction: string; proposed: string }>
+  >({})
+  const [steerBusy, setSteerBusy] = useState<string | null>(null)
+  const [articlePlan, setArticlePlan] = useState<ArticleProposal | null>(null)
+  const [articleBusy, setArticleBusy] = useState(false)
+  const [articleErr, setArticleErr] = useState<string | null>(null)
+
+  async function askSteer(step: StepRow, instruction: string, selection: string) {
+    setSteerOpen(null)
+    setSteerBusy(step.id)
+    try {
+      const out = await steerBlock(articleId!, step.step_number, instruction, selection)
+      setPending((p) => ({
+        ...p,
+        [step.id]: { instruction: out.instruction, proposed: out.proposed_text },
+      }))
+      clearError()
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'That didn’t work just now.')
+    } finally {
+      setSteerBusy(null)
+    }
+  }
+
+  async function askArticleSteer(instruction: string) {
+    setArticleBusy(true)
+    setArticleErr(null)
+    try {
+      const out = await steerArticle(articleId!, instruction)
+      if (!out.steps.length) {
+        // A steer that changes nothing is a real answer and says so — silently showing an
+        // empty plan would read as a failure.
+        setArticleErr('Nothing in the guide needed that change.')
+        return
+      }
+      const byNumber = new Map(steps.map((s) => [s.step_number, s.id]))
+      const next: Record<string, { instruction: string; proposed: string }> = {}
+      for (const p of out.steps) {
+        const id = byNumber.get(p.step_number)
+        if (id) next[id] = { instruction: out.instruction, proposed: p.proposed_text }
+      }
+      setPending((prev) => ({ ...prev, ...next }))
+      setArticlePlan(out)
+    } catch (e) {
+      setArticleErr(e instanceof Error ? e.message : 'That didn’t work just now.')
+    } finally {
+      setArticleBusy(false)
+    }
+  }
+
+  // Keep is the ONLY write in this feature, and it happens because the user pressed it.
+  // It goes through saveStep like a hand edit, so it rides the same conflict guard (§10k)
+  // and the same undo history — an AI change must not be a privileged kind of change.
+  function keepSteer(stepId: string) {
+    const p = pending[stepId]
+    if (!p) return
+    dropPending(stepId)
+    saveStep(stepId, { body_text: canonicalBody(p.proposed) })
+    bumpRev(stepId)
+  }
+
+  // The questions the run never got to ask (§5.4). Answering one composes an instruction
+  // from OUR template and sends it through the same steer call as everything else, so the
+  // answer lands as a diff on the step its evidence points at — reviewable, like every
+  // other AI change. An option whose answer is the default we already applied changes
+  // nothing and just clears itself, because pretending otherwise would be the form field
+  // in a costume that admission test 2 exists to reject.
+  const [openClar, setOpenClar] = useState<Clarification[] | null>(null)
+  useEffect(() => {
+    setOpenClar(article?.open_clarifications ?? null)
+  }, [article?.id, article?.open_clarifications])
+
+  function dismissOpenClar() {
+    setOpenClar(null)
+    if (articleId) void clearOpenClarifications(articleId).catch(() => {})
+  }
+
+  async function answerOpenClar(c: Clarification, optionId: string) {
+    setOpenClar((prev) => (prev ? prev.filter((x) => x !== c) : prev))
+    const instruction = instructionFor(c, optionId)
+    const step = steps[c.evidence.step_index]
+    if (!instruction || !step) return
+    await askSteer(step, instruction, '')
+  }
+
+  function dropPending(stepId: string) {
+    setPending((prev) => {
+      const next = { ...prev }
+      delete next[stepId]
+      // The plan describes the pending set. Once it is empty the bar has nothing to
+      // announce and goes back to being one line.
+      if (!Object.keys(next).length) setArticlePlan(null)
+      return next
+    })
+  }
+
+  // The ONLY write in this feature, and it happens because the user pressed Keep. It goes
+  // through saveStep like any hand edit, so it rides the same conflict guard (§10k) and the
+  // same undo history — an AI correction must not be a privileged kind of change.
+  function keepRecheck(stepId: string, proposed: string) {
+    setRecheck(null)
+    if (!proposed) return
+    saveStep(stepId, { body_text: canonicalBody(proposed) })
+    // TipTap holds its own copy of the body, so the card has to be told the text moved
+    // underneath it — the same remount split and merge used to need.
+    bumpRev(stepId)
+  }
 
   const refreshUndoFlags = () => {
     const h = history.current
@@ -718,70 +879,14 @@ export default function Editor({
     flush()
   }
 
-  // --- Merge into the step above: concat bodies, keep the upper screenshot. ------
-  function mergeUp(index: number) {
-    if (index === 0) return
-    const prevStep = steps[index - 1]
-    const cur = steps[index]
-    const mergedBody = joinBodies(prevStep.body_text, cur.body_text)
-    const next = renumber(
-      steps
-        .map((s, i) => (i === index - 1 ? { ...s, body_text: mergedBody } : s))
-        .filter((_, i) => i !== index),
-    )
-    setSteps(next)
-    bumpRev(prevStep.id)
-    guarded(async () => {
-      const a = await supabase
-        .from('steps')
-        .update({ body_text: mergedBody })
-        .eq('id', prevStep.id)
-      const b = await supabase.from('steps').delete().eq('id', cur.id)
-      if (a.error) throw a.error
-      if (b.error) throw b.error
-    })
-    flush()
-    persistOrder(next)
-  }
-
-  // --- Split at the cursor: current keeps "before", a new step gets "after". -----
-  async function split(index: number, beforeHtml: string, afterHtml: string) {
-    const cur = steps[index]
-    const { data, error } = await supabase
-      .from('steps')
-      .insert({
-        article_id: articleId,
-        step_number: cur.step_number + 1,
-        heading: '',
-        body_text: afterHtml,
-        screenshot_url: null,
-      })
-      .select()
-      .single()
-    if (error || !data) {
-      setOpError('Couldn’t split that step')
-      return
-    }
-    const newStep = data as StepRow
-    const next = renumber([
-      ...steps.slice(0, index),
-      { ...cur, body_text: beforeHtml },
-      newStep,
-      ...steps.slice(index + 1),
-    ])
-    setSteps(next)
-    bumpRev(cur.id)
-    clearError()
-    guarded(async () => {
-      const { error } = await supabase
-        .from('steps')
-        .update({ body_text: beforeHtml })
-        .eq('id', cur.id)
-      if (error) throw error
-    })
-    flush()
-    persistOrder(next)
-  }
+  // Merge, split and duplicate are GONE (PRD "Context & AI Editing" §6.5). Merge existed
+  // to fix our own over-segmentation rather than a user need, and "this is too broken up"
+  // is an instruction, not a structural gesture — it belongs in the steer channel. Their
+  // real payoff is what is left behind: a two-item step menu, where "Check the recording"
+  // cannot be missed.
+  //
+  // They were also three of the four single-row step writes OPEN-ITEMS D.2 records as
+  // unguarded against a concurrent editor, so this shrinks that gap rather than widening it.
 
   // --- Insert an EMPTY step at a position. Different job from split: this is "I missed a
   // step", not "this step covers two things". `at` is the array index it lands on.
@@ -812,38 +917,6 @@ export default function Editor({
         .querySelector<HTMLInputElement>(`#step-${at + 1} .ed-h-in`)
         ?.focus()
     })
-  }
-
-  async function duplicateStep(index: number) {
-    const src = steps[index]
-    const { data, error } = await supabase
-      .from('steps')
-      .insert({
-        article_id: articleId,
-        step_number: src.step_number + 1,
-        heading: src.heading,
-        body_text: src.body_text,
-        screenshot_url: src.screenshot_url,
-        // The copy points at the same human-chosen frame, so it inherits the marker that
-        // protects it from a re-run (§8) — and the shapes drawn on that frame, which are
-        // positioned against the image and are still correct on a copy of it.
-        is_edited: src.is_edited,
-        timestamp_seconds: src.timestamp_seconds,
-        annotations: src.annotations ?? [],
-      })
-      .select()
-      .single()
-    if (error || !data) {
-      setOpError('Couldn’t duplicate that step')
-      return
-    }
-    const copy = data as StepRow
-    const next = renumber([...steps.slice(0, index + 1), copy, ...steps.slice(index + 1)])
-    setSteps(next)
-    setShotUrls((m) => ({ ...m, [copy.id]: shotUrls[src.id] ?? null }))
-    clearError()
-    persistOrder(next)
-    flush()
   }
 
   async function deleteStep(index: number) {
@@ -921,17 +994,15 @@ export default function Editor({
             visibility: nextVisibility,
             published_content: snapshot as Article,
             ...folderPatch,
-            source_video_path: null,
           }
         : a,
     )
 
-    // Keep the promise made on the upload screen: "We delete the source video once your
-    // article is published." Only on the FIRST publish — re-publishing finds nothing left
-    // to delete and quietly does nothing, which is what makes this idempotent.
-    if (article.source_video_path) {
-      await collectSourceVideo(articleId, article.source_video_path)
-    }
+    // The recording SURVIVES a publish now (PRD "Context & AI Editing" §8) — it is what
+    // "Check the recording" re-reads, and it is collected by the worker's retention sweep
+    // on the plan's window instead. `source_video_path` is deliberately no longer nulled
+    // here: the article state has to keep naming the recording for the step menu to know
+    // whether the action exists at all.
     return true
   }
 
@@ -1256,6 +1327,11 @@ export default function Editor({
 
   const stage: BuildStage = uploading ? 'uploading' : (gen.job?.stage ?? 'analyzing')
 
+  // The pause (PRD §5.4). `awaiting_input` and not the stage: the stage is still
+  // `capturing`, because screenshots really are still being taken — writing has not begun,
+  // which is exactly the point being made to the user.
+  const awaitingInput = !!gen.job?.awaiting_input && (gen.job?.clarifications?.length ?? 0) > 0
+
   // A run that died BEFORE producing an article has nothing to show and nothing to edit —
   // that is the one case still worth a failure screen. Once steps exist the user is looking
   // at their draft, so the article stays open and editable (2g: the steps exist and are
@@ -1408,6 +1484,33 @@ export default function Editor({
           done={stepsReady}
           total={stepTotal}
           uploadProgress={uploadProgress}
+          awaitingInput={awaitingInput}
+        />
+      )}
+
+      {/* The questions, under the bar and above the article that is assembling behind them.
+          Not a modal: a modal would hide the screenshots landing, which is the evidence that
+          nothing is being held up by the pause. */}
+      {building && awaitingInput && gen.job && (
+        <ClarifyPanel
+          // Remounts if the job changes (a retry), so answers to a previous run's questions
+          // cannot be carried into a new one.
+          key={gen.job.id}
+          clarifications={gen.job.clarifications ?? []}
+          shotsDone={stepsReady}
+          shotsTotal={stepTotal}
+          busy={releasing}
+          onSubmit={async (answers, note) => {
+            setReleasing(true)
+            try {
+              await submitClarificationAnswers(gen.job!.id, answers, note)
+            } catch {
+              // The write stage stays held and the panel stays up — which is the honest
+              // state. Nothing is lost and the button can be pressed again.
+            } finally {
+              setReleasing(false)
+            }
+          }}
         />
       )}
 
@@ -1570,6 +1673,29 @@ export default function Editor({
               )}
               <div className="ed-divider" />
 
+              {/* Article scope (§6.4). ABOVE the article, collapsible, and never a side
+                  rail: usage is bursty and terminal, so a permanent panel would leave an
+                  empty thread staring at the user and quietly reframe this as a chatbot.
+                  Hidden while the run owns the document — there is nothing settled to
+                  steer yet. */}
+              {!building && !skeleton && articleId && (
+                <ArticleSteerBar
+                  busy={articleBusy}
+                  pending={articlePlan}
+                  error={articleErr}
+                  onSubmit={askArticleSteer}
+                />
+              )}
+
+              {!building && !skeleton && openClar?.length ? (
+                <OpenClarifications
+                  clarifications={openClar}
+                  busy={!!steerBusy}
+                  onAnswer={answerOpenClar}
+                  onDismiss={dismissOpenClar}
+                />
+              ) : null}
+
               {!building && <InsertHere at={0} onInsert={insertStep} first />}
 
               {skeleton
@@ -1592,7 +1718,6 @@ export default function Editor({
                         key={`${s.id}:${revs[s.id] ?? 0}`}
                         step={s}
                         index={i}
-                        isFirst={i === 0}
                         screenshotUrl={
                           // The frames bucket is public (migration 0007), so a step arriving
                           // mid-run costs no round trip to show. Signed URLs stay on the
@@ -1604,6 +1729,10 @@ export default function Editor({
                         kbId={kb.id}
                         articleId={articleId ?? ''}
                         hasVideo={doc.source === 'generated'}
+                        // The RECORDING, not the origin. It is nulled when the retention
+                        // sweep collects the object, which is what makes "Check the
+                        // recording" disappear rather than fail.
+                        hasRecording={!!doc.source_video_path}
                         readOnly={building}
                         linkTargets={linkTargets}
                         // Only while the frame pass is still running or yet to start. Once
@@ -1613,10 +1742,14 @@ export default function Editor({
                         settling={gen.settling.has(s.id)}
                         onHeading={(heading) => saveStep(s.id, { heading })}
                         onBody={(body_text) => saveStep(s.id, { body_text })}
-                        onMergeUp={() => mergeUp(i)}
-                        onSplit={(before, after) => split(i, before, after)}
-                        onDuplicate={() => duplicateStep(i)}
                         onDelete={() => deleteStep(i)}
+                        onRecheck={() => runRecheck(s)}
+                        onSteerSelection={
+                          articleId && !building
+                            ? (selection) =>
+                                setSteerOpen({ stepId: s.id, selection, initial: '' })
+                            : undefined
+                        }
                         onPickFrame={(path) => pickFrame(s.id, path)}
                         onRemoveFrame={() => removeFrame(s.id)}
                         onAnnotate={(annotations) => annotateStep(s.id, annotations)}
@@ -1626,6 +1759,52 @@ export default function Editor({
                         onDragEnterCard={() => onDragEnter(i)}
                         onDrop={onDrop}
                       />
+                      {/* The proposal, under the step it is about. Never a modal and never
+                          applied on arrival — there is no silent-write path in this feature
+                          (PRD §7). */}
+                      {recheck?.stepId === s.id && (
+                        <RecheckCard
+                          result={recheck.result}
+                          current={s.body_text}
+                          onKeep={() => keepRecheck(s.id, recheck.result.proposed_text)}
+                          onDiscard={() => setRecheck(null)}
+                        />
+                      )}
+                      {recheckBusy === s.id && (
+                        <p className="rck-wait">Re-reading that part of the recording…</p>
+                      )}
+                      {steerOpen?.stepId === s.id && (
+                        <SteerField
+                          placeholder="Make this more… · say it as… · add…"
+                          initial={steerOpen.initial}
+                          onSubmit={(instruction) =>
+                            askSteer(s, instruction, steerOpen.selection)
+                          }
+                          onCancel={() => setSteerOpen(null)}
+                        />
+                      )}
+                      {steerBusy === s.id && <p className="rck-wait">Working on it…</p>}
+                      {pending[s.id] && (
+                        <SteerCard
+                          instruction={pending[s.id].instruction}
+                          current={s.body_text}
+                          proposed={pending[s.id].proposed}
+                          busy={steerBusy === s.id}
+                          onKeep={() => keepSteer(s.id)}
+                          onDiscard={() => dropPending(s.id)}
+                          // Pre-filled, never a blind reroll: editing the ask is steering.
+                          onRetry={() => {
+                            const instruction = pending[s.id].instruction
+                            dropPending(s.id)
+                            setSteerOpen({ stepId: s.id, selection: '', initial: instruction })
+                          }}
+                          // The chips DO fire — by this point there is a concrete result to
+                          // react to, which is not true of the quick words under the field.
+                          onRefine={(word) =>
+                            askSteer(s, `${pending[s.id].instruction}, ${word}`, '')
+                          }
+                        />
+                      )}
                       {!building && <InsertHere at={i + 1} onInsert={insertStep} />}
                     </div>
                   ))}
@@ -1654,6 +1833,17 @@ export default function Editor({
                 />
               )}
             </div>
+            {/* One decision for a whole change set, so a fourteen-step terminology pass is
+                not fourteen taps. Every diff still stands on its own step and can be taken
+                or left there — this is an accelerator, never the only way through. */}
+            <KeepAllBar
+              count={Object.keys(pending).length}
+              onKeepAll={() => Object.keys(pending).forEach(keepSteer)}
+              onDiscardAll={() => {
+                setPending({})
+                setArticlePlan(null)
+              }}
+            />
           </main>
         </div>
       )}
@@ -1683,14 +1873,3 @@ function InsertHere({
   )
 }
 
-// Concatenate two step bodies (both HTML). Keep them as separate paragraphs rather than
-// fusing mid-sentence — the merge target is usually two actions that belong together.
-const EMPTY_HTML = /^(\s*<p>(\s|&nbsp;|<br\s*\/?>)*<\/p>\s*)+$/i
-
-function joinBodies(a: string, b: string): string {
-  const top = EMPTY_HTML.test(a) ? '' : a.trim()
-  const bottom = EMPTY_HTML.test(b) ? '' : b.trim()
-  if (!top) return bottom
-  if (!bottom) return top
-  return `${top}${bottom}`
-}

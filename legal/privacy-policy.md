@@ -16,8 +16,9 @@ support@quink.online and we will answer in plain language.
 You upload a screen recording. We send it to Google's Gemini API, which produces a
 draft step-by-step article. We extract screenshots from the recording, you edit the
 article, and we host it as a help center on a subdomain or your own domain. We keep the
-articles and screenshots because they are the product. We delete the source recording
-as soon as you publish, because we do not need it after that.
+articles and screenshots because they are the product. We keep the source recording so
+that you can check the article against what the recording actually showed, and we delete
+it on the schedule in §5.
 
 ---
 
@@ -79,7 +80,8 @@ a human at Quink can see your content.
 
 | What | How long |
 |---|---|
-| Source recording (job succeeded) | Deleted when you first publish the article |
+| Source recording (job succeeded) — free plan | Deleted 7 days after the article is built |
+| Source recording (job succeeded) — paid plans | Kept while the article exists; deleted when you delete the article, and when your account is closed |
 | Source recording (job failed) | Deleted 7 days after the failure, so you can retry without re-uploading |
 | Articles and screenshots — paid plans | Kept until you delete them or close your account |
 | Articles and screenshots — free plan | Help center goes offline 30 days after your first article; content is permanently deleted 7 days after that, at day 37 |
@@ -140,8 +142,8 @@ deliberate choice, not an oversight.
 
 The owner of a help center, and anyone already editing it, can invite other people by email
 address. An invited person who accepts can read and change everything inside that help
-center — including unpublished articles, screenshots, and the source recordings still stored
-against unpublished articles. They cannot change the custom domain, see the plan or any
+center — including unpublished articles, screenshots, and the source recordings we still
+hold. They cannot change the custom domain, see the plan or any
 billing information, delete the help center, or remove its owner.
 
 To make this work we store the invited email address, who sent the invite, when it was sent

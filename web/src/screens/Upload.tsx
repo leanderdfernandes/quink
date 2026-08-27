@@ -8,6 +8,7 @@ import {
   DEFAULT_TONE,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_MINUTES,
+  PRODUCT_DESCRIPTION_MAX,
   TONE_OPTIONS,
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
@@ -79,6 +80,11 @@ type Props = {
   // center. Onboarding correctly has none — there is nothing to go back to — but a user who
   // opens "New article" and changes their mind is otherwise trapped on this screen.
   onBack?: () => void
+  // How long we will keep this recording, from the OWNER's plan (PRD §8). `null` = for the
+  // life of the article. The note under the button states it, so it must be the tier this
+  // upload will actually land on — a visitor with no account yet is a free account in a
+  // moment, which is why App resolves it from the plan rather than from `runsLeft`.
+  videoRetentionDays: number | null | undefined
 }
 
 export default function Upload({
@@ -88,6 +94,7 @@ export default function Upload({
   onCapped,
   saved,
   onBack,
+  videoRetentionDays,
 }: Props) {
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +111,8 @@ export default function Upload({
   // matters most — the first one — has had no per-video grounding at all.
   const [recording, setRecording] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  // null when we do not yet know the window — then nothing is claimed at all (PRD §8).
+  const retentionNote = COPY.videoDeletion(videoRetentionDays)
 
   function accept(chosen: FileList | File[] | null | undefined) {
     const list = Array.from(chosen ?? [])
@@ -291,6 +300,13 @@ export default function Upload({
               </div>
             ) : (
               <>
+                {/* Names what the block is FOR before it asks for anything, and says the
+                    answer is kept — the reason nobody is asked twice (PRD §4). Meta on the
+                    right, same weight as the v3 prototype's `.lbl`. */}
+                <div className="up-sect-lbl">
+                  <b>About your product</b>
+                  <span>saved for every guide</span>
+                </div>
                 {saved?.product_name && (
                   /* DECIDED, not deferred: changing product context never re-runs existing
                      articles. It would burn quota the user did not spend and overwrite edits
@@ -350,6 +366,7 @@ export default function Upload({
                     id="description"
                     placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
                     value={description}
+                    maxLength={PRODUCT_DESCRIPTION_MAX}
                     onChange={(e) => setDescription(e.target.value)}
                   />
                 </div>
@@ -384,10 +401,12 @@ export default function Upload({
               {files.length > 1 ? `Build ${files.length} articles` : COPY.buildCta}
             </button>
 
-            <p className="up-note">
-              <LockIcon />
-              {COPY.videoDeletion}
-            </p>
+            {retentionNote && (
+              <p className="up-note">
+                <LockIcon />
+                {retentionNote}
+              </p>
+            )}
           </div>
         </form>
       </div>

@@ -182,6 +182,11 @@ try:
     chk("...with the plan name withheld from a non-owner",
         (ent(M)["plan"], ent(M)["is_owner"]), (None, False))
     chk("...and handed to the owner", (ent(O)["plan"], ent(O)["is_owner"]), ("starter", True))
+    # The retention window is a LIMIT, not billing, so it goes to the member too — and it
+    # is the OWNER's window (migration 0041). Reading the caller's own plan here would tell
+    # a member inside a paid help center that we delete their recording in a week.
+    chk("...and the source-video retention window is the OWNER's",
+        (ent(M)["video_retention_days"], ent(O)["video_retention_days"]), (None, None))
     chk("a stranger gets no entitlements at all",
         S.rpc("kb_entitlements", {"p_kb_id": kb_id}).execute().data, [])
     chk("...and the member's own account is untouched",

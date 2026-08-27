@@ -8360,3 +8360,710 @@ div.rail-meter {
     animation: none;
   }
 }
+
+/* Section label inside the upload card and Settings → Product. Names what the block is
+   for, with its scope note pushed to the right (prototype v3 `.lbl`). Type stays on the
+   12 / 13 scale — this is a label, not a heading. */
+.up-sect-lbl {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.up-sect-lbl b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.up-sect-lbl span {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* --- The pause (PRD "Context & AI Editing" §5.4) --------------------------------------
+   Questions Stage 1 earned, under the build bar and above the article that is still
+   assembling behind them. Deliberately NOT a modal: hiding the screenshots landing would
+   remove the evidence that the pause is holding up one stage and not the machine.
+
+   Type stays on 12 / 13 / 15 / 18. The question is the only 18 on the strip, because it is
+   the only thing being asked. */
+.clar {
+  max-width: 660px;
+  margin: 0 auto;
+  padding: 4px 20px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.clar-found {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--secondary);
+}
+.clar-found b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.clar-grp {
+  margin: 6px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.clar-done {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.clar-ansd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  border-radius: var(--r-sm);
+  background: var(--subtle);
+}
+.clar-ansd i {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--brand-600);
+  color: #fff;
+  flex: none;
+}
+.clar-ansd p {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+.clar-ansd button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-600);
+  cursor: pointer;
+}
+.clar-ansd button:hover {
+  color: var(--brand-700);
+}
+
+.clar-q {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 20px;
+  animation: clar-up 0.26s ease-out;
+}
+@keyframes clar-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clar-q {
+    animation: none;
+  }
+}
+/* Evidence, first and in the brand tint. It is the part of the question a user can check
+   against their own recording, which is what stops it reading as invented. */
+.clar-ev {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--brand-700);
+  background: var(--brand-50);
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  margin-bottom: 12px;
+}
+.clar-q h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.clar-opts {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 16px;
+}
+.clar-opt {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: var(--r-pill);
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.clar-opt:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+/* The DEFAULT is the primary — not because it is more correct, but because it is what
+   happens if they walk away, and the screen should agree with the machine about that. */
+.clar-opt.primary {
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.clar-opt.primary:hover {
+  background: var(--brand-700);
+  color: #fff;
+}
+.clar-skip {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 8px 4px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.clar-skip:hover {
+  color: var(--ink);
+}
+.clar-other {
+  display: flex;
+  gap: 7px;
+  margin-top: 12px;
+}
+.clar-other input {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.clar-other input:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.clar-other button {
+  border: 0;
+  background: var(--brand-600);
+  color: #fff;
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.clar-other button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.clar-fb {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.clar-more summary {
+  font-size: 13px;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.clar-more textarea {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 72px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.clar-more textarea:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.clar-shots {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+/* "waiting for you" on the writing phase. Names WHO the machine is waiting on — without it
+   the last row reads as stalled, which points the blame the wrong way. */
+.bbar-waiting {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--brand-700);
+}
+
+/* --- "Check the recording" (PRD "Context & AI Editing" §6.3) -------------------------- */
+
+/* THE ONLY ACCENTED ITEM ON A STEP. Hierarchy is how the user learns which action is the
+   product — everything else on the card is neutral, and cutting merge, split and duplicate
+   is what left room for this to be unmissable. */
+.ed-tools button.accent {
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.ed-tools button.accent:hover {
+  background: var(--brand-700);
+  border-color: var(--brand-700);
+  color: #fff;
+}
+.ed-tools button.accent:disabled {
+  opacity: 0.5;
+}
+
+.rck-wait {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The proposal, under the step it is about. Bordered on the brand side so it reads as
+   attached to that step rather than as a new block in the article. */
+.rck {
+  margin: 10px 0 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand-600);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+.rck-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+/* The timestamp range. Monospace because it is a coordinate the user will look up in their
+   own recording, not prose. */
+.rck-range {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-700);
+  background: var(--brand-50);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+.rck-src {
+  font-size: 12px;
+  color: var(--muted);
+}
+/* THE line that carries our authority. Given the weight of body text, not of a caption:
+   the user is being asked to trust a claim about their own recording, and the whole
+   feature is worth nothing if this reads as decoration. */
+.rck-obs {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.rck-same {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.rck-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.rck-was p,
+.rck-now p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.rck-was p {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+.rck-now p {
+  color: var(--ink);
+}
+.rck-lbl {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.rck-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+/* TWO VERBS. No "Try again" — a factual correction is not a matter of taste, so rerolling
+   it would be asking the same question of the same seconds and hoping for a different
+   answer. The asymmetry against §6.2's three-verb card is deliberate. */
+.rck-keep,
+.rck-discard {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.rck-keep {
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.rck-keep:hover {
+  background: var(--brand-700);
+}
+.rck-discard {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--secondary);
+}
+.rck-discard:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+
+/* --- Steerable editing (PRD "Context & AI Editing" §6.1, §6.2, §6.4) ------------------ */
+
+/* "Change this…" — the one WORD on a bar of glyphs, after a separator, because it is the
+   one item that opens a conversation instead of toggling a mark. */
+.tb-steer {
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--brand-200);
+}
+.tb-steer:hover {
+  color: #fff;
+}
+
+/* The instruction field. Shared by the bubble and the article bar, so one act cannot grow
+   two affordances. */
+.str {
+  margin: 10px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 12px 14px;
+}
+.str-row {
+  display: flex;
+  gap: 8px;
+}
+.str-in {
+  flex: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 8px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+}
+.str-in:focus {
+  outline: none;
+  border-color: var(--brand-300);
+}
+.str-go {
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.str-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.str-quick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+/* Below the field, and they FILL it rather than firing. A chip that fires is a fixed verb
+   in a different hat — it decides for the user what "better" means, which is the thing the
+   field replaces. */
+.str-chip {
+  border: 1px solid var(--border);
+  background: var(--paper);
+  border-radius: var(--r-pill);
+  padding: 4px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.str-chip:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+.str-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.str-cancel {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.str-cancel:hover {
+  color: var(--ink);
+}
+
+/* The diff card. Neutral left edge, unlike the recheck card's brand one: this is a matter
+   of taste and that one is a matter of fact, and the two should not look interchangeable. */
+.str-card {
+  margin: 10px 0 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+/* The instruction, quoted. A result nobody recognises has to be traceable to what they
+   actually asked for, or the only conclusion available is that the tool acted on its own. */
+.str-asked {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--secondary);
+}
+.str-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.str-was p,
+.str-now p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.str-was p {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+.str-now p {
+  color: var(--ink);
+}
+.str-lbl {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* ON THE RESULT, not the trigger. Nobody gets the instruction right first time, and
+   re-articulating from scratch is what makes AI editing feel like work. */
+.str-refine {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.str-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.str-keep,
+.str-again,
+.str-discard {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.str-keep {
+  border: 1px solid var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+}
+.str-keep:hover {
+  background: var(--brand-700);
+}
+.str-again,
+.str-discard {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--secondary);
+}
+.str-again:hover,
+.str-discard:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.str-keep:disabled,
+.str-again:disabled,
+.str-discard:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Article scope. A bar, collapsed to one line by default — never a rail. Usage is bursty
+   and terminal, so a permanent panel would leave an empty thread staring at the user. */
+.asb {
+  margin: 0 0 18px;
+  width: 100%;
+}
+.asb-shut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.asb-shut:hover {
+  border-color: var(--brand-300);
+  color: var(--brand-700);
+  background: var(--brand-50);
+}
+/* THE PLAN — which steps change and how, said before any diff lands. Without it a
+   multi-step edit feels like the article shifted underneath the user. */
+.asb-plan {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+.asb-asked {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--secondary);
+}
+.asb-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.asb-list li {
+  font-size: 13px;
+  color: var(--ink);
+}
+.asb-list b {
+  margin-right: 8px;
+  font-weight: 600;
+  color: var(--brand-700);
+}
+.asb-note,
+.asb-err {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.asb-err {
+  color: var(--danger, #a8462c);
+}
+/* One decision for a whole change set. Sticky, because a fourteen-step pass is longer than
+   the viewport and the choice has to stay reachable from wherever they are reading. */
+.asb-all {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px auto 0;
+  width: fit-content;
+  padding: 9px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--sh-md, var(--sh-sm));
+  font-size: 13px;
+  color: var(--secondary);
+  z-index: 3;
+}
+
+/* Questions the run never got to ask, carried into the editor. */
+.opc {
+  margin: 0 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-sm);
+  padding: 14px 16px;
+}
+.opc-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.opc-hd button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.opc-hd button:hover {
+  color: var(--ink);
+}
+.opc-q + .opc-q {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.opc-ask {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}

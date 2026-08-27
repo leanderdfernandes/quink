@@ -102,9 +102,11 @@ Vercel account and no DNS.
 ### Render idles the service, which stops every sweep
 
 `domain.run_loop()` is a single asyncio task started from the FastAPI lifespan. It is the
-only driver of **four** sweeps: the domain re-check, `retention.sweep_timeouts()`,
-`retention.sweep()` (failed-video retention) and `trial.sweep()` (the day-14/7/offline/purge
-lifecycle). No cron, no scheduler — when the process is not running, none of them run.
+only driver of **five** sweeps: the domain re-check, `retention.sweep_timeouts()`,
+`retention.sweep()` (failed-video retention), `retention.sweep_source_videos()` (the
+per-plan source-video retention window, CLAUDE.md §10f) and `trial.sweep()` (the
+day-14/7/offline/purge lifecycle). No cron, no scheduler — when the process is not running,
+none of them run.
 
 Render's free tier spins an instance down after ~15 minutes with no inbound request, and a
 cold start takes ~a minute. So a staging worker left alone overnight has run no sweeps, and
@@ -119,6 +121,7 @@ To force a tick by hand rather than wait for one:
 cd worker
 .venv/Scripts/python -c "import trial;     print(trial.sweep())"        # trial lifecycle
 .venv/Scripts/python -c "import retention; print(retention.sweep())"    # failed-video purge
+.venv/Scripts/python -c "import retention; print(retention.sweep_source_videos())"  # per-plan
 .venv/Scripts/python -c "import retention; print(retention.sweep_timeouts())"
 .venv/Scripts/python -c "import domain;    domain.sweep()"              # custom domains
 ```

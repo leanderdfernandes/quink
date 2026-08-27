@@ -252,6 +252,115 @@ deliberately does not cover:
 
 ---
 
+## G. Context & AI editing (migrations 0040-0043) — what was flagged, not fixed
+
+Everything here was found while implementing `context-and-editing-prd.md`. Each one is a
+divergence between the prompt, the PRD and the code, resolved with a stated assumption
+rather than silently.
+
+### G1. `product_context jsonb` was NOT created, deliberately
+
+PRD §9 asks for `kbs.product_context jsonb {name, description, updated_at, updated_by}`.
+Migration 0027 had already landed the same four facts as flat columns (`product_name`,
+`product_description`, `audience`, `tone`), read by `prompts.build_context_block`,
+`Upload.tsx`, `App.tsx` and `QueueDock`. A jsonb column beside them would be a SECOND
+source of truth for one thing and the pipeline would have to choose.
+
+0040 therefore adds only the two audit fields the PRD names, and moves the write behind
+`set_product_context()` so the 600-char cap is a control rather than a courtesy. The RPC
+takes FIVE arguments, not the three the prompt specifies, because audience and tone exist
+and dropping them would have needed a second, uncapped write path.
+
+> **Prompt:** Decide whether the PRD sentence changes or the schema does. If the jsonb is
+> genuinely wanted, it is a migration that folds the four columns into it and updates five
+> read sites — not an addition beside them.
+
+### G2. Video retention reverses two locked decisions, and both docs were rewritten
+
+CLAUDE.md §8 and §10f said the recording is deleted on first publish. `privacy-policy.md`
+§1 and §5 promised it to strangers. `COPY.videoDeletion` said it on the upload screen. All
+four changed in the same commit as the code (§10 "privacy changes ship with the policy") —
+but this is a locked decision being reversed, so it is recorded here rather than only in a
+commit message.
+
+**The free-tier window is provisional.** PRD §11.4 leaves the number open. It is currently
+7 days, taken from `FAILED_VIDEO_RETENTION_DAYS` so a free recording lives exactly as long
+whether the run succeeded or failed, rather than being invented. It is one line in
+`PLANS`, one in `web/src/lib/plans.ts` and one in `plan_flags()` (0041).
+
+**The storage cost delta was never computed.** PRD §11.4 asks for it. Recordings now
+persist for the life of a paid article instead of until first publish, which is an
+open-ended commitment nobody has priced.
+
+> **Prompt:** Price the retention change against real object sizes, then set the free
+> window. Until then `video_retention_days` is a placeholder that happens to be defensible.
+
+### G3. The pause has no timeout, which is in tension with §10g
+
+PRD §5.4 is explicit: no timeout, no auto-advance. §10g is equally explicit that a job must
+be able to end. Resolved by making a paused job LEGIBLE rather than by putting a deadline on
+a person — the wait is excluded from `JOB_TIMEOUT_MIN`, `sweep_timeouts()` skips
+`awaiting_input` rows, and the lane is handed back so other recordings still run.
+
+What remains: **a user who never comes back leaves a `running` job forever.** That is
+deliberate — it is recoverable (`listInFlightJobs` finds it and the dock offers the
+questions again) and failing it would throw away a completed read plus every screenshot to
+tidy a row. But nothing ever collects it, and the count only goes up.
+
+> **Prompt:** Watch `awaiting_input_at is not null and clarifications_closed_at is null`
+> (PRD §10's drop-off measure). If abandoned rows accumulate, the answer is a sweep that
+> RELEASES them with the defaults applied — never one that fails them.
+
+### G4. Stage 1 barely asks anything
+
+Four eval videos probed live against the new prompt: three produced zero clarifications and
+one produced two. Over-asking was the predicted failure and is refuted; **under-asking is
+the live risk**, which makes the whole §5.4 mechanic rare rather than intrusive. See
+`PROMPT-LOG.md` for the numbers and what is still unmeasured — in particular, the scored
+eval has NOT been re-run against this prompt and every eval number in the repo predates it.
+
+### G5. `flow_split = "split"` does not split anything
+
+PRD §5.2 says the answer changes "one article vs two, and their titles". Creating a second
+article is a structural change nothing in the pipeline does. The answer currently reaches
+Stage 2 as an instruction to make the title and subtitle describe the whole sequence
+honestly, which is the half that is achievable — the article is not split.
+
+> **Prompt:** Either build the split (two article rows from one run, with the steps divided
+> at the evidence timestamp) or narrow the PRD sentence to what the answer actually does.
+
+### G6. Delete survived "two items only" on the step menu
+
+The Commit 5 instruction says the step hover menu is exactly two items: "Check the
+recording" and "New screenshot". Merge, split and duplicate are gone as §6.5 asks. **Delete
+stayed**, because the hover cluster is its only entry point and removing it would take away
+the ability to delete a step at all — a regression §6.5 does not ask for and the PRD never
+mentions.
+
+> **Prompt:** Confirm Delete belongs there, or give it another home before removing it.
+
+### G7. Editing adds model calls outside the pipeline
+
+CLAUDE.md §5 ends "Do NOT add a model call anywhere else." That rule is about the
+PIPELINE — two calls plus a deterministic step — and the PRD deliberately adds three more
+outside it: `recheck.py` (video model, one clip), and `steer.py` block and article scopes
+(text model). None of them touch the generation path, none create job rows, and all three
+check the global spend cap first. The sentence in §5 now needs its scope stated, or it
+reads as having been broken.
+
+### G8. Rechecks and steers are not in the spend ledger
+
+`_spend_today_usd()` sums `jobs.est_cost_usd`, and neither editing call creates a job row —
+so both are GATED BY the daily cap and contribute NOTHING to it. Deliberate: a job row per
+edit would pollute the run ledger, the dock and `listInFlightJobs`. The exposure is bounded
+instead by `RECHECK_MAX_PER_ARTICLE_PER_HOUR` (in-process, per instance, resets on deploy)
+and by text edits being ~$0.0002 each.
+
+> **Prompt:** If editing volume ever becomes visible in the Gemini bill, record it — a
+> separate `ai_edits` table, not a job row.
+
+---
+
 ## E. One-line cleanups
 
 - **`profiles.account_deleted_email_sent_at` is dead.** Migration 0032 added it as the
@@ -275,6 +384,13 @@ deliberately does not cover:
   Every other undiffed `create or replace` — 0003, 0005, 0006, 0031 — is a FIRST definition,
   where the `or replace` is harmless. Print 0016's body from `pg_proc`, diff it against 0014's
   and write the result into 0016's header. Do not re-run it.
+- **Merge, split and duplicate are gone from the editor** (PRD §6.5), which removes three
+  of the four unguarded single-row step gestures D.2 records. What is left unguarded:
+  publish, delete, frame picks, insert and delete-step.
+- **The local `vite build` fails before it compiles anything**, at HEAD and unrelated to any
+  change: `vite.config.ts` reads `VITE_SUPABASE_URL` through `loadEnv`, which returns it
+  when called directly from node in the same directory but not during the build. `tsc -b`
+  passes. Worth ten minutes before someone concludes a real change broke the build.
 - **Publish, delete, discard, undo and frame picks still write FAQs unguarded**, the same
   known gap D.2 records for the rest of those actions. `articles.faqs` rides the guarded
   debounced path (§10k) like `title` and `subtitle`; the one-shot actions do not, and now have

@@ -168,6 +168,13 @@ export const TONE_OPTIONS = ['Friendly', 'Concise', 'Formal'] as const
 export const DEFAULT_AUDIENCE = 'New users'
 export const DEFAULT_TONE = 'Friendly'
 
+// Hard cap on the product description (PRD "Context & AI Editing" §4). Mirrors
+// public.product_context_cap() (migration 0040), which is where it is actually ENFORCED —
+// the four product columns are no longer client-writable, so this number is a courtesy to
+// the person typing, not the control. If the two drift, the field stops at one length and
+// set_product_context() refuses at another.
+export const PRODUCT_DESCRIPTION_MAX = 600
+
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
 export const COPY = {
@@ -179,7 +186,24 @@ export const COPY = {
   // articles kept 30 days" — named the same object twice ("guides", then "articles") and
   // left "from video" dangling off a noun that already contained it.
   freeLimitDisclosure: `${PLANS.free.lifetime_runs} free guides from video, kept ${PLANS.free.expiry_days} days. Writing by hand is unlimited.`,
-  videoDeletion: 'We delete the source video once your article is published.',
+  // WAS: "We delete the source video once your article is published." That promise is
+  // retired with the retention reversal (PRD "Context & AI Editing" §8) — the recording now
+  // survives publishing, because checking a step against the recording is the one edit a
+  // general chat model cannot make, and deleting on publish removed it on day one.
+  //
+  // A FUNCTION rather than a constant, because the answer is genuinely different per tier
+  // and a single sentence would be false on one of them. Retention IS the meter here, so
+  // the number is not decoration: it is what the user is being told they are buying.
+  // `null` = kept for the life of the article. Mirrors PLANS[plan].video_retention_days in
+  // worker/config.py, which is where it is enforced.
+  // `undefined` means we do not know the window yet, and the note is then not rendered at
+  // all. Saying nothing is the only honest third option: a retention period is a promise.
+  videoDeletion: (days: number | null | undefined): string | null =>
+    days === undefined
+      ? null
+      : days === null
+        ? 'We keep your recording for as long as the article exists, so you can check the guide against it. Delete the article and the recording goes with it.'
+        : `We keep your recording for ${days} days so you can check the guide against it, then we delete it.`,
   buildCta: 'Build my article',
   wallHeading: 'Create a free account to build your guide.',
   wallFilePill: '✓ your recording is ready',

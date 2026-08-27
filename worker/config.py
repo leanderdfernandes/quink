@@ -91,22 +91,37 @@ KB_BUCKETS = (BUCKET_FRAMES, BUCKET_VIDEOS, BUCKET_BRANDING)
 # starter and founding are identical today. Correct and temporary: they diverge the moment
 # Starter's price or quota moves and founding stays locked. That divergence is the whole
 # reason founding is its own value rather than "starter with a note".
+# `video_retention_days` — how long the SOURCE RECORDING is kept after the run that made
+# it. It is the meter for video-grounded editing (PRD "Context & AI Editing" §8): re-reading
+# a recording costs a model call plus the storage that made it possible, and retention is
+# the only honest way to cap that without inventing a second currency. `None` means "for the
+# life of the article", which is what a paid plan buys.
+#
+# The free number is PROVISIONAL. PRD §11.4 leaves it open and this is deliberately not an
+# invention: 7 matches FAILED_VIDEO_RETENTION_DAYS below, the sibling case, so a free user's
+# recording lives exactly as long whether their run succeeded or failed. Change this one
+# line when the number is decided — nothing else reads a window.
 PLANS: dict[str, dict] = {
     "free":     {"lifetime_runs": 3,    "monthly_runs": None, "kbs": 1,
                  "expiry_days": 30,   "custom_domain": False,
-                 "watermark": True,  "noindex": True, "can_invite": False},
+                 "watermark": True,  "noindex": True, "can_invite": False,
+                 "video_retention_days": 7},
     "founding": {"lifetime_runs": None, "monthly_runs": 20,   "kbs": 1,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False, "can_invite": True},
+                 "watermark": False, "noindex": False, "can_invite": True,
+                 "video_retention_days": None},
     "starter":  {"lifetime_runs": None, "monthly_runs": 20,   "kbs": 1,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False, "can_invite": True},
+                 "watermark": False, "noindex": False, "can_invite": True,
+                 "video_retention_days": None},
     "growth":   {"lifetime_runs": None, "monthly_runs": 80,   "kbs": 5,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": False, "can_invite": True},
+                 "watermark": False, "noindex": False, "can_invite": True,
+                 "video_retention_days": None},
     "internal": {"lifetime_runs": None, "monthly_runs": None, "kbs": 999,
                  "expiry_days": None, "custom_domain": True,
-                 "watermark": False, "noindex": True, "can_invite": True},
+                 "watermark": False, "noindex": True, "can_invite": True,
+                 "video_retention_days": None},
 }
 
 DEFAULT_PLAN = "free"
@@ -186,11 +201,20 @@ DOMAIN_MAX_BACKOFF_SECONDS = 3600
 DOMAIN_MAX_ATTEMPTS = 40  # ~ days of backoff before -> failed
 DOMAIN_CNAME_TTL = 3600
 
-# --- Source-video retention (ux-spec §9) ------------------------------------
-# A successful article's recording is collected on first publish. A FAILED job never
-# reaches a publish event, so its upload would sit in Storage forever — this is the other
-# collection path. 7 days is deliberately longer than the retry-without-reupload window:
-# re-running a failed job from the stored recording has to still work.
+# --- Source-video retention (PRD "Context & AI Editing" §8) -----------------
+# REVERSED. The recording used to be deleted the moment the article was first published.
+# Video-grounded editing ("Check the recording") re-reads it long after that, so publishing
+# can no longer be the collection event — a user who published on day one would have the one
+# feature only Quink can offer taken away before they ever saw it.
+#
+# What replaces it is a RETENTION POLICY: PLANS[plan]["video_retention_days"] above, swept
+# by retention.sweep_source_videos(). Free keeps recordings briefly and then quietly does
+# not; paid keeps them for the life of the article.
+#
+# This window stays, unchanged, for a different case: a FAILED job never produces an
+# article, so there is no plan-scoped article lifetime to hang its recording on. 7 days is
+# deliberately longer than the retry-without-reupload window — re-running a failed job from
+# the stored recording has to still work.
 FAILED_VIDEO_RETENTION_DAYS = 7
 
 # How often the background loop looks for them. The sweep is a STATE query ("failed, older
@@ -300,6 +324,73 @@ JOB_TIMEOUT_GRACE_MIN = 5
 # last one ~6 minutes out; two hours is far past any legitimate queue and still catches a
 # job orphaned by a worker that died holding the semaphore.
 QUEUE_TIMEOUT_MIN = 120
+
+# --- Clarification questions (PRD "Context & AI Editing" §5, §7) ------------
+# How many questions one run may ask. CONFIG, not a constant, because PRD §11.1 leaves
+# "three or two" genuinely open — three may be one too many for a first-timer, and the only
+# way to find out is to move this line. Anything over the cap is not discarded: it carries
+# into the editor on articles.open_clarifications.
+CLARIFICATION_CAP = 3
+
+# Length ceilings on everything the MODEL supplies. Over-length is a DROP, never a
+# truncation (clarify.py) — half a button label reads as a fabrication.
+#
+# The numbers come from what the templates can render without wrapping badly: a slot is a
+# field or button label quoted inside our sentence, an option label is a tap target.
+CLARIFICATION_SLOT_MAX = 64
+CLARIFICATION_LABEL_MAX = 32
+CLARIFICATION_OPTION_ID_MAX = 32
+CLARIFICATION_MAX_OPTIONS = 4
+CLARIFICATION_MAX_SLOTS = 6
+
+# The optional "anything else about this recording?" field on the paused screen. Same cap
+# as the product description, and fenced as data the same way (§7). Enforced by
+# submit_clarification_answers() (migration 0043) — this is the worker's copy of the number.
+CLARIFICATION_NOTE_MAX = 600
+
+# How often the paused pipeline asks whether the user has answered yet. A person tapping
+# three options is measured in seconds, so this is the resolution that matters; polling
+# faster would just add round trips to a wait a human controls.
+#
+# Polling rather than a Realtime subscription on purpose: everything else in this worker
+# polls, and a socket is a second transport to keep alive across a Render restart for a
+# wait that is already interruptible.
+CLARIFICATION_POLL_SECONDS = 2.0
+
+# --- "Check the recording" (PRD "Context & AI Editing" §6.3) ----------------
+# The hero edit: re-read the source video around one step and propose a correction with the
+# evidence. It is the only editing a general chat model cannot do, which is why the source
+# recording is now retained at all (§8, PLANS[...]["video_retention_days"]).
+#
+# How much video the re-read sees, either side of the step's own timestamp. Generous rather
+# than tight: the clip is stream-copied, so the cut lands on the nearest keyframe, and a
+# step's timestamp points at the SETTLED frame — the action that produced it happened a
+# second or two earlier.
+RECHECK_WINDOW_SECONDS = 6
+
+# Runaway protection, and deliberately INVISIBLE at normal usage (PRD §8: no second meter,
+# no user-facing counter). Nobody checks the same step twelve times in an hour on purpose.
+#
+# ponytail: an in-process counter, so it resets on every deploy and is per worker instance —
+# the same limitation lanes.py documents for itself. The real ceiling is
+# DAILY_SPEND_CAP_USD, which this is checked against first. Move it into the database
+# alongside the lane when there is a second instance.
+RECHECK_MAX_PER_ARTICLE_PER_HOUR = 12
+
+# --- Steerable editing (PRD "Context & AI Editing" §6.1, §6.4) --------------
+# The commodity half of editing: any chat model can shorten a paragraph. Unlimited on every
+# tier (PRD §8) — a text edit is ~$0.0002, and a counter here manufactures anxiety over
+# nothing exactly where the product should feel generous.
+#
+# What the user typed, capped. It is fenced as data in the prompt either way; this stops a
+# pasted essay dominating a prompt whose instructions have to stay in charge of it.
+STEER_INSTRUCTION_MAX = 400
+
+# How much longer than its input a replacement may be before it stops being an EDIT.
+# Generous, because "explain why" legitimately turns one sentence into two. It exists for
+# the case where an instruction is read as a writing brief and a two-line step comes back
+# as an essay.
+STEER_LENGTH_CEILING = 2.5
 
 # Dense frame set for the Tier-1 filmstrip: 1 frame per second across the whole
 # video. Pure ffmpeg, no model call — "code does everything deterministic".

@@ -65,6 +65,7 @@ type Props = {
   onOpenArticle: (id: string) => void
   onOpenTheme: () => void
   onOpenDomain: () => void
+  onOpenProduct: () => void
   onSignOut: () => void
   // Opens the upgrade path. The countdown pill, the sidebar panel and the day-7 banner are
   // all clickable at any point (pricing-spec §6) — a warning you can't act on is anxiety.
@@ -157,6 +158,7 @@ export default function KnowledgeBase({
   onOpenArticle,
   onOpenTheme,
   onOpenDomain,
+  onOpenProduct,
   onSignOut,
   onUpgrade,
   justClaimed,
@@ -834,6 +836,14 @@ export default function KnowledgeBase({
             Articles<span className="rail-count">{articles.length}</span>
           </div>
           <p className="rail-label">Your help center</p>
+          {/* What the guides are written ABOUT (PRD §4). It sits with theming rather than
+              with the run meter: it describes the help center's subject matter, not its
+              owner's entitlements — the same reason product context travels through
+              claim_kb() while the plan does not. */}
+          <button className="rail-item link" onClick={onOpenProduct}>
+            <BoxIcon />
+            Product
+          </button>
           <button className="rail-item link" onClick={onOpenTheme}>
             <BrandIcon />
             Theming
@@ -1245,6 +1255,13 @@ const stroke = {
 const BookIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
     <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+  </svg>
+)
+// The thing being documented. Same 16/24 grid and stroke set as the rest of the rail.
+const BoxIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+    <path d="M12 2.5 21 7v10l-9 4.5L3 17V7l9-4.5Z" />
+    <path d="M3 7l9 4.5L21 7M12 11.5V21.5" />
   </svg>
 )
 const BrandIcon = () => (

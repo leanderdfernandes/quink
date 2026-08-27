@@ -40,6 +40,17 @@ class Blueprint(BaseModel):
     title: str
     subtitle: str
     steps: list[BlueprintStep]
+    # Stage 1's clarification questions (PRD §5), RAW. Deliberately typed as loose dicts
+    # rather than a strict model, and this is not laziness — it is the degrade rule (§10g)
+    # applied to the newest thing in the pipeline.
+    #
+    # A strict schema here would fail the whole parse over one malformed question, costing
+    # the user the ARTICLE to protect them from a QUESTION. worker/clarify.py validates each
+    # one against the closed enum and drops the ones that fail, which is the behaviour PRD
+    # §5 actually asks for ("Anything else → drop the clarification, do not repair it").
+    #
+    # Nothing reads this field directly. Everything goes through clarify.validate().
+    clarifications: list[dict] = Field(default_factory=list)
 
 
 class Step(BaseModel):
@@ -90,6 +101,39 @@ class GenerateRequest(BaseModel):
 
 class GenerateResponse(BaseModel):
     job_id: str
+
+
+class RecheckRequest(BaseModel):
+    """Re-read the source recording around one step (PRD §6.3).
+
+    Addressed by `step_number`, not by a step row id: the id is not in the §6 contract and
+    the step's POSITION is what the user pointed at. Ownership is proved through the
+    article's KB, so neither field is a capability.
+    """
+
+    article_id: str
+    step_number: int
+
+
+class SteerBlockRequest(BaseModel):
+    """Edit one step to an instruction (PRD §6.1).
+
+    The step's TEXT is deliberately not a field: the worker reads it from the database. A
+    client-supplied body would be a way to hand the model text that is not in the article.
+    `selection` is context — where the user's attention was — and is capped in the prompt.
+    """
+
+    article_id: str
+    step_number: int
+    instruction: str
+    selection: str = ""
+
+
+class SteerArticleRequest(BaseModel):
+    """The same instruction, article-wide (PRD §6.4)."""
+
+    article_id: str
+    instruction: str
 
 
 class RetryRequest(BaseModel):

@@ -1,14 +1,26 @@
-"""Source-video retention — the collection path publishing can't reach.
+"""Source-video retention.
 
-ux-spec §9: the recording is kept until the article is first published, then deleted. The
-SPA does that on publish. But a job that FAILED never produces an article and never reaches
-a publish event, so its upload would sit in Storage forever — and the promise on the upload
-screen ("we delete the source video once your article is published") would quietly not
-apply to exactly the users whose run went wrong.
+TWO sweeps, because there are two reasons a recording stops being worth keeping.
 
-Written as a STATE QUERY, not a scheduled event: "every failed job older than N days whose
-video hasn't been purged". A missed tick self-heals on the next one, running it twice is
-harmless, and there is no moment anything has to fire at.
+  sweep_source_videos()  SUCCEEDED runs. The recording is kept for
+                         PLANS[owner plan]["video_retention_days"] and then collected.
+                         `None` on every paid tier means "for the life of the article".
+
+  sweep()                FAILED runs. A failed job never makes an article, so there is no
+                         article lifetime to hang its recording on — it gets its own flat
+                         FAILED_VIDEO_RETENTION_DAYS window, long enough that a retry
+                         without a re-upload still works.
+
+THE REVERSAL (PRD "Context & AI Editing" §8). Publishing used to be the collection event:
+first publish deleted the recording. Video-grounded editing re-reads it long after that, so
+that rule would have removed the one editing capability a general chat model cannot copy,
+at the exact moment the user finished their first article. Retention replaces it, and
+retention is also the METER — "Check the recording" is available for a window on free and
+for the life of the article on paid, which maps to a real cost rather than an invented unit.
+
+Both are STATE QUERIES, never scheduled events: "in this state, older than this ceiling,
+not yet purged". A tick missed to a deploy or an idle-instance recycle self-heals on the
+next one, and running either twice is harmless.
 """
 
 import logging
@@ -68,6 +80,13 @@ def _sweep_hung() -> int:
             .table("jobs")
             .select("id")
             .eq("status", "running")
+            # A job WAITING FOR THE USER is not hung (PRD §5.4, migration 0043). The
+            # pipeline is sitting in _await_answers by design, and the screen says
+            # "waiting for you" — failing it would blame us for their pause and throw
+            # away a completed read plus every screenshot. The in-process deadline
+            # excludes the same interval; this is the other half of that rule, for the
+            # case where the process died while paused.
+            .eq("awaiting_input", False)
             # started_at is null on rows written before migration 0028; fall back to
             # created_at for those rather than leaving them un-sweepable forever.
             .or_(f"started_at.lt.{cutoff},and(started_at.is.null,created_at.lt.{cutoff})")
@@ -125,6 +144,137 @@ def _sweep_never_started() -> int:
         log.warning("queue sweep closed %s job(s) that never started", closed)
     return closed
 
+def _purge_video(job_id: str, path: str, article_id: str | None) -> bool:
+    """Delete one recording and forget it. Returns whether it was collected.
+
+    ORDER IS LOAD-BEARING (§10f). Delete the object, THEN null the columns naming it. The
+    reverse strands the object with nothing pointing at it — invisible to both sweeps and
+    to the article-delete path, which is the orphaned-storage bug all over again.
+
+    Two columns name one recording: `jobs.video_path` (recorded at job creation, because a
+    job that dies before Stage 1 never makes an article) and `articles.source_video_path`.
+    `jobs.video_purged_at` is the marker rather than nulling video_path, because the SPA
+    reads it to choose between "retry" and "upload it again" without a round trip.
+    """
+    import pipeline
+
+    try:
+        pipeline.db().storage.from_(config.BUCKET_VIDEOS).remove([path])
+    except Exception:
+        # Leave the marker unset so the next sweep tries again. An object that is already
+        # gone still marks below — remove() does not raise on a missing key.
+        log.exception("could not delete %s for job %s", path, job_id)
+        return False
+
+    pipeline.db().table("jobs").update(
+        {"video_purged_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", job_id).execute()
+    if article_id:
+        pipeline.db().table("articles").update({"source_video_path": None}).eq(
+            "id", article_id
+        ).execute()
+    return True
+
+
+def _retention_days_by_owner(owner_ids: set[str]) -> dict[str, int | None]:
+    """{owner_id: window}, resolved through PLANS. Absent or unknown plan -> the free tier.
+
+    Entitlements resolve through the KB's OWNER (§10j), which for a job is
+    `billed_to_user_id` — stamped at creation and never re-derived by joining through
+    kb_id, so a claimed demo's recordings keep the window they were made under.
+
+    Read as a separate query rather than a PostgREST embed on purpose: `jobs` has TWO
+    foreign keys into profiles (user_id and billed_to_user_id), so a bare embed is
+    ambiguous (PGRST201) — the same trap kb_members set for knowledge_bases (§10j).
+    """
+    import pipeline
+
+    if not owner_ids:
+        return {}
+    rows = (
+        pipeline.db()
+        .table("profiles")
+        .select("id, plan")
+        .in_("id", sorted(owner_ids))
+        .execute()
+    ).data or []
+    plans = {r["id"]: r.get("plan") for r in rows}
+    return {
+        uid: config.PLANS.get(plans.get(uid) or "", config.PLANS[config.DEFAULT_PLAN])[
+            "video_retention_days"
+        ]
+        for uid in owner_ids
+    }
+
+
+def sweep_source_videos() -> int:
+    """Collect the recordings of SUCCEEDED runs past their plan's retention window.
+
+    The window is per tier, so the cutoff cannot live in the query — it depends on a plan
+    the `jobs` row does not carry. The query selects every un-purged recording from a
+    finished run older than the LONGEST finite window, and Python drops the ones whose
+    owner is still inside theirs. Nothing with a `None` window is ever collected.
+
+    Deliberately keyed on the JOB, not the article: `jobs.video_path` is the one column
+    that exists for every run, and jobs.video_purged_at is the marker the SPA already
+    reads. An article that has since been deleted took its own recording with it
+    (articles.deleteArticle), and this sweep then finds an object that is already gone —
+    which is harmless, and still marks.
+    """
+    import pipeline
+
+    windows = [
+        p["video_retention_days"]
+        for p in config.PLANS.values()
+        if p["video_retention_days"] is not None
+    ]
+    if not windows:
+        return 0  # every tier keeps recordings for the life of the article
+    cutoff = datetime.now(timezone.utc) - timedelta(days=min(windows))
+
+    try:
+        res = (
+            pipeline.db()
+            .table("jobs")
+            .select("id, article_id, video_path, billed_to_user_id, finished_at, created_at")
+            .eq("status", "done")
+            .not_.is_("video_path", "null")
+            .is_("video_purged_at", "null")
+            .lt("created_at", cutoff.isoformat())
+            .limit(200)
+            .execute()
+        )
+    except Exception:
+        log.exception("source-video retention sweep query failed")
+        return 0
+
+    rows = res.data or []
+    by_owner = _retention_days_by_owner({r["billed_to_user_id"] for r in rows if r["billed_to_user_id"]})
+
+    purged = 0
+    now = datetime.now(timezone.utc)
+    for job in rows:
+        # No owner on the row is not a licence to delete: `billed_to_user_id` is
+        # `on delete set null`, so this is a run whose payer closed their account. Their
+        # content is deleted by purge.py, not quietly by a retention sweep that cannot
+        # tell which plan it was made under.
+        days = by_owner.get(job["billed_to_user_id"]) if job["billed_to_user_id"] else None
+        if days is None:
+            continue
+        # The clock starts when the run FINISHED — that is when the article the recording
+        # backs came into existence. created_at is the fallback for rows written before
+        # finished_at existed.
+        stamp = job.get("finished_at") or job["created_at"]
+        if (now - datetime.fromisoformat(stamp)).days < days:
+            continue
+        if _purge_video(job["id"], job["video_path"], job.get("article_id")):
+            purged += 1
+
+    if purged:
+        log.info("purged %s source recording(s) past their retention window", purged)
+    return purged
+
+
 def sweep() -> int:
     """Purge recordings from long-dead jobs. Returns how many were collected."""
     import pipeline
@@ -146,23 +296,11 @@ def sweep() -> int:
         log.exception("failed-video sweep query failed")
         return 0
 
-    purged = 0
-    for job in res.data or []:
-        path = job["video_path"]
-        try:
-            # Delete the object FIRST, then mark it. The other order would strand the
-            # object with nothing left pointing at it, so nothing would ever retry.
-            pipeline.db().storage.from_(config.BUCKET_VIDEOS).remove([path])
-        except Exception:
-            # Leave the marker unset so the next sweep tries again. An object that is
-            # already gone still marks below — remove() does not raise on a missing key.
-            log.exception("could not delete %s for job %s", path, job["id"])
-            continue
-
-        pipeline.db().table("jobs").update(
-            {"video_purged_at": datetime.now(timezone.utc).isoformat()}
-        ).eq("id", job["id"]).execute()
-        purged += 1
+    # A failed job has no article to null, so article_id is always None here — the shared
+    # helper is used anyway so the delete-then-mark order lives in exactly one place.
+    purged = sum(
+        1 for job in res.data or [] if _purge_video(job["id"], job["video_path"], None)
+    )
 
     if purged:
         log.info("purged %s source recording(s) from failed jobs", purged)
@@ -270,6 +408,52 @@ def demo() -> None:
     ][0], "must delete the object BEFORE marking it purged"
     assert purged == 1
 
+    # --- the retention-policy sweep: the window is per PLAN ------------------
+    # The whole risk here is deleting a paying customer's recording, which takes away the
+    # editing capability they are paying for and cannot be undone. So the assertion that
+    # matters is not "free was collected" — it is that the two rows it must not touch were
+    # not touched.
+    old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    recent = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    rows = [
+        {"id": "free-old", "article_id": "a1", "video_path": "kb/free-old.mp4",
+         "billed_to_user_id": "u-free", "finished_at": old, "created_at": old},
+        {"id": "paid-old", "article_id": "a2", "video_path": "kb/paid-old.mp4",
+         "billed_to_user_id": "u-paid", "finished_at": old, "created_at": old},
+        {"id": "free-new", "article_id": "a3", "video_path": "kb/free-new.mp4",
+         "billed_to_user_id": "u-free", "finished_at": recent, "created_at": recent},
+        {"id": "orphan", "article_id": "a4", "video_path": "kb/orphan.mp4",
+         "billed_to_user_id": None, "finished_at": old, "created_at": old},
+    ]
+    profiles = [{"id": "u-free", "plan": "free"}, {"id": "u-paid", "plan": "starter"}]
+
+    class _Q2(_Q):
+        def execute(self):
+            if self.tbl == "profiles":
+                return type("R", (), {"data": profiles})()
+            if self.tbl == "jobs" and calls and calls[-1][0] != "update":
+                return type("R", (), {"data": rows})()
+            return type("R", (), {"data": []})()
+
+    class _Db2(_Db):
+        def table(self, name):
+            return _Q2(name)
+
+    calls.clear()
+    pipeline.db = lambda: _Db2()
+    collected = sweep_source_videos()
+
+    assert ("eq", "status", "done") in calls, "only SUCCEEDED runs have an article lifetime"
+    assert ("is", "video_purged_at", "null") in calls, "must skip already-purged jobs"
+    removed = {c[1][0] for c in calls if c[0] == "remove"}
+    assert removed == {"kb/free-old.mp4"}, f"only the expired free row: {removed}"
+    assert collected == 1
+    # The article's own pointer is nulled too, or the editor keeps offering a recording
+    # that no longer exists.
+    assert ("update", {"source_video_path": None}) in calls, "must null articles.source_video_path"
+
+    pipeline.db = lambda: _Db()  # the timeout checks below expect the single-row fake
+
     # --- the timeout sweep: two clocks, two codes (slice 3i) -----------------
     # Correctness is entirely in which rows each half picks. Too broad and it kills healthy
     # in-flight runs; too narrow and the abandoned row nobody is working on stays at
@@ -280,6 +464,9 @@ def demo() -> None:
 
     # HUNG — running only, measured from started_at.
     assert ("eq", "status", "running") in calls, "the hung sweep considers RUNNING jobs only"
+    assert ("eq", "awaiting_input", False) in calls, (
+        "a job waiting for the user is not hung — failing it blames us for their pause"
+    )
     ors = [c for c in calls if c[0] == "or"]
     assert ors, "hung jobs must be selected on started_at, not created_at"
     assert "started_at.lt." in ors[0][1], f"measure work from started_at: {ors[0][1]}"

@@ -7,6 +7,8 @@ import { useQueue } from './lib/queue'
 import QueueDock from './components/QueueDock'
 import {
   DEFAULT_PLAN,
+  PLANS,
+  videoRetentionFrom,
   fetchEntitlements,
   fetchProfile,
   lanesFor,
@@ -42,6 +44,7 @@ import AccountWall from './screens/AccountWall'
 import KnowledgeBaseScreen from './screens/KnowledgeBase'
 import ThemeSettings from './screens/ThemeSettings'
 import DomainSettings from './screens/DomainSettings'
+import ProductSettings from './screens/ProductSettings'
 import People from './screens/People'
 import OwnerOnly from './components/OwnerOnly'
 import Editor from './editor/Editor'
@@ -76,6 +79,7 @@ type Phase =
   | 'kb'
   | 'theme'
   | 'domain'
+  | 'product'
   // Distinct from 'noaccess' on purpose. "You were removed" and "this doesn't exist for
   // you" are the same row state to the software and nothing like each other to the person
   // it happens to — the instinct on losing access is that your work was deleted.
@@ -354,7 +358,7 @@ export default function App() {
       setLanding('article')
       setPhase('generating')
       queueRef.current?.add([pending.file])
-      void saveProductContext(found.id, (pending.context as VideoContext).product)
+      void saveProductContext(found, (pending.context as VideoContext).product)
         .then(setKb)
         .catch(() => {})
       await clearPending()
@@ -395,7 +399,7 @@ export default function App() {
       setLanding('kb')
       setPhase('kb')
       queue.add(chosen)
-      void saveProductContext(kb.id, context.product).then(setKb).catch(() => {})
+      void saveProductContext(kb, context.product).then(setKb).catch(() => {})
       return
     }
 
@@ -661,6 +665,15 @@ export default function App() {
           runsLeft={runsLeft}
           onCapped={() => setShowUpgrade(true)}
           saved={kb?.product_name ? product : null}
+          // From the OWNER's plan, so a member uploading into a paid help center is told
+          // the paid retention rather than the free one (§10j: every limit reads the payer).
+          // From this HELP CENTER's entitlements (the owner's plan), never from the
+          // caller's — §10j: the caller and the payer are not the same person. A visitor
+          // with no account yet is a free account in a moment, so free is the right answer
+          // for them and the only place the local table is read.
+          videoRetentionDays={
+            session ? videoRetentionFrom(ent) : PLANS.free.video_retention_days
+          }
           // 4b: only when there is a help center to go back to. Onboarding gets none.
           onBack={kb ? () => setPhase('kb') : undefined}
         />
@@ -807,6 +820,7 @@ export default function App() {
           onOpenArticle={openArticle}
           onOpenTheme={() => setPhase('theme')}
           onOpenDomain={() => setPhase('domain')}
+          onOpenProduct={() => setPhase('product')}
           onSignOut={signOut}
           onUpgrade={() => setShowUpgrade(true)}
           justClaimed={justClaimed}
@@ -838,6 +852,19 @@ export default function App() {
             hitting a wall. Same surface either way — one place decides what upgrading looks
             like, so the two paths cannot drift apart. */}
         {upgradeUi}
+      </>
+    )
+  }
+
+  if (phase === 'product' && kb) {
+    return (
+      <>
+        {adminBar}
+        <ProductSettings
+          kb={kb}
+          onBack={() => setPhase('kb')}
+          onSaved={setKb}
+        />
       </>
     )
   }

@@ -106,6 +106,19 @@ export function failureFor(code: string | null | undefined): Failure {
 // as one — it is the upgrade modal (pricing-spec §7).
 export const QUOTA_EXCEEDED = 'quota_exceeded'
 
+// Neither is `recheck_busy`. "Check the recording" has a per-article rate limit that normal
+// use never touches (PRD §6.3), and hitting it is not a failure of the article or of the
+// run — it is one action asked for too fast. It renders as a line on the step, and it names
+// no number: a countdown would be the second meter PRD §8 forbids.
+export const RECHECK_BUSY = 'recheck_busy'
+export const RECHECK_BUSY_MESSAGE = 'Give that a moment and try again.'
+
+// Nor is `steer_empty`. An instruction field with nothing in it is not a failure of
+// anything — it is a form that has not been filled in, and the field says so where the
+// user is already looking. The button is disabled long before this can fire; the code
+// exists because the worker refuses server-side too, and the SPA is not a validator.
+export const STEER_EMPTY = 'steer_empty'
+
 // --- Degraded runs (CLAUDE.md §10g) ---------------------------------------------
 // A degraded run SHIPPED an article and counted against quota. These are not failures and
 // share nothing with the map above: no heading, no recovery, no screen. One sentence, in a
