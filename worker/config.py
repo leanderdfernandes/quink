@@ -325,6 +325,38 @@ JOB_TIMEOUT_GRACE_MIN = 5
 # job orphaned by a worker that died holding the semaphore.
 QUEUE_TIMEOUT_MIN = 120
 
+# --- Clarification questions (PRD "Context & AI Editing" §5, §7) ------------
+# How many questions one run may ask. CONFIG, not a constant, because PRD §11.1 leaves
+# "three or two" genuinely open — three may be one too many for a first-timer, and the only
+# way to find out is to move this line. Anything over the cap is not discarded: it carries
+# into the editor on articles.open_clarifications.
+CLARIFICATION_CAP = 3
+
+# Length ceilings on everything the MODEL supplies. Over-length is a DROP, never a
+# truncation (clarify.py) — half a button label reads as a fabrication.
+#
+# The numbers come from what the templates can render without wrapping badly: a slot is a
+# field or button label quoted inside our sentence, an option label is a tap target.
+CLARIFICATION_SLOT_MAX = 64
+CLARIFICATION_LABEL_MAX = 32
+CLARIFICATION_OPTION_ID_MAX = 32
+CLARIFICATION_MAX_OPTIONS = 4
+CLARIFICATION_MAX_SLOTS = 6
+
+# The optional "anything else about this recording?" field on the paused screen. Same cap
+# as the product description, and fenced as data the same way (§7). Enforced by
+# submit_clarification_answers() (migration 0043) — this is the worker's copy of the number.
+CLARIFICATION_NOTE_MAX = 600
+
+# How often the paused pipeline asks whether the user has answered yet. A person tapping
+# three options is measured in seconds, so this is the resolution that matters; polling
+# faster would just add round trips to a wait a human controls.
+#
+# Polling rather than a Realtime subscription on purpose: everything else in this worker
+# polls, and a socket is a second transport to keep alive across a Render restart for a
+# wait that is already interruptible.
+CLARIFICATION_POLL_SECONDS = 2.0
+
 # Dense frame set for the Tier-1 filmstrip: 1 frame per second across the whole
 # video. Pure ffmpeg, no model call — "code does everything deterministic".
 DENSE_FRAME_FPS = 1

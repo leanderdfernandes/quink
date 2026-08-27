@@ -40,6 +40,17 @@ class Blueprint(BaseModel):
     title: str
     subtitle: str
     steps: list[BlueprintStep]
+    # Stage 1's clarification questions (PRD §5), RAW. Deliberately typed as loose dicts
+    # rather than a strict model, and this is not laziness — it is the degrade rule (§10g)
+    # applied to the newest thing in the pipeline.
+    #
+    # A strict schema here would fail the whole parse over one malformed question, costing
+    # the user the ARTICLE to protect them from a QUESTION. worker/clarify.py validates each
+    # one against the closed enum and drops the ones that fail, which is the behaviour PRD
+    # §5 actually asks for ("Anything else → drop the clarification, do not repair it").
+    #
+    # Nothing reads this field directly. Everything goes through clarify.validate().
+    clarifications: list[dict] = Field(default_factory=list)
 
 
 class Step(BaseModel):
