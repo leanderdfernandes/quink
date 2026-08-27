@@ -59,7 +59,13 @@ type Props = {
   // The KB's brand colour, so annotations default to on-brand with zero decisions.
   brandColor: string
   onError: (msg: string) => void
+  // Whether a FILMSTRIP is available — i.e. whether this article came from a recording at
+  // all. Chooses "Change frame" over "Change image" and drives the frame picker, both of
+  // which run off the dense frame set, which survives the recording (§10f).
   hasVideo: boolean
+  // Whether the RECORDING ITSELF is still in Storage. A different question from `hasVideo`
+  // and the only correct gate for "Check the recording".
+  hasRecording: boolean
   onDragStart: () => void
   onDragEnterCard: () => void
   onDrop: () => void
@@ -95,6 +101,7 @@ export default function StepCard({
   brandColor,
   onError,
   hasVideo,
+  hasRecording,
   onDragStart,
   onDragEnterCard,
   onDrop,
@@ -165,10 +172,17 @@ export default function StepCard({
     if (editor.getHTML() !== next) editor.commands.setContent(next, { emitUpdate: false })
   }, [editor, readOnly, step.body_text])
 
-  // Whether "Check the recording" can exist at all. Two ways it cannot: the recording was
-  // collected by the retention sweep (§10f), or this step's image was hand-uploaded and so
+  // Whether "Check the recording" can exist at all. Two ways it cannot: the RECORDING IS
+  // GONE, collected by the retention sweep, or this step's image was hand-uploaded and so
   // has no moment in the recording to go back to. Either way the action is ABSENT.
-  const canRecheck = hasVideo && step.timestamp_seconds !== null
+  //
+  // `hasRecording`, NOT `hasVideo`. They diverged the moment retention replaced
+  // delete-on-publish: `hasVideo` is `source === 'generated'`, which is the article's
+  // ORIGIN and stays true forever (§10f is explicit that the recording's absence stops
+  // meaning anything about origin). Gating on it would render the action on every generated
+  // article for the rest of time and 409 the moment anyone pressed it — present-and-failing,
+  // which is the one thing §10f says this must never be.
+  const canRecheck = hasRecording && step.timestamp_seconds !== null
 
   return (
     <article

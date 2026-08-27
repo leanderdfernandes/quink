@@ -1729,6 +1729,10 @@ export default function Editor({
                         kbId={kb.id}
                         articleId={articleId ?? ''}
                         hasVideo={doc.source === 'generated'}
+                        // The RECORDING, not the origin. It is nulled when the retention
+                        // sweep collects the object, which is what makes "Check the
+                        // recording" disappear rather than fail.
+                        hasRecording={!!doc.source_video_path}
                         readOnly={building}
                         linkTargets={linkTargets}
                         // Only while the frame pass is still running or yet to start. Once
