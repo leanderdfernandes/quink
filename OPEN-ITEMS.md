@@ -561,3 +561,23 @@ same wall until their own copy is updated.
 
 > **Prompt:** The database password was pasted into a chat transcript while sorting this
 > out. Rotate it (Settings → Database → Reset database password) and update `.env`.
+
+### H7. The editor keeps its own chrome — SETTLED, do not "fix" it
+
+Raised when Settings moved into `AppShell`: the editor is now the only screen with its own
+top bar and no rail, which is the same shape Settings just came out of.
+
+**Decided: it stays.** The editor is a focus mode and losing the rail is the point — the
+North Star is the making-articles loop, and the one screen that creates value should not
+carry navigation to four settings tabs. Consistency is not the goal in itself; it is the
+goal everywhere the user is choosing WHERE to be, and the editor is where they have already
+chosen.
+
+So there are two shells by design, not by accident:
+
+| Shell | Screens | Why |
+|---|---|---|
+| `AppShell` — top bar, rail, one content column | Articles, Settings | Choosing where to be |
+| `.ed-bar` — its own bar, back button, no rail | Editor | Already there; everything else is out of the way |
+
+A future audit will notice the editor is "inconsistent". It is not. This is the note.
