@@ -3493,6 +3493,7 @@ textarea {
 .rs-drop-item:hover,
 .rs-drop-item:focus-visible {
   background: var(--hover);
+  text-decoration: none;
 }
 .rs-drop-t {
   display: block;
@@ -3610,7 +3611,9 @@ a.rs-cat-link:hover {
 }
 .rs-row {
   display: block;
-  padding: 17px 40px 17px 0;
+  /* 14px of left padding at REST, holding the space the hover bar slides into. It used to
+     be added on hover, which moved the title sideways under the pointer. */
+  padding: 17px 40px 17px 14px;
   border-bottom: 1px solid var(--rule);
   text-decoration: none;
   color: inherit;
@@ -3633,7 +3636,12 @@ a.rs-cat-link:hover {
 a.rs-row:hover,
 a.rs-row:focus-visible {
   background: var(--hover);
-  padding-left: 14px;
+  /* Re-stated, not inherited: the global `a:hover` underline is more specific than
+     .rs-row's rest-state `text-decoration: none`, so a block anchor wrapping a whole card
+     came out underlined end to end. Same fix the design system's .q-row already carries.
+     This is scoped to the listing card ON PURPOSE — inline links inside article prose keep
+     their underline, which is a real affordance for a text link. */
+  text-decoration: none;
 }
 a.rs-row:hover::before,
 a.rs-row:focus-visible::before {
