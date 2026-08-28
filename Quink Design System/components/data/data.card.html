@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="900x520" name="Data — state, rows, groups, cards, thumbs, progress" subtitle="State is a glyph and a label, never a dot in a pill" -->
+<meta charset="utf-8">
+<title>Quink — data</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:24px 26px}.stack{display:flex;flex-direction:column;gap:26px}.set{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cap{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-4);margin-bottom:12px}</style>
+<div id="root"></div>
+<script type="text/babel">
+const { Card, State, Row, Group, Thumb, Progress, AvatarStack, Micro, Button, IconButton } = window.QuinkDesignSystem_6ae0bd
+function Demo(){
+  return <div className="stack">
+    <div><p className="cap">State — this replaced the coloured status dots</p>
+      <div className="set" style={{gap:24}}>
+        <State state="live" /><State state="edits" sub="2" /><State state="building" />
+        <State state="draft" /><State state="unlisted" /><State state="failed" />
+      </div></div>
+    <div><p className="cap">Thumbs · avatars · progress</p>
+      <div className="set" style={{gap:20}}>
+        <Thumb index={1} /><Thumb index={2} active /><Thumb index={3} tall />
+        <AvatarStack people={['Priya Raman','Sam Okafor','Lee Chen','Dana Wu','Ari Bloom']} />
+        <Progress value={0.5} style={{width:180}} />
+      </div></div>
+    <div><p className="cap">Group + rows — a heading on the page, one raised surface for the rows</p>
+      <Group name="Getting started" count="3 articles" actions={<><IconButton icon="pencil" label="Rename" size="sm" /><IconButton icon="dots" label="More" size="sm" /></>}>
+        <Row title="Connect a Postgres read replica" desc="Point Northwind at a replica so syncs never touch production." state={<State state="live" />} meta={<Micro as="span" style={{flex:'none'}}>8 steps · 12 Mar</Micro>} href="#" />
+        <Row title="Run your first sync" desc="Pick tables, set a schedule and watch the first run finish." state={<State state="edits" sub="2" />} meta={<Micro as="span" style={{flex:'none'}}>6 steps · 9 Mar</Micro>} href="#" />
+        <Row title="A work in progress" desc="Still a draft." meta={<Micro as="span" style={{flex:'none'}}>3 steps · 26d ago</Micro>} href="#" />
+      </Group>
+      <div style={{height:20}}></div>
+      <Group name="Unfiled" quiet count="0 articles" empty="Nothing filed here yet." />
+    </div>
+    <div><p className="cap">Card · inset · panel</p>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16}}>
+        <Card pad><h4 style={{marginBottom:6}}>Raised</h4><p style={{fontSize:14,color:'var(--ink-3)'}}>surface-1 + e1</p></Card>
+        <Card variant="inset" pad><h4 style={{marginBottom:6}}>Inset</h4><p style={{fontSize:14,color:'var(--ink-3)'}}>surface-2, no shadow</p></Card>
+        <Card variant="panel" pad><h4 style={{marginBottom:6}}>Panel</h4><p style={{fontSize:14,color:'var(--ink-3)'}}>20px radius + e3</p></Card>
+      </div></div>
+  </div>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>)
+</script>

@@ -895,8 +895,7 @@ export default function App() {
           <div className="settings">
             <header className="settings-top">
               <button
-                className="btn btn-ghost"
-                style={{ padding: '6px 12px', fontSize: 13 }}
+                className="btn btn-ghost btn-sm"
                 onClick={() => setPhase('kb')}
               >
                 ← Help center

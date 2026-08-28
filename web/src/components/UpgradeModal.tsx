@@ -27,7 +27,7 @@ export default function UpgradeModal({ onWriteManually, onClose }: Props) {
       aria-label="Free video guides used"
     >
       <div className="card wall" onClick={(e) => e.stopPropagation()}>
-        <span className="pill">{COPY.upgradePill}</span>
+        <span className="eyebrow">{COPY.upgradePill}</span>
         <h2 style={{ marginTop: 14 }}>{COPY.upgradeHeading}</h2>
         <p className="cap" style={{ marginTop: 10 }}>
           {COPY.upgradeBody}

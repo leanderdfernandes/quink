@@ -150,8 +150,7 @@ export default function People({ kb, userId, isOwner, ent, onBack, onUpgrade, on
     <div className="settings">
       <header className="settings-top">
         <button
-          className="btn btn-ghost"
-          style={{ padding: '6px 12px', fontSize: 13 }}
+          className="btn btn-ghost btn-sm"
           onClick={onBack}
         >
           ← Help center
@@ -222,11 +221,6 @@ export default function People({ kb, userId, isOwner, ent, onBack, onUpgrade, on
             screen with one person on it rather than as an advert. */}
         {!loading && memberCount === 1 && total === 1 && !gated && (
           <div className="pp-empty">
-            <span className="pp-seam" aria-hidden>
-              <i />
-              <b />
-              <i />
-            </span>
             <h3>Just you, for now</h3>
             <p>
               Add your whole team. No per-seat fees — invite anyone who should be able to

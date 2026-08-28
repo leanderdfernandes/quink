@@ -114,8 +114,8 @@ export default function Admin() {
         <Wordmark height={20} />
         <span className="lib-kb-tag">Admin</span>
         <button
-          className="btn btn-ghost"
-          style={{ marginLeft: 'auto', padding: '6px 12px', fontSize: 13 }}
+          className="btn btn-ghost btn-sm"
+          style={{ marginLeft: 'auto' }}
           onClick={() => navigate('/')}
         >
           Back to my help center
@@ -151,15 +151,13 @@ export default function Admin() {
                 </td>
                 <td style={{ display: 'flex', gap: 6 }}>
                   <button
-                    className="btn btn-ghost"
-                    style={{ padding: '4px 10px', fontSize: 13 }}
+                    className="btn btn-ghost btn-sm"
                     onClick={() => navigate(`/app/${k.id}`)}
                   >
                     Open
                   </button>
                   <button
-                    className="btn btn-ghost"
-                    style={{ padding: '4px 10px', fontSize: 13 }}
+                    className="btn btn-ghost btn-sm"
                     onClick={() => claimLink(k.id)}
                   >
                     Claim link

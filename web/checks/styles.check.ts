@@ -17,7 +17,21 @@
 import assert from 'node:assert'
 import { readFileSync } from 'node:fs'
 
-const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8')
+// The token layer moved into src/ds/ (the vendored design system), so the check has to read
+// the whole cascade the browser reads — not just the app's own sheet. Reading styles.css
+// alone would report every system token as undefined and the check would be turned off,
+// which is worse than not having it.
+const FILES = [
+  '../src/ds/tokens/colors.css',
+  '../src/ds/tokens/typography.css',
+  '../src/ds/tokens/spacing.css',
+  '../src/ds/tokens/elevation.css',
+  '../src/ds/tokens/motion.css',
+  '../src/ds/base.css',
+  '../src/ds/components.css',
+  '../src/styles.css',
+]
+const css = FILES.map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n')
 
 // --- 1. every var() has a definition somewhere -----------------------------------------
 const defined = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]))

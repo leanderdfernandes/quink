@@ -19,6 +19,7 @@ import type { Entitlements } from '../lib/plans'
 import { usePresence, type Peer } from '../lib/usePresence'
 import { ReaderChrome } from '../reader/ReaderSite'
 import StepThumb from '../components/StepThumb'
+import ThemeToggle from '../components/ThemeToggle'
 import StepCard from './StepCard'
 import FaqPanel from './FaqPanel'
 import ShareControls from './ShareControls'
@@ -195,19 +196,19 @@ function move<T>(arr: T[], from: number, to: number): T[] {
 }
 
 const UndoIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M9 14L4 9l5-5" />
     <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
   </svg>
 )
 const RedoIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M15 14l5-5-5-5" />
     <path d="M20 9H9a5 5 0 0 0 0 10h3" />
   </svg>
 )
 const InfoIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden>
     <circle cx="12" cy="12" r="9" />
     <path d="M12 8v.1M12 11.5V16" />
   </svg>
@@ -363,6 +364,13 @@ export default function Editor({
         supabase.from('steps').select('*').eq('article_id', articleId).order('step_number'),
       ])
       if (cancelled) return
+      // Gone, or this account cannot see it. `article` stays null and the render already
+      // has a state for that; the unguarded cast below used to throw instead, and an
+      // exception in an effect white-screens the app rather than showing a missing article.
+      if (!a) {
+        setLoading(false)
+        return
+      }
       const art = a as ArticleRow
       setArticle(art)
       // The row as we found it. Every later save is conditional on this value, and every
@@ -1410,6 +1418,7 @@ export default function Editor({
         </button>
 
         <div className="ed-spacer" />
+        <ThemeToggle />
         {/* One face and one line. Nothing floating, no cursors, no typing indicator. */}
         {peers.length > 0 && (
           <span className="ed-presence" title={peers.map((p) => p.display_name).join(', ')}>

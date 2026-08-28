@@ -14,7 +14,22 @@ type Props = {
 export default function AdminBanner({ kbName, onExit }: Props) {
   return (
     <div className="admin-bar" role="alert">
-      <span className="admin-bar-dot" aria-hidden />
+      <svg
+          className="admin-bar-ic"
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M12 3.8 2.8 19.5h18.4L12 3.8Z" />
+          <path d="M12 9.5v4.2" />
+          <circle cx="12" cy="16.6" r=".8" fill="currentColor" stroke="none" />
+        </svg>
       <span className="admin-bar-text">
         Viewing as admin — <strong>{kbName}</strong>
       </span>

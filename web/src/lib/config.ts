@@ -77,15 +77,17 @@ export const DEFAULT_PRIMARY_COLOR = '#1F6E6B'
 // its amber sat far lighter than the rest and washed the band out.
 
 // Font pairings named by FEEL, never by font name (build spec §1). Each maps to a
-// heading + body stack built only from already-loaded fonts (Hanken Grotesk) + web-safe
-// serifs — no extra network load on the reader.
+// heading + body stack built only from already-loaded fonts (Newsreader, Hanken Grotesk)
+// + web-safe serifs — no extra network load on the reader.
 export const FONT_PAIRINGS: Record<
   string,
   { label: string; heading: string; body: string }
 > = {
+  // The system's own pairing, and the default: a transitional serif carries the headline,
+  // the grotesk carries body and controls. A help article IS a piece of writing.
   modern: {
     label: 'Modern',
-    heading: "'Hanken Grotesk', system-ui, sans-serif",
+    heading: "'Newsreader', 'Iowan Old Style', Palatino, Georgia, serif",
     body: "'Hanken Grotesk', system-ui, sans-serif",
   },
   editorial: {

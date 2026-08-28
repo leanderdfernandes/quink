@@ -37,7 +37,7 @@ type Props = {
 
 function CheckIcon({ size = 13 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M5 13l4 4L19 7" />
     </svg>
   )
@@ -155,7 +155,6 @@ export default function PublishModal({
             <div className="pub-target">
               <div className="pub-target-label">Publishing to</div>
               <div className="pub-target-url">
-                <span className="pub-dot" />
                 <span className="mono">{hcUrl}</span>
               </div>
               <div className="pub-target-title">{articleTitle || 'Untitled'}</div>

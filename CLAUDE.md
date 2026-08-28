@@ -713,10 +713,36 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
 - `LEARNINGS.md` — hard-won pipeline traps (read before repeating a mistake).
 - `stage1-collapse-rule.md` + `EVAL-PLAN.md` + `ground-truth-example-and-backlog.md` — the
   eval loop and the prompt-quality backlog.
-- `design-system.html` — exploratory visual direction (teal-blue, warm neutrals, Hanken
-  Grotesk, timeline-seam). **Note:** brand direction is being revisited under the name Quink;
-  treat final colors/wordmark as not-yet-locked. Logo wordmark: `Qu_nk.svg` (single path,
-  `#211F1B`; swap to `currentColor` to recolor; no standalone glyph yet).
+- `Quink Design System/` (v2, LOCKED) — the visual system. `readme.md` states every
+  decision and why; `tokens/`, `base.css` and `components.css` are the implementation, and
+  `web/src/ds/` is a VERBATIM vendor copy of those five files. Change the system there,
+  re-copy, never fork. The decisions the app may not fight:
+  - **No borders.** Regions separate by surface lightness (`--bg` → `--surface-1..4`) plus
+    layered elevation (`--e0..--e4`). There is no `--border` token; the one hairline left is
+    `--rule`, an ink mix, for list separators and section divisions.
+  - **Two families, one floor.** Newsreader (serif, optical-sized, weight ≤ 500) above 22px;
+    Hanken Grotesk at or below. A serif control label is the fastest way to make this look
+    like costume rather than craft.
+  - **Both themes are tokenised.** No rule anywhere branches on `[data-theme]`. If you need
+    to, a token is missing — add it in `ds/tokens/colors.css`.
+  - **One hover model** (overlay `--hover`, 120ms in / 180ms out) and **one focus model**
+    (`--ring`, drawn outside the control; `--ring-inset` for fields). Nothing recolours a
+    border, because nothing has one.
+  - **No pills, no status dots.** Article state is `<State>` — a glyph plus a weighted label,
+    no container — and it is shown only on rows that are NOT the norm. `<Chip>` is the one
+    pill shape left, because a chip is a control.
+  - **No gradients, patterns, textures or illustration.** The product's imagery is the user's
+    own screenshots. The reader band is a FLAT brand fill: a tint mixed toward paper goes grey
+    for a desaturated customer colour, which is the case that broke.
+  - **No spinner, no pulsing dot, no looping shimmer.** Progress is determinate and driven by
+    real stage data; a skeleton gets one sweep, not a loop.
+  - The **step-number motif** — a 2px brand top rule above a mono tabular index — is the one
+    v1 mark kept, unchanged, in the editor and the reader alike. v1's timeline seam is gone.
+  - `web/src/styles.css` is the app's own layout ONLY: it imports `ds/`, aliases v1's token
+    names onto the v2 ladders, and ends with a `v2 RECONCILIATION` section restating every
+    surface that used to separate itself with a border. Do not reintroduce a palette there.
+  - Logo wordmark: `web/src/components/Wordmark.tsx` (letters `currentColor`, the bolt keeps
+    its green because there it is a letter; `<Bolt>` alone inherits `currentColor`).
 
 
   ## SUPABASE SQL changes

@@ -80,8 +80,7 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
     <div className="settings">
       <header className="settings-top">
         <button
-          className="btn btn-ghost"
-          style={{ padding: '6px 12px', fontSize: 13 }}
+          className="btn btn-ghost btn-sm"
           onClick={onBack}
         >
           ← Help center

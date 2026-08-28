@@ -270,7 +270,7 @@ export default function Claim() {
   const count = preview.article_count
   return shell(
     <>
-      <span className="pill">Ready for you</span>
+      <span className="eyebrow">Ready for you</span>
       <h2 style={{ marginTop: 14 }}>{preview.kb_name}</h2>
       <p className="cap" style={{ marginTop: 8 }}>
         {count === 1 ? '1 article' : `${count} articles`} about your product, already

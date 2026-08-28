@@ -1,0 +1,72 @@
+<!-- @dsCard group="Authoring app" viewport="1440x900" name="First run" subtitle="Drop → account wall → the article assembling behind the clarification questions → the editor" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quink — first run</title>
+<link rel="icon" href="../../assets/favicon.svg">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>
+  try {
+    var t = localStorage.getItem('quink-theme');
+    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="../app/AppShell.jsx"></script>
+<script type="text/babel" src="firstRunData.jsx"></script>
+<script type="text/babel" src="Signup.jsx"></script>
+<script type="text/babel" src="Building.jsx"></script>
+<script type="text/babel" src="Arrival.jsx"></script>
+<script type="text/babel">
+// The whole first run, live and in order. The jump rail at the bottom is a kit affordance,
+// not product chrome — it is there so a reviewer can land on any moment without waiting
+// out the pipeline.
+const SCREENS = [
+  { key: 'upload', label: 'Drop' },
+  { key: 'wall', label: 'Sign up' },
+  { key: 'sent', label: 'Check email' },
+  { key: 'building', label: 'Building' },
+  { key: 'arrival', label: 'Editor' },
+]
+
+function App() {
+  const [screen, setScreen] = React.useState('upload')
+  const [email, setEmail] = React.useState('you@company.com')
+
+  let view
+  if (screen === 'wall') view = <AccountWall onGoogle={() => setScreen('building')} onSent={(e) => { setEmail(e); setScreen('sent') }} />
+  else if (screen === 'sent') view = <CheckEmail email={email} onOpen={() => setScreen('building')} />
+  else if (screen === 'building') view = <Building key="b" onDone={() => setScreen('arrival')} />
+  else if (screen === 'arrival') view = <Arrival onRestart={() => setScreen('upload')} />
+  else view = <FrUpload onBuild={() => setScreen('wall')} />
+
+  return (
+    <>
+      {view}
+      <div style={{ position: 'fixed', left: '50%', bottom: 18, transform: 'translateX(-50%)', zIndex: 'var(--z-toast)', display: 'flex', alignItems: 'center', gap: 8, padding: 6, borderRadius: 999, background: 'var(--surface-1)', boxShadow: 'var(--e3), var(--edge)' }}>
+        {SCREENS.map((s, i) => (
+          <button key={s.key} onClick={() => setScreen(s.key)}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, height: 30, padding: '0 12px', whiteSpace: 'nowrap', borderRadius: 999, border: 0, cursor: 'pointer', font: 'inherit', fontSize: 13.5,
+              fontWeight: screen === s.key ? 'var(--w-strong)' : 'var(--w-medium)',
+              color: screen === s.key ? 'var(--on-brand)' : 'var(--ink-2)',
+              background: screen === s.key ? 'var(--brand)' : 'transparent' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, opacity: .7 }}>{i + 1}</span>{s.label}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+</script>
+</body>
+</html>

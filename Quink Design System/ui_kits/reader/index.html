@@ -1,0 +1,76 @@
+<!-- @dsCard group="Reader (help center)" viewport="1280x860" name="Published help center" subtitle="Customer-branded reader: masthead band, search, categories, article with step spine" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Northwind Help</title>
+<link rel="icon" href="../../assets/favicon.svg">
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>
+  try {
+    var t = localStorage.getItem('quink-theme');
+    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {}
+</script>
+<style>
+/* The only stylesheet rules the reader needs beyond the system: the responsive collapse of
+   the spine into a horizontal strip, and the portrait-figure stack. Everything else is
+   tokens. */
+@media (max-width: 940px) {
+  .rd-grid { grid-template-columns: minmax(0, 1fr) !important; gap: var(--s-6) !important }
+  .rd-spine { position: static !important; max-height: none !important }
+  .rd-spine ol { flex-direction: row !important; overflow-x: auto; gap: var(--s-2) !important; padding-bottom: 6px }
+  .rd-spine li a { flex-direction: column; width: 96px; text-align: center; gap: 4px !important }
+  .rd-stack { flex-direction: column !important; gap: var(--s-5) !important }
+  .rd-stack figure { width: 100% !important; max-width: 320px !important }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="readerData.jsx"></script>
+<script type="text/babel" src="ReaderChrome.jsx"></script>
+<script type="text/babel" src="ReaderScreens.jsx"></script>
+<script type="text/babel">
+function ReaderSite() {
+  const [view, setView] = React.useState({ name: 'home' })
+  const [q, setQ] = React.useState('')
+
+  const results = q
+    ? ALL.filter((a) => (a.title + ' ' + a.desc + ' ' + a.cat).toLowerCase().includes(q.toLowerCase()))
+    : []
+
+  // The customer's one stored hex, expanded into the whole brand ramp at render.
+  const themed = { ...themeVars(KB.color), minHeight: '100vh', display: 'flex', flexDirection: 'column' }
+
+  const openArticle = (a) => {
+    setQ('')
+    setView({ name: 'article', article: a.id === ARTICLE.id ? ARTICLE : { ...ARTICLE, id: a.id, title: a.title, standfirst: a.desc, category: a.cat || 'Getting started', categoryId: a.catId || 'getting-started' } })
+  }
+
+  return (
+    <div style={themed}>
+      <Band compact={view.name !== 'home'} q={q} setQ={setQ} results={results}
+        onOpen={openArticle} onHome={() => setView({ name: 'home' })} />
+      <div style={{ flex: 1 }}>
+        {view.name === 'home' && <ReaderHome onOpen={openArticle} onCategory={(c) => setView({ name: 'category', category: c })} />}
+        {view.name === 'category' && <ReaderCategory category={view.category} onOpen={openArticle} onHome={() => setView({ name: 'home' })} />}
+        {view.name === 'article' && (
+          <ReaderArticle article={view.article} onHome={() => setView({ name: 'home' })}
+            onCategory={() => setView({ name: 'category', category: CATEGORIES.find((c) => c.id === view.article.categoryId) || CATEGORIES[0] })} />
+        )}
+      </div>
+      <Footer />
+    </div>
+  )
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<ReaderSite />)
+</script>
+</body>
+</html>

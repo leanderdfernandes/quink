@@ -1,0 +1,90 @@
+/* Quink v2 — base. Reset, element type, and the two utilities the type system needs.
+   No component classes here. */
+
+*, *::before, *::after { box-sizing: border-box }
+* { margin: 0; padding: 0 }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-size-adjust: 100% }
+body {
+  font-family: var(--font);
+  font-size: var(--t-body);
+  font-weight: var(--w-body);
+  line-height: var(--lh-body);
+  letter-spacing: var(--tr-ui);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-optical-sizing: auto;
+  text-wrap: pretty;
+}
+
+/* Headings are the serif. Optical sizing does the tracking work, so the values here are
+   small. Weight stays under 500 — a bold transitional serif reads as advertising. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: var(--w-display);
+  color: var(--ink);
+  letter-spacing: var(--tr-display);
+  line-height: var(--lh-display-sm);
+  text-wrap: balance;
+}
+h1 { font-size: var(--t-d3); line-height: var(--lh-display); letter-spacing: var(--tr-display-lg) }
+h2 { font-size: var(--t-d4) }
+h3 { font-size: var(--t-d5) }
+h4 { font-size: var(--t-d6) }
+/* Below the serif floor, hierarchy switches to the grotesk. */
+h5, h6 {
+  font-family: var(--font);
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+  letter-spacing: var(--tr-ui);
+  line-height: var(--lh-heading);
+}
+
+a { color: var(--brand-600); text-decoration: none; text-underline-offset: 3px; text-decoration-thickness: 1px; transition: color var(--dur-1) var(--ease) }
+a:hover { color: var(--brand-700); text-decoration: underline }
+
+button, input, select, textarea { font: inherit; letter-spacing: inherit; color: inherit }
+/* Fields carry no border in this system — a field is an inset well, defined by surface and
+   radius. Without this reset browsers keep their default 2px INSET bevel, which is invisible
+   on a light page but renders as a light line along the bottom and right edge in dark mode. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']), select, textarea { border: 0 }
+button { background: none; border: 0; cursor: pointer }
+img, svg, video { display: block; max-width: 100% }
+::selection { background: var(--brand-ring); color: var(--ink) }
+
+/* Focus lives on one token. Never a browser outline, never a recoloured border. */
+:focus { outline: none }
+:focus-visible { outline: none; box-shadow: var(--ring) }
+
+/* --- the two type utilities --- */
+/* Mono micro-label. Replaces v1's tracked-uppercase eyebrow: same job, quieter voice, and it
+   pairs with a serif headline instead of competing with it. */
+.q-micro {
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--tr-mono);
+  text-transform: uppercase;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.q-lede {
+  font-size: var(--t-lede);
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: var(--measure-lede);
+}
+/* Entrance utility. Fade only — anything positioned must not have its transform touched.
+   Respects reduced motion via the global guard in tokens/motion.css. */
+.q-fade-in { animation: q-fade-in var(--dur-3) var(--ease) both }
+
+.q-prose { font-size: var(--t-prose); line-height: var(--lh-prose); color: var(--ink-2); max-width: var(--measure-prose) }
+.q-prose > * + * { margin-top: 0.85em }
+.q-prose strong, .q-prose b { color: var(--ink); font-weight: var(--w-strong) }
+.q-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-2);
+  border-radius: var(--r-xs);
+  padding: 0.12em 0.36em;
+  color: var(--ink);
+}
