@@ -36,28 +36,42 @@ function updatedLine(kb: KB, at: string | null | undefined): string | null {
 
 // Client-side only, and never sent as the id of an existing note — the RPC mints its own
 // for anything arriving without one. crypto.randomUUID is on every browser the SPA targets.
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
 const newNote = (): ProductNote => ({ id: crypto.randomUUID(), title: '', body: '' })
+
+// A description written before notes existed is shown AS a note rather than left in a field
+// of its own. Two ways to say the same thing was the confusing part; this keeps the text,
+// keeps it editable, and lets the next save move it into the shape everything else uses.
+const LEGACY_NOTE_TITLE = 'About the product'
+
+function foldDescription(c: ReturnType<typeof productContextOf>): ProductNote[] {
+  if (!c.description.trim()) return c.notes
+  return [{ id: 'legacy', title: LEGACY_NOTE_TITLE, body: c.description }, ...c.notes]
+}
 
 export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) {
   const initial = productContextOf(kb)
   const [name, setName] = useState(initial.name)
-  const [description, setDescription] = useState(initial.description)
-  const [notes, setNotes] = useState<ProductNote[]>(initial.notes)
+  const [notes, setNotes] = useState<ProductNote[]>(() => foldDescription(initial))
+  // One note open at a time. A list where every card is expanded is a wall of textareas by
+  // the third entry — you cannot see what you have, only what you are typing.
+  const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
   // Summed exactly the way the RPC sums it, from the same helper, so the meter and the
   // refusal cannot disagree about what 100% means.
-  const used = contextCharsUsed(description, notes)
+  const used = contextCharsUsed('', notes)
   const pct = Math.min(1, used / CONTEXT_CHAR_BUDGET)
   const over = used > CONTEXT_CHAR_BUDGET
 
+  const baseline = foldDescription(initial)
   const dirty =
     name.trim() !== initial.name ||
-    description.trim() !== initial.description ||
     JSON.stringify(notes.map((n) => [n.title, n.body])) !==
-      JSON.stringify(initial.notes.map((n) => [n.title, n.body]))
+      JSON.stringify(baseline.map((n) => [n.title, n.body]))
 
   function touch<T>(set: (v: T) => void) {
     return (v: T) => {
@@ -81,8 +95,16 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
       const kept = notes.filter((n) => n.title.trim() || n.body.trim())
       const updated = await saveProductContext(kb, {
         name: name.trim(),
-        description: description.trim(),
-        notes: kept.map((n) => ({ ...n, title: n.title.trim(), body: n.body.trim() })),
+        // Always empty from here on: notes are the one mechanism. A legacy description was
+        // folded into a note above, so this write is what completes the move.
+        description: '',
+        notes: kept.map((n) => ({
+          ...n,
+          // The folded note has a placeholder id; the RPC mints a real one for it.
+          id: n.id === 'legacy' ? '' : n.id,
+          title: n.title.trim(),
+          body: n.body.trim(),
+        })),
       })
       setNotes(productContextOf(updated).notes)
       onSaved(updated)
@@ -131,64 +153,97 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
             <p className="hint">Used so the guide calls things by their real names.</p>
           </div>
 
-          <div className="field" style={{ marginTop: 18 }}>
-            <label htmlFor="ps-desc">
-              Anything else we should know? <span className="optional">Optional</span>
-            </label>
-            <textarea
-              id="ps-desc"
-              placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
-              value={description}
-              onChange={(e) => touch(setDescription)(e.target.value)}
-            />
-          </div>
+          {/* CONTEXT, as a list of named notes. There is no separate "anything else"
+              textarea any more: it and the notes were two ways to say the same thing, which
+              is what made this screen confusing. One mechanism, and each entry has a name
+              you can scan.
 
-          {/* Notes. Same purpose as the description, chunked — a glossary entry, a feature
-              list, a roles breakdown — so unrelated facts are not forced into one
-              paragraph. They share the description's budget rather than having their own. */}
-          <div className="ps-notes">
-            {notes.map((n, i) => (
-              <div className="ps-note" key={n.id}>
-                <input
-                  className="ps-note-t"
-                  type="text"
-                  placeholder="Note title — e.g. Glossary, Roles, What's in each plan"
-                  value={n.title}
-                  maxLength={120}
-                  aria-label={`Note ${i + 1} title`}
-                  onChange={(e) => patchNote(n.id, { title: e.target.value })}
-                />
-                <textarea
-                  className="ps-note-b"
-                  placeholder="The facts a guide should get right."
-                  value={n.body}
-                  aria-label={`Note ${i + 1} body`}
-                  onChange={(e) => patchNote(n.id, { body: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="ps-note-x"
-                  aria-label={`Remove note ${i + 1}`}
-                  onClick={() => {
-                    setNotes((prev) => prev.filter((x) => x.id !== n.id))
-                    setSaved(false)
-                  }}
-                >
-                  <Icon name="trash" size={15} />
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="ps-note-add"
-              onClick={() => {
-                setNotes((prev) => [...prev, newNote()])
-                setSaved(false)
-              }}
-            >
-              <Icon name="plus" size={15} />
-              Add note
-            </button>
+              Collapsed by default, one open at a time. Expanded cards do not scale — by the
+              third note you are looking at a wall of textareas and cannot see what you
+              already wrote. */}
+          <div className="ps-sect">
+            <div className="up-sect-lbl">
+              <b>What a guide should get right</b>
+              <span>{notes.length ? plural(notes.length, 'note') : 'no notes yet'}</span>
+            </div>
+            <p className="hint" style={{ marginBottom: 14 }}>
+              A glossary, a feature list, who can do what — anything the recording does not
+              say out loud.
+            </p>
+
+            <div className="ps-notes">
+              {notes.map((n, i) => {
+                const isOpen = open === n.id
+                const chars = n.title.length + n.body.length
+                return (
+                  <div className={`ps-note${isOpen ? ' open' : ''}`} key={n.id}>
+                    <div className="ps-note-hd">
+                      <button
+                        type="button"
+                        className="ps-note-toggle"
+                        aria-expanded={isOpen}
+                        onClick={() => setOpen(isOpen ? null : n.id)}
+                      >
+                        <Icon name="file" size={17} />
+                        <span className="ps-note-nm">
+                          {n.title.trim() || <i>Untitled note</i>}
+                        </span>
+                        <span className="ps-note-c">{chars}</span>
+                        <Icon name="chevron" size={15} rotate={isOpen ? 180 : 0} />
+                      </button>
+                      <button
+                        type="button"
+                        className="ps-note-x"
+                        aria-label={`Delete ${n.title.trim() || `note ${i + 1}`}`}
+                        onClick={() => {
+                          setNotes((prev) => prev.filter((x) => x.id !== n.id))
+                          if (open === n.id) setOpen(null)
+                          setSaved(false)
+                        }}
+                      >
+                        <Icon name="trash" size={15} />
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div className="ps-note-body">
+                        <input
+                          className="ps-note-t"
+                          type="text"
+                          placeholder="Name it — Glossary, Roles, What's in each plan"
+                          value={n.title}
+                          maxLength={120}
+                          autoFocus
+                          aria-label="Note title"
+                          onChange={(e) => patchNote(n.id, { title: e.target.value })}
+                        />
+                        <textarea
+                          className="ps-note-b"
+                          placeholder="The facts a guide should get right."
+                          value={n.body}
+                          aria-label="Note body"
+                          onChange={(e) => patchNote(n.id, { body: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                className="ps-note-add"
+                onClick={() => {
+                  const n = newNote()
+                  setNotes((prev) => [...prev, n])
+                  // Opens straight away: adding a note you then have to click to write in
+                  // is one click too many.
+                  setOpen(n.id)
+                  setSaved(false)
+                }}
+              >
+                <Icon name="plus" size={15} />
+                Add note
+              </button>
+            </div>
           </div>
 
           {/* The budget, pinned under the list it measures. Deleting a note frees it live,
@@ -235,7 +290,21 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
             </p>
           )}
 
-          <div className="ps-actions">
+          {/* STICKY, and only while there is something to save. The button used to sit at
+              the bottom of a long page: you typed a note, saw nothing that looked like a
+              save, and left. It follows the edit now and says what it is waiting for. */}
+          <div className={`ps-savebar${dirty || busy ? ' show' : ''}`}>
+            <span className="ps-savebar-l">
+              {over ? (
+                <b>Trim {used - CONTEXT_CHAR_BUDGET} characters to save</b>
+              ) : dirty ? (
+                'Unsaved changes'
+              ) : saved ? (
+                'Saved.'
+              ) : (
+                stamp
+              )}
+            </span>
             <button
               className="btn"
               disabled={!name.trim() || !dirty || busy || over}
@@ -243,14 +312,6 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
             >
               {busy ? 'Saving…' : 'Save'}
             </button>
-            {/* Never a bare disabled button: the sentence says when it opens. */}
-            {over && <span className="hint">Trim {used - CONTEXT_CHAR_BUDGET} characters to save.</span>}
-            {saved && !dirty && <span className="hint">Saved.</span>}
-            {stamp && (
-              <span className="hint" style={{ marginLeft: 'auto' }}>
-                {stamp}
-              </span>
-            )}
           </div>
       </div>
     </div>
