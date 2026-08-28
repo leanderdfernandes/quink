@@ -1291,6 +1291,7 @@ export default function Editor({
         headline: kb.headline,
         search_placeholder: kb.search_placeholder,
         primary_color: kb.primary_color,
+        brand_wash: kb.brand_wash,
         font_pairing: kb.font_pairing,
         logo_path: kb.logo_path,
         favicon_path: kb.favicon_path,

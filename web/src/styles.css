@@ -9255,6 +9255,76 @@ div.rail-meter {
   color: var(--ink-4);
 }
 
+/* --- Theming: the background-wash strength ------------------------------------------
+   A property OF the brand colour, so it sits with the hex row rather than in a section of
+   its own. The track is filled with the live mix it produces — the control shows you the
+   thing it makes, not an abstract percentage. */
+.th-wash {
+  margin-bottom: var(--s-3);
+}
+.th-wash label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+.th-wash-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-weight: var(--w-medium);
+}
+.th-wash input[type='range'] {
+  display: block;
+  width: 100%;
+  height: 22px;
+  padding: 0;
+  background: none;
+  appearance: none;
+  cursor: pointer;
+}
+.th-wash input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  /* The gradient IS the answer: bare surface at 0, the strongest wash at 30. */
+  background: linear-gradient(90deg, var(--surface-2), var(--brand-tint));
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.th-wash input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--surface-2), var(--brand-tint));
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.th-wash input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  box-shadow: var(--e2), inset 0 0 0 1.5px var(--brand);
+  transition: transform var(--dur-1) var(--ease);
+}
+.th-wash input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-1);
+  box-shadow: var(--e2), inset 0 0 0 1.5px var(--brand);
+}
+.th-wash input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(0.94);
+}
+.th-wash input[type='range']:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--r-pill);
+}
+
 /* ======================================================================================
    v2 RECONCILIATION — the surfaces that used a border as their only edge
    ======================================================================================

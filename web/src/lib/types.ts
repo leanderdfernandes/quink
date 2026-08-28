@@ -171,6 +171,10 @@ export type KnowledgeBase = {
   // Theming (build spec §1). Primary colour is the ONLY colour stored — everything else
   // derives from it at render.
   primary_color: string
+  // How strongly that colour washes into secondary surfaces, 0-30 percent (0045). A
+  // STRENGTH, not a second colour: storing another hex would let the two drift apart and
+  // break the one-stored-colour premise above.
+  brand_wash: number
   font_pairing: FontPairing
   logo_path: string | null
   favicon_path: string | null
@@ -230,6 +234,7 @@ export type ReaderKb = {
   headline: string
   search_placeholder: string
   primary_color: string
+  brand_wash: number
   font_pairing: FontPairing
   logo_path: string | null
   favicon_path: string | null
