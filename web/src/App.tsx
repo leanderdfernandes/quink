@@ -17,8 +17,10 @@ import {
   type PlanId,
 } from './lib/plans'
 import {
+  EMPTY_PRODUCT_CONTEXT,
   fetchKb,
   listKbs,
+  productContextOf,
   resolveDefaultKb,
   saveProductContext,
   setLastKb,
@@ -156,14 +158,10 @@ export default function App() {
   const [offlineArticles, setOfflineArticles] = useState(0)
 
   // Product context for every run this session starts: whatever they just typed, else the
-  // KB's saved defaults (migration 0027). Second run onward this is why the form is a
-  // header with a Change link instead of four fields again.
-  const product: ProductContext = pendingContext?.product ?? {
-    product_name: kb?.product_name ?? '',
-    description: kb?.product_description ?? '',
-    audience: kb?.audience ?? '',
-    tone: kb?.tone ?? '',
-  }
+  // KB's saved tier (migrations 0027, folded by 0044). Second run onward this is why the
+  // form is a one-line summary with a Change link instead of the fields again.
+  const product: ProductContext =
+    pendingContext?.product ?? (kb ? productContextOf(kb) : EMPTY_PRODUCT_CONTEXT)
 
   // The stable identity across token refresh / focus / INITIAL_SESSION. The post-auth
   // effect keys on this, not the session object, so a refresh doesn't kick the user out.
@@ -664,7 +662,7 @@ export default function App() {
           onHome={() => setPhase(kb ? 'kb' : 'home')}
           runsLeft={runsLeft}
           onCapped={() => setShowUpgrade(true)}
-          saved={kb?.product_name ? product : null}
+          saved={product.name ? product : null}
           // From the OWNER's plan, so a member uploading into a paid help center is told
           // the paid retention rather than the free one (§10j: every limit reads the payer).
           // From this HELP CENTER's entitlements (the owner's plan), never from the
@@ -832,8 +830,10 @@ export default function App() {
         />
         <QueueDock
           items={queue.items}
-          productName={product.product_name}
-          productSummary={[product.audience, product.tone].filter(Boolean).join(' · ')}
+          productName={product.name}
+          // The description, trimmed to a line. Audience and tone used to fill this and
+          // were cut by 0044 — the dock still has to say WHAT the run is grounded on.
+          productSummary={product.description}
           onChangeProduct={() => setPhase('upload')}
           onSetRecording={queue.setRecording}
           onRemove={queue.remove}

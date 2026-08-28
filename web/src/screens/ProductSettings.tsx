@@ -1,24 +1,19 @@
 import { useState } from 'react'
-import {
-  AUDIENCE_OPTIONS,
-  DEFAULT_AUDIENCE,
-  DEFAULT_TONE,
-  PRODUCT_DESCRIPTION_MAX,
-  TONE_OPTIONS,
-} from '../lib/config'
-import { saveProductContext } from '../lib/kbs'
-import type { KnowledgeBase as KB } from '../lib/types'
+import { CONTEXT_BUDGET_WARN, CONTEXT_CHAR_BUDGET, contextCharsUsed } from '../lib/config'
+import { productContextOf, saveProductContext } from '../lib/kbs'
+import Icon from '../components/Icon'
+import type { KnowledgeBase as KB, ProductNote } from '../lib/types'
 
-// Settings → Product (PRD "Context & AI Editing" §4).
+// Settings → Product & Context (PRD "Context & AI Editing" §4).
 //
-// The SAME two fields the upload card asks for, on a screen that can be reached at any
-// time. It exists because context is a property of the WORKSPACE, not of an upload: the
-// upload card asks once, and after that the only honest place to change it is here.
+// The SAME fields the upload card asks for, plus the half it deliberately does not: notes.
+// Context is a property of the WORKSPACE, not of an upload — the upload card asks once for
+// the minimum a run needs, and this is the only honest place to change any of it later.
 //
 // Deliberately NOT a second write path. Both surfaces go through saveProductContext(),
-// which calls set_product_context() (migration 0040) — the four columns are no longer
-// client-writable, so the 600-char cap and the who/when stamp cannot be routed around by
-// whichever screen was written second.
+// which calls set_product_context() (migration 0044). `product_context` is not in the
+// UPDATE grant, so the budget and the who/when stamp cannot be routed around by whichever
+// screen was written second.
 
 type Props = {
   kb: KB
@@ -26,9 +21,9 @@ type Props = {
   onSaved: (kb: KB) => void
 }
 
-function updatedLine(kb: KB): string | null {
-  if (!kb.product_context_updated_at) return null
-  const when = new Date(kb.product_context_updated_at).toLocaleDateString(undefined, {
+function updatedLine(kb: KB, at: string | null | undefined): string | null {
+  if (!at) return null
+  const when = new Date(at).toLocaleDateString(undefined, {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -37,58 +32,80 @@ function updatedLine(kb: KB): string | null {
   return who ? `Last updated ${when} by ${who}` : `Last updated ${when}`
 }
 
+// Client-side only, and never sent as the id of an existing note — the RPC mints its own
+// for anything arriving without one. crypto.randomUUID is on every browser the SPA targets.
+const newNote = (): ProductNote => ({ id: crypto.randomUUID(), title: '', body: '' })
+
 export default function ProductSettings({ kb, onBack, onSaved }: Props) {
-  const [name, setName] = useState(kb.product_name ?? '')
-  const [description, setDescription] = useState(kb.product_description ?? '')
-  const [audience, setAudience] = useState(kb.audience || DEFAULT_AUDIENCE)
-  const [tone, setTone] = useState(kb.tone || DEFAULT_TONE)
+  const initial = productContextOf(kb)
+  const [name, setName] = useState(initial.name)
+  const [description, setDescription] = useState(initial.description)
+  const [notes, setNotes] = useState<ProductNote[]>(initial.notes)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
+  // Summed exactly the way the RPC sums it, from the same helper, so the meter and the
+  // refusal cannot disagree about what 100% means.
+  const used = contextCharsUsed(description, notes)
+  const pct = Math.min(1, used / CONTEXT_CHAR_BUDGET)
+  const over = used > CONTEXT_CHAR_BUDGET
+
   const dirty =
-    name.trim() !== (kb.product_name ?? '') ||
-    description.trim() !== (kb.product_description ?? '') ||
-    audience !== (kb.audience || DEFAULT_AUDIENCE) ||
-    tone !== (kb.tone || DEFAULT_TONE)
+    name.trim() !== initial.name ||
+    description.trim() !== initial.description ||
+    JSON.stringify(notes.map((n) => [n.title, n.body])) !==
+      JSON.stringify(initial.notes.map((n) => [n.title, n.body]))
+
+  function touch<T>(set: (v: T) => void) {
+    return (v: T) => {
+      set(v)
+      setSaved(false)
+    }
+  }
+
+  function patchNote(id: string, patch: Partial<ProductNote>) {
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)))
+    setSaved(false)
+  }
 
   async function save() {
-    if (!name.trim() || busy) return
+    if (!name.trim() || busy || over) return
     setBusy(true)
     setError(null)
     try {
+      // Empty notes are dropped rather than stored: someone who clicks "+ Add note" and
+      // changes their mind should not leave a blank card behind for the pipeline to read.
+      const kept = notes.filter((n) => n.title.trim() || n.body.trim())
       const updated = await saveProductContext(kb, {
-        product_name: name.trim(),
+        name: name.trim(),
         description: description.trim(),
-        audience,
-        tone,
+        notes: kept.map((n) => ({ ...n, title: n.title.trim(), body: n.body.trim() })),
       })
+      setNotes(productContextOf(updated).notes)
       onSaved(updated)
       setSaved(true)
     } catch (e) {
       // The RPC refuses rather than truncates, so the only errors reachable here are a
-      // length the field should have prevented and a lost session. Say which.
+      // budget the meter should have caught and a lost session. Say which.
       setError(e instanceof Error ? e.message : 'That did not save. Try again.')
     } finally {
       setBusy(false)
     }
   }
 
-  const stamp = updatedLine(kb)
+  const stamp = updatedLine(kb, initial.updated_at)
 
   return (
     <div className="settings">
       <header className="settings-top">
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onBack}
-        >
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>
           ← Help center
         </button>
       </header>
 
       <div className="settings-single">
-        <h1>Product details</h1>
+        <h1>Product &amp; context</h1>
         <p className="dm-lede">
           What this help center documents. Every guide you build is written against it, so
           you only fill it in once.
@@ -108,50 +125,10 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
               placeholder="Name of the product / feature"
               value={name}
               maxLength={120}
-              onChange={(e) => {
-                setName(e.target.value)
-                setSaved(false)
-              }}
+              onChange={(e) => touch(setName)(e.target.value)}
               required
             />
             <p className="hint">Used so the guide calls things by their real names.</p>
-          </div>
-
-          <div className="up-row" style={{ marginTop: 18 }}>
-            <div className="field">
-              <label htmlFor="ps-audience">
-                Who reads it? <span className="optional">Optional</span>
-              </label>
-              <select
-                id="ps-audience"
-                value={audience}
-                onChange={(e) => {
-                  setAudience(e.target.value)
-                  setSaved(false)
-                }}
-              >
-                {AUDIENCE_OPTIONS.map((o) => (
-                  <option key={o}>{o}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="ps-tone">
-                Tone <span className="optional">Optional</span>
-              </label>
-              <select
-                id="ps-tone"
-                value={tone}
-                onChange={(e) => {
-                  setTone(e.target.value)
-                  setSaved(false)
-                }}
-              >
-                {TONE_OPTIONS.map((o) => (
-                  <option key={o}>{o}</option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <div className="field" style={{ marginTop: 18 }}>
@@ -162,14 +139,67 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
               id="ps-desc"
               placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
               value={description}
-              maxLength={PRODUCT_DESCRIPTION_MAX}
-              onChange={(e) => {
-                setDescription(e.target.value)
+              onChange={(e) => touch(setDescription)(e.target.value)}
+            />
+          </div>
+
+          {/* Notes. Same purpose as the description, chunked — a glossary entry, a feature
+              list, a roles breakdown — so unrelated facts are not forced into one
+              paragraph. They share the description's budget rather than having their own. */}
+          <div className="ps-notes">
+            {notes.map((n, i) => (
+              <div className="ps-note" key={n.id}>
+                <input
+                  className="ps-note-t"
+                  type="text"
+                  placeholder="Note title — e.g. Glossary, Roles, What's in each plan"
+                  value={n.title}
+                  maxLength={120}
+                  aria-label={`Note ${i + 1} title`}
+                  onChange={(e) => patchNote(n.id, { title: e.target.value })}
+                />
+                <textarea
+                  className="ps-note-b"
+                  placeholder="The facts a guide should get right."
+                  value={n.body}
+                  aria-label={`Note ${i + 1} body`}
+                  onChange={(e) => patchNote(n.id, { body: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="ps-note-x"
+                  aria-label={`Remove note ${i + 1}`}
+                  onClick={() => {
+                    setNotes((prev) => prev.filter((x) => x.id !== n.id))
+                    setSaved(false)
+                  }}
+                >
+                  <Icon name="trash" size={15} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="ps-note-add"
+              onClick={() => {
+                setNotes((prev) => [...prev, newNote()])
                 setSaved(false)
               }}
-            />
+            >
+              <Icon name="plus" size={15} />
+              Add note
+            </button>
+          </div>
+
+          {/* The budget, pinned under the list it measures. Deleting a note frees it live,
+              because `used` is derived from state rather than from what was last saved. */}
+          <div className={`ps-budget${pct >= CONTEXT_BUDGET_WARN ? ' warn' : ''}`}>
+            <div className="q-progress">
+              <div className="q-progress-fill" style={{ width: `${(pct * 100).toFixed(1)}%` }} />
+            </div>
             <p className="hint">
-              {PRODUCT_DESCRIPTION_MAX - description.length} characters left.
+              {Math.round(pct * 100)}% of context used
+              {over && ` — ${used - CONTEXT_CHAR_BUDGET} characters over`}
             </p>
           </div>
 
@@ -188,18 +218,16 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
             </p>
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-              marginTop: 20,
-              flexWrap: 'wrap',
-            }}
-          >
-            <button className="btn" disabled={!name.trim() || !dirty || busy} onClick={save}>
+          <div className="ps-actions">
+            <button
+              className="btn"
+              disabled={!name.trim() || !dirty || busy || over}
+              onClick={save}
+            >
               {busy ? 'Saving…' : 'Save'}
             </button>
+            {/* Never a bare disabled button: the sentence says when it opens. */}
+            {over && <span className="hint">Trim {used - CONTEXT_CHAR_BUDGET} characters to save.</span>}
             {saved && !dirty && <span className="hint">Saved.</span>}
             {stamp && (
               <span className="hint" style={{ marginLeft: 'auto' }}>

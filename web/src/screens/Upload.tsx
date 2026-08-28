@@ -2,14 +2,10 @@ import { useState, useRef } from 'react'
 import {
   ACCEPTED_VIDEO_EXTENSIONS,
   ACCEPTED_VIDEO_TYPES,
-  AUDIENCE_OPTIONS,
+  CONTEXT_CHAR_BUDGET,
   COPY,
-  DEFAULT_AUDIENCE,
-  DEFAULT_TONE,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_MINUTES,
-  PRODUCT_DESCRIPTION_MAX,
-  TONE_OPTIONS,
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
 import Wordmark from '../components/Wordmark'
@@ -99,17 +95,22 @@ export default function Upload({
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
-  const [productName, setProductName] = useState(saved?.product_name ?? '')
-  const [audience, setAudience] = useState<string>(saved?.audience || DEFAULT_AUDIENCE)
-  const [tone, setTone] = useState<string>(saved?.tone || DEFAULT_TONE)
+  const [productName, setProductName] = useState(saved?.name ?? '')
   const [description, setDescription] = useState(saved?.description ?? '')
-  // Known product context collapses the four fields into one line. Expanding is an explicit
-  // act, and it says plainly that it only affects what happens next.
-  const [showProduct, setShowProduct] = useState(!saved?.product_name)
+  // Known product context collapses to one line. Expanding is an explicit act, and it says
+  // plainly that it only affects what happens next. NOTES are not editable here — they are
+  // a Settings surface (PRD §4), and the upload card asks the minimum that a run needs.
+  const [showProduct, setShowProduct] = useState(!saved?.name)
   // The recording tier (3b). Every field above describes the PRODUCT and is reused by every
   // run; this one describes the video in the dropzone. Its absence is why the run that
   // matters most — the first one — has had no per-video grounding at all.
   const [recording, setRecording] = useState('')
+  // Notes are written in Settings and are not editable here, but they still spend the
+  // shared pool — so the description's ceiling on this screen is what they leave behind.
+  const notesChars = (saved?.notes ?? []).reduce(
+    (n, note) => n + note.title.length + note.body.length,
+    0,
+  )
   const inputRef = useRef<HTMLInputElement>(null)
   // null when we do not yet know the window — then nothing is claimed at all (PRD §8).
   const retentionNote = COPY.videoDeletion(videoRetentionDays)
@@ -142,10 +143,11 @@ export default function Upload({
     if (!files.length || !productName.trim()) return
     onSubmit(files, {
       product: {
-        product_name: productName.trim(),
+        name: productName.trim(),
         description: description.trim(),
-        audience,
-        tone,
+        // Carried through untouched: the upload card does not edit notes, and dropping
+        // them here would silently clear what someone wrote in Settings.
+        notes: saved?.notes ?? [],
       },
       recording: recording.trim(),
     })
@@ -273,9 +275,7 @@ export default function Upload({
             {!showProduct ? (
               <div className="up-known">
                 <span className="up-known-t">{productName}</span>
-                <span className="up-known-d">
-                  {[audience, tone].filter(Boolean).join(' · ')}
-                </span>
+                <span className="up-known-d">{description}</span>
                 <button
                   type="button"
                   className="up-known-a"
@@ -293,7 +293,7 @@ export default function Upload({
                   <b>About your product</b>
                   <span>saved for every guide</span>
                 </div>
-                {saved?.product_name && (
+                {saved?.name && (
                   /* DECIDED, not deferred: changing product context never re-runs existing
                      articles. It would burn quota the user did not spend and overwrite edits
                      they made by hand. This sentence is the whole contract — if a "re-run
@@ -317,33 +317,6 @@ export default function Upload({
                   <p className="hint">Used so the guide calls things by their real names.</p>
                 </div>
 
-                <div className="up-row">
-                  <div className="field">
-                    <label htmlFor="audience">
-                      Who reads it? <span className="optional">Optional</span>
-                    </label>
-                    <select
-                      id="audience"
-                      value={audience}
-                      onChange={(e) => setAudience(e.target.value)}
-                    >
-                      {AUDIENCE_OPTIONS.map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="tone">
-                      Tone <span className="optional">Optional</span>
-                    </label>
-                    <select id="tone" value={tone} onChange={(e) => setTone(e.target.value)}>
-                      {TONE_OPTIONS.map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
                 <div className="field">
                   <label htmlFor="description">
                     Anything else we should know? <span className="optional">Optional</span>
@@ -352,7 +325,10 @@ export default function Upload({
                     id="description"
                     placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
                     value={description}
-                    maxLength={PRODUCT_DESCRIPTION_MAX}
+                    // The shared pool, and the upload card is the only place notes are not
+                    // competing for it — so what is left after the KB's notes is the real
+                    // ceiling here, not the whole budget.
+                    maxLength={CONTEXT_CHAR_BUDGET - notesChars}
                     onChange={(e) => setDescription(e.target.value)}
                   />
                 </div>

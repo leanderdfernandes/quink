@@ -9002,6 +9002,120 @@ div.rail-meter {
   background: var(--brand-700);
 }
 
+/* --- Settings → Product & context: the notes list and its budget meter ---------------
+   The notes are the only repeatable editor in the product. Each is an inset well rather
+   than a card, because a card inside the settings card is a box inside a box — the thing
+   v2 removed. The remove control is hover-revealed, like every other destructive tool. */
+.ps-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+.ps-note {
+  position: relative;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+}
+.ps-note .ps-note-t,
+.ps-note .ps-note-b {
+  background: transparent;
+  padding: 0;
+  height: auto;
+  border-radius: 0;
+}
+.ps-note-t {
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+  color: var(--ink);
+  padding-right: var(--s-8);
+}
+.ps-note .ps-note-t:hover,
+.ps-note .ps-note-b:hover {
+  background: transparent;
+}
+/* The WELL is the field here, so focus lifts the whole note rather than ringing one line
+   of it — two rings inside one card is the boxes-inside-boxes problem again. */
+.ps-note .ps-note-t:focus,
+.ps-note .ps-note-b:focus {
+  background: transparent;
+  box-shadow: none;
+}
+.ps-note:focus-within {
+  background: var(--surface-3);
+}
+.ps-note-b {
+  margin-top: var(--s-1);
+  min-height: 64px;
+  font-size: var(--t-ui-sm);
+  color: var(--ink-2);
+  line-height: var(--lh-body);
+}
+.ps-note-x {
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-2);
+  display: grid;
+  place-items: center;
+  width: var(--h-control-sm);
+  height: var(--h-control-sm);
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  opacity: 0;
+  transition:
+    opacity var(--dur-2) var(--ease),
+    background var(--dur-2) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ps-note:hover .ps-note-x,
+.ps-note-x:focus-visible {
+  opacity: 1;
+}
+.ps-note-x:hover {
+  background: var(--critical-soft);
+  color: var(--critical-ink);
+}
+.ps-note-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--h-control-sm);
+  padding: 0 var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--brand-600);
+  transition: background var(--dur-2) var(--ease);
+}
+.ps-note-add:hover {
+  background: var(--hover);
+}
+
+/* Pinned under the list it measures, and driven by STATE, so deleting a note frees budget
+   live rather than at the next save. Amber past 90% — a warning you can act on. */
+.ps-budget {
+  margin-top: var(--s-5);
+}
+.ps-budget .hint {
+  margin-top: var(--s-2);
+}
+.ps-budget.warn .q-progress-fill {
+  background: var(--caution);
+}
+.ps-budget.warn .hint {
+  color: var(--caution-ink);
+}
+
+.ps-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-top: var(--s-5);
+  flex-wrap: wrap;
+}
+
 /* ======================================================================================
    v2 RECONCILIATION — the surfaces that used a border as their only edge
    ======================================================================================

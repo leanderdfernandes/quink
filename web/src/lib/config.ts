@@ -169,25 +169,33 @@ export const PIPELINE_STAGES = [
 
 export type StageKey = (typeof PIPELINE_STAGES)[number]['key']
 
-// Context form (ux-spec §2). Product name is the ONE required field.
-export const AUDIENCE_OPTIONS = [
-  'New users',
-  'Existing customers',
-  'Internal team',
-  'Admins',
-] as const
+// AUDIENCE_OPTIONS / TONE_OPTIONS / DEFAULT_AUDIENCE / DEFAULT_TONE are GONE (0044).
+// PRD §4 calls them a v1 leftover from ux-spec.md Screen 1 and cuts them: they move voice,
+// not accuracy, and accuracy is the problem this section exists to solve. The columns went
+// with them in the fold — a field nothing writes is a field that rots.
 
-export const TONE_OPTIONS = ['Friendly', 'Concise', 'Formal'] as const
+// The shared context pool, in characters (PRD "Context & AI Editing" §4). Covers
+// `description` PLUS every note title and body, combined; `name` is exempt and separately
+// capped at 120.
+//
+// Mirrors CONTEXT_CHAR_BUDGET in worker/config.py and public.context_char_budget()
+// (migration 0044) — and the database is where it is ENFORCED. product_context is not in
+// the UPDATE grant, so set_product_context() is the only way in and this number is the
+// meter, not the control. If the two drift, the meter fills at one length and the RPC
+// refuses at another.
+export const CONTEXT_CHAR_BUDGET = 6000
 
-export const DEFAULT_AUDIENCE = 'New users'
-export const DEFAULT_TONE = 'Friendly'
+// Sum it exactly the way the RPC sums it, or "100%" means two different things on the two
+// sides of the wire.
+export function contextCharsUsed(description: string, notes: { title: string; body: string }[]) {
+  return (
+    description.length +
+    notes.reduce((n, note) => n + note.title.length + note.body.length, 0)
+  )
+}
 
-// Hard cap on the product description (PRD "Context & AI Editing" §4). Mirrors
-// public.product_context_cap() (migration 0040), which is where it is actually ENFORCED —
-// the four product columns are no longer client-writable, so this number is a courtesy to
-// the person typing, not the control. If the two drift, the field stops at one length and
-// set_product_context() refuses at another.
-export const PRODUCT_DESCRIPTION_MAX = 600
+// Past this the meter turns amber (PRD §4). Not a limit — a warning that one is coming.
+export const CONTEXT_BUDGET_WARN = 0.9
 
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
