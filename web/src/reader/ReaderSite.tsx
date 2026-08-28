@@ -556,7 +556,7 @@ export function ReaderChrome({
   const shellProps = {
     className: 'rs2',
     'data-header': headerStyleOf(kb.header_style, kb.header_image_path),
-    style: themeVars(kb.primary_color, kb.font_pairing),
+    style: themeVars(kb.primary_color, kb.font_pairing, kb.brand_wash),
   }
 
   /* ---------------- ARTICLE ---------------- */

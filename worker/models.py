@@ -6,7 +6,7 @@ that's a bug.
 
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 MMSS = re.compile(r"^\d{1,3}:[0-5]\d$")
 
@@ -76,14 +76,34 @@ class Article(BaseModel):
     steps: list[Step]
 
 
+class ProductNote(BaseModel):
+    """One {title, body} block of product context. Repeatable so a glossary, a feature list
+    and a roles breakdown are not forced into one paragraph."""
+
+    id: str = ""
+    title: str = ""
+    body: str = ""
+
+
 class ProductContext(BaseModel):
     """What the help center documents. Reused by every run in a KB — it is stored on
-    knowledge_bases (migration 0027) and sent per request so the JOB keeps a copy of what
-    it was actually grounded on. Re-reading the KB at retry time would re-ground the retry
-    on whatever the product context says LATER, which is not the same article."""
+    knowledge_bases.product_context (migration 0044) and sent per request so the JOB keeps a
+    copy of what it was actually grounded on. Re-reading the KB at retry time would re-ground
+    the retry on whatever the product context says LATER, which is not the same article.
 
-    product_name: str
+    `name` was `product_name` before the fold, and `audience`/`tone` were cut by PRD §4.
+    Both old names are still ACCEPTED here, and deliberately: a retry replays jobs.context
+    from a row written before 0044, and that row carries the old keys. Dropping them would
+    turn every historical job into a 422 at the moment someone pressed Retry.
+    """
+
+    model_config = {"populate_by_name": True}
+
+    name: str = Field(default="", validation_alias=AliasChoices("name", "product_name"))
     description: str = ""
+    notes: list[ProductNote] = Field(default_factory=list)
+    # Pre-0044 rows only. Nothing writes these; build_context_block still reads them so a
+    # replayed run reproduces the prompt it originally got.
     audience: str = ""
     tone: str = ""
 

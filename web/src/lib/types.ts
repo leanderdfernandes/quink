@@ -155,18 +155,15 @@ export type KnowledgeBase = {
   about: string
   headline: string
   search_placeholder: string
-  // Model-facing product grounding (migration 0027), reused as the default for every run
-  // in this KB. NOT `about` above — that is reader-facing prose the public site renders.
-  product_name: string
-  product_description: string
-  audience: string
-  tone: string
-  // Who last wrote the four fields above, and when (migration 0040). Rendered by
-  // Settings → Product and by nothing else. The NAME is not a column — it comes back from
+  // Model-facing product grounding, folded into one column (migration 0044) and reused as
+  // the default for every run in this KB. NOT `about` above — that is reader-facing prose
+  // the public site renders.
+  //
+  // The whole tier is here, audit fields included, because it is written as one object by
+  // one RPC. The resolved display NAME is not part of it — that comes back from
   // set_product_context() and is carried on the client-side row only, so it is undefined
   // on a KB read straight from the table.
-  product_context_updated_at: string | null
-  product_context_updated_by: string | null
+  product_context: ProductContext
   product_context_updated_by_name?: string | null
   subdomain: string | null
   custom_domain: string | null
@@ -174,6 +171,10 @@ export type KnowledgeBase = {
   // Theming (build spec §1). Primary colour is the ONLY colour stored — everything else
   // derives from it at render.
   primary_color: string
+  // How strongly that colour washes into secondary surfaces, 0-30 percent (0045). A
+  // STRENGTH, not a second colour: storing another hex would let the two drift apart and
+  // break the one-stored-colour premise above.
+  brand_wash: number
   font_pairing: FontPairing
   logo_path: string | null
   favicon_path: string | null
@@ -233,6 +234,7 @@ export type ReaderKb = {
   headline: string
   search_placeholder: string
   primary_color: string
+  brand_wash: number
   font_pairing: FontPairing
   logo_path: string | null
   favicon_path: string | null
@@ -322,12 +324,29 @@ export type Job = {
 // ProductContext is NOT knowledge_bases.about. `about` is reader-facing prose the public
 // help center renders; this is model-facing grounding nobody ever sees. Prefilling `about`
 // from `description` on a first save is a UI convenience, not the same field.
-export type ProductContext = {
-  product_name: string
-  description: string
-  audience: string
-  tone: string
+export type ProductNote = {
+  // Minted once, client-side, at row creation and never changed — the same rule as Faq.id.
+  // The RPC mints one for any note that arrives without it rather than rejecting the write.
+  id: string
+  title: string
+  body: string
 }
+
+export type ProductContext = {
+  name: string
+  description: string
+  // Repeatable {title, body} blocks — a glossary entry, a feature list, a roles breakdown.
+  // Same purpose as `description`, chunked so unrelated facts are not forced into one
+  // paragraph. Shares one character budget with it (CONTEXT_CHAR_BUDGET).
+  notes: ProductNote[]
+  // Stamped inside set_product_context(). Absent until the first save.
+  updated_at?: string | null
+  updated_by?: string | null
+}
+
+// Audience and tone are gone (0044); PRD §4 cut them as a v1 leftover that moves voice
+// rather than accuracy. A KB read straight from the table can carry `{}` — the column's
+// default — so read it through productContextOf() in lib/kbs.ts, never directly.
 
 // What goes into jobs.context, and therefore what a retry re-grounds on. Stored per job
 // rather than re-read from the KB, so a retry reproduces the ORIGINAL run rather than

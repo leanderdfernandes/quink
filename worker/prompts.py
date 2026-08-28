@@ -655,13 +655,24 @@ def build_context_block(context: dict) -> str:
     product = context.get("product") or context
     recording = context.get("recording") or ""
 
-    lines = [f"Product name: {product.get('product_name') or 'Unknown'}"]
+    # `name` since the 0044 fold, `product_name` before it. Both are read, because a RETRY
+    # replays the context stored on the job, and rows written before the fold carry the old
+    # key. Same reason audience/tone are still read below and no longer written.
+    lines = [f"Product name: {product.get('name') or product.get('product_name') or 'Unknown'}"]
     if product.get("audience"):
         lines.append(f"Who reads this: {product['audience']}")
     if product.get("tone"):
         lines.append(f"Tone to write in: {product['tone']}")
     if product.get("description"):
         lines.append(f"About the product: {product['description']}")
+    # Notes are the same grounding as the description, chunked. Each is titled so the model
+    # reads a glossary as a glossary rather than as more prose about the product.
+    for note in product.get("notes") or []:
+        title = (note.get("title") or "").strip()
+        body = (note.get("body") or "").strip()
+        if not body and not title:
+            continue
+        lines.append(f"{title or 'Also'}: {body}" if body else f"{title}")
     # Last, and named as being about the video, so the model reads it as the specific thing
     # it is watching rather than as more background about the product.
     if recording:

@@ -9,7 +9,7 @@ import {
   helpCenterUrl,
 } from '../lib/config'
 import { extractLogoColors, pickableColors } from '../lib/palette'
-import { isValidHex, normalizeHex, themeVars } from '../reader/theme'
+import { isValidHex, normalizeHex, normalizeWash, themeVars } from '../reader/theme'
 import { ReaderChrome } from '../reader/ReaderSite'
 import PreviewFrame from '../components/PreviewFrame'
 import { fetchReaderArticle, fetchReaderArticles, groupCategories } from '../reader/readerData'
@@ -35,7 +35,6 @@ type Props = {
   // the preview used to derive watermark/noindex from — which was only correct for
   // the owner.
   ent: Entitlements | null
-  onBack: () => void
   onSaved: (kb: KB) => void
 }
 
@@ -159,13 +158,16 @@ export function normalizeLinkUrl(raw: string): string | null {
   }
 }
 
-export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
+export default function ThemeSettings({ kb, ent, onSaved }: Props) {
   const [name, setName] = useState(kb.name)
   const [about, setAbout] = useState(kb.about ?? '')
   const [headline, setHeadline] = useState(kb.headline ?? '')
   const [placeholder, setPlaceholder] = useState(kb.search_placeholder ?? '')
   const [color, setColor] = useState(kb.primary_color || DEFAULT_PRIMARY_COLOR)
   const [hexInput, setHexInput] = useState(kb.primary_color || DEFAULT_PRIMARY_COLOR)
+  // The wash strength. Clamped on read, like the hex is validated on read: a row written
+  // before 0045 has the column default, and a hand-edited one cannot break the preview.
+  const [wash, setWash] = useState(() => normalizeWash(kb.brand_wash))
   const [font, setFont] = useState<FontPairing>(kb.font_pairing)
   const [logoPath, setLogoPath] = useState(kb.logo_path)
   const [faviconPath, setFaviconPath] = useState(kb.favicon_path)
@@ -377,6 +379,7 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
       headline: headline.trim(),
       search_placeholder: placeholder.trim(),
       primary_color: normalizeHex(color),
+      brand_wash: wash,
       font_pairing: font,
       logo_path: logoPath,
       favicon_path: faviconPath,
@@ -421,6 +424,7 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
     headline,
     search_placeholder: placeholder,
     primary_color: isValidHex(color) ? normalizeHex(color) : DEFAULT_PRIMARY_COLOR,
+    brand_wash: wash,
     font_pairing: font,
     logo_path: logoPath,
     favicon_path: faviconPath,
@@ -444,6 +448,7 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
   const tileVars = themeVars(
     isValidHex(color) ? normalizeHex(color) : DEFAULT_PRIMARY_COLOR,
     font,
+    wash,
   )
 
   // Generated from oklch(46% 0.15 h), not pasted hex — the equal lightness across the row
@@ -454,9 +459,6 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
   return (
     <div className="th">
       <header className="th-bar">
-        <button className="ed-back" onClick={onBack}>
-          ← Help center
-        </button>
         <div className="ed-spacer" />
         <a
           className="ed-back"
@@ -610,6 +612,26 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
                     </div>
                   </>
                 )}
+                {/* The wash. Beside the colour because it is a property OF the colour —
+                    how much of it ends up behind cards, rows and the search field — and
+                    the split preview shows it moving live, same as the hex does. */}
+                <div className="th-wash">
+                  <label htmlFor="th-wash">
+                    Background wash <span className="th-wash-n">{wash}%</span>
+                  </label>
+                  <input
+                    id="th-wash"
+                    type="range"
+                    min={0}
+                    max={30}
+                    step={1}
+                    value={wash}
+                    onChange={(e) => setWash(normalizeWash(Number(e.target.value)))}
+                  />
+                  <p className="th-hint">
+                    How much of your colour sits behind cards and rows. 0 leaves them plain.
+                  </p>
+                </div>
                 <div className="th-hexrow">
                   <input
                     type="color"

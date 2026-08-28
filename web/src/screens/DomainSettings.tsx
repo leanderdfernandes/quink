@@ -21,7 +21,6 @@ import type { KnowledgeBase as KB } from '../lib/types'
 
 type Props = {
   kb: KB
-  onBack: () => void
   onChange: (kb: KB) => void
 }
 
@@ -117,7 +116,7 @@ function RecordTable({ records }: { records: DnsRecord[] }) {
   )
 }
 
-export default function DomainSettings({ kb, onBack, onChange }: Props) {
+export default function DomainSettings({ kb, onChange }: Props) {
   const [status, setStatus] = useState(kb.domain_status)
   const [domainInput, setDomainInput] = useState(kb.custom_domain ?? '')
   const [adding, setAdding] = useState(false)
@@ -219,17 +218,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
   const waiting = status === 'pending' || status === 'verifying'
 
   return (
-    <div className="settings">
-      <header className="settings-top">
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onBack}
-        >
-          ← Help center
-        </button>
-      </header>
-
-      <div className="dm">
+    <div className="dm">
         <h1>Domain</h1>
         <p className="dm-lede">
           Your help center is always reachable at its free address. Add your own domain
@@ -410,7 +399,6 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
               + Use your own domain
             </button>
           ))}
-      </div>
     </div>
   )
 }

@@ -126,6 +126,22 @@ PLANS: dict[str, dict] = {
 
 DEFAULT_PLAN = "free"
 
+# How much product context one help center may carry, in characters. A named constant
+# alongside PLANS for the same reason PLANS is one: a limit written as a magic number in
+# two places is a limit that eventually disagrees with itself.
+#
+# It covers `description` plus every note title and body, COMBINED — one shared pool, not a
+# per-field cap, because the user should be able to spend it where their product needs it.
+# `name` is exempt: it is structural metadata, separately capped at 120.
+#
+# The ceiling is about COST, not tidiness. Unlike a chat that reads its context once, this
+# text is injected into every generation call, so it is paid for on every run. 6,000 chars
+# is roughly 1,500 tokens.
+#
+# Mirrored by CONTEXT_CHAR_BUDGET in web/src/lib/config.ts and by context_char_budget() in
+# the database (migration 0044). The database one is the CONTROL; these two are the meter.
+CONTEXT_CHAR_BUDGET = 6000
+
 # How many generations one ACCOUNT may have running at once (slice 3c). See lanes.py for
 # why this exists: the real reason is the read-then-act window in the daily spend breaker,
 # not tiering. Kept small on every plan, `internal` included.

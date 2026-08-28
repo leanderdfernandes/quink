@@ -258,7 +258,7 @@ Everything here was found while implementing `context-and-editing-prd.md`. Each 
 divergence between the prompt, the PRD and the code, resolved with a stated assumption
 rather than silently.
 
-### G1. `product_context jsonb` was NOT created, deliberately
+### G1. `product_context jsonb` was NOT created, deliberately — CLOSED by 0044 (see H3)
 
 PRD §9 asks for `kbs.product_context jsonb {name, description, updated_at, updated_by}`.
 Migration 0027 had already landed the same four facts as flat columns (`product_name`,
@@ -431,3 +431,133 @@ and by text edits being ~$0.0002 each.
   (LEARNINGS "Accepted holes A"). Deliberately not defended — the runs cost cents. If it is
   ever built, it retains a hashed derivative of an address after we promised deletion, so it
   **must be disclosed in the privacy policy at the time it is added**.
+
+---
+
+## H. Design system v2 — flagged during the nav-consolidation build
+
+Raised by Step 0 of the nav/context/theming brief. Everything here is FLAGGED, not fixed,
+except H2 which was a live regression.
+
+### H1. The brief's type scale matches neither system
+
+The brief lists `12/13/15/18/22/30` under DO NOT CHANGE and asks that no off-scale size be
+introduced. Three problems, and they compound:
+
+1. **v1 was never that scale.** `design-system.html` also uses 9, 10, 11, 12.5, 14, 17, 20,
+   32 and 40px. The six named are a subset of what shipped, not the rule it followed.
+2. **v2 is a different scale entirely**, and deliberately so — 16px body rather than 15, and
+   a separate display ramp for the serif:
+   - display (Newsreader) `--t-d1..d6` = 76 / 56 / 42 / 33 / 26 / 22
+   - UI (Hanken) = 19 / 17 / 16 / 15 / 14 / 13 / 12 / 11
+   Only 13, 15 and 22 appear in both lists. 18 and 30 exist in neither v2 ramp.
+3. **The brief's own rule already settles it.** It says `design-system.html` is authoritative
+   *"unless `Quink Design System` ships its own token file"* — and it does, `tokens/`. So
+   the design system wins, and the `12/13/15/18/22/30` sentence is the thing that is stale.
+
+The same disagreement runs through colour (v1 hex `#0E5C6B`, v2 `oklch(44% 0.088 205)` with
+a dark ramp v1 has no equivalent for) and radii (v1 8/12/16/999, v2 6/8/10/16/20/26/34/999).
+
+This is already shipped: commit `8c23c07` rebuilt the app on the v2 tokens and is on `main`.
+
+> **Prompt:** Confirm the v2 scale is the rule and strike `12/13/15/18/22/30` from the
+> standing instructions, or say which of the two systems is being retired. Until then any
+> "no off-scale sizes" review of the app will flag essentially every rule in `styles.css`.
+
+### H2. Every font pairing had a serif heading — FIXED
+
+Not a flag, a regression, and it shipped. `8c23c07` changed `FONT_PAIRINGS.modern` from
+Hanken/Hanken to Newsreader/Hanken to match the design system's own pairing. All three
+options then set a serif heading, so the reader's article titles came out serif whichever
+one a customer picked and the control did nothing.
+
+Fixed by giving each pairing a distinct heading FACE, and a `headingWeight` with it —
+`themeVars()` now emits `--font-heading-weight`, because a grotesk at the serif's 420 reads
+underweight at 47px:
+
+| Pairing | Heading | Body | Weight |
+|---|---|---|---|
+| Modern | Hanken Grotesk | Hanken Grotesk | 640 |
+| Editorial | Newsreader | Hanken Grotesk | 420 |
+| Classic | Georgia | Georgia | 500 |
+
+Quink's own chrome still obeys the serif-above-22px rule. This is the reader wearing the
+*customer's* brand, which has always been a separate question.
+
+### H3. `product_context jsonb` — RESOLVED by the fold (0044)
+
+The brief's Commit 1 asks for `kbs.product_context jsonb` plus a new
+`set_product_context(p_kb_id, p_name, p_description, p_notes)`. Both already exist in a
+different shape, and the difference was a deliberate decision:
+
+- The table is `knowledge_bases`, not `kbs`.
+- Migration **0027** landed the data as flat columns (`product_name`, `product_description`,
+  `audience`, `tone`).
+- Migration **0040** added the two audit columns, revoked client UPDATE on the four, and
+  created `set_product_context(uuid, text, text, text, text)` — `SECURITY DEFINER`,
+  `auth.uid()` only, `can_edit_kb()` gated, capped at `product_context_cap()` = 600.
+- **G1 in this file already escalated exactly this** and asked for a decision. It has not
+  been answered, and the brief does not acknowledge it.
+
+Adding the jsonb *beside* those columns recreates the second source of truth 0040 refused —
+`prompts.build_context_block`, `Upload.tsx`, `App.tsx`, `QueueDock` and `ProductSettings`
+all read the flat columns, and the pipeline would have to choose. The honest version is the
+fold G1 describes, and it is not additive:
+
+- one migration moving four columns into the jsonb and backfilling,
+- `create or replace set_product_context` with a **new signature** (notes, no audience/tone)
+  — which needs a live-definition diff in the header, per this same brief,
+- `CONTEXT_CHAR_BUDGET = 6000` replacing `product_context_cap()` = 600, a **10x raise**,
+- five read sites updated, including the worker's prompt builder.
+
+**Answered: do the fold.** 0044 moved the four flat columns into `product_context jsonb`,
+dropped them along with `audience`/`tone`, replaced `set_product_context` with a four-arg
+version taking notes, and raised the cap to `CONTEXT_CHAR_BUDGET` = 6000 across description
++ notes. G1 above is closed by this. Retries are unaffected: `jobs.context` keeps its own
+snapshot and the worker still reads the pre-fold key names.
+
+### H4. `tint` is two different controls — RESOLVED, one built
+
+The brief's Commit 3 says to restore a `tint` control "dropped" from Theming. History has
+one, and it is **not** what the brief then describes:
+
+- **What existed:** `header_style = 'tint'`, one of four masthead treatments from migration
+  **0024** (`check (header_style in ('solid','ink','tint','image'))`). Removed from the
+  picker in `8c23c07` — deliberately, because the design system's §3 says the band is a flat
+  brand fill and *"a tint mixed toward paper goes grey for desaturated customer colours,
+  which was the failure v1's own comments described"*. 0024's own header says the same. The
+  stored value still renders; it resolves to `solid`.
+- **What the brief describes:** a separate scalar on `knowledge_bases`, independent of
+  `primary_color`, controlling how strongly the brand washes into secondary surfaces (the
+  `--brand-50`/`--brand-100` end). That has never existed.
+
+So this is not a restore. It is either a revert of a design-system decision made four hours
+ago, or a new control that happens to share a word.
+
+**Answered: build the wash control, leave the masthead treatment retired.** Shipped as
+`knowledge_bases.brand_wash` (0045) and carried to the reader through `reader_kb()` (0046).
+`header_style = 'tint'` stays out of the picker and stored rows keep resolving to `solid`.
+
+### H5. The brief says five commits and lists four
+
+Commits 1–4 are specified (product context, settings consolidation, tint, reader card
+hover). No fifth appears.
+
+> **Prompt:** Name it, or the count is stale.
+
+### H6. `SUPABASE_DB_URL` was stale, and it broke every apply script
+
+`db.<ref>.supabase.co` has no DNS records at all any more — not A, not AAAA. Supabase
+retired the direct-connection hostnames in favour of the pooler, so **every
+`supabase/apply_00XX.py` in this repo would have failed to connect**, not just 0044's.
+
+`.env` now points at `aws-0-ap-southeast-1.pooler.supabase.com:5432` with the
+`postgres.<ref>` username shape and the same password. The region was found by probing,
+not guessed from the dashboard — worth writing down, because nothing else in the repo
+records where this project actually lives.
+
+`.env` is gitignored, so this is a local fix. Anyone else running a migration will hit the
+same wall until their own copy is updated.
+
+> **Prompt:** The database password was pasted into a chat transcript while sorting this
+> out. Rotate it (Settings → Database → Reset database password) and update `.env`.

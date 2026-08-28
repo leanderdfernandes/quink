@@ -1,4 +1,4 @@
-"""Live acceptance run for product context as a guarded write (migration 0040).
+"""Live acceptance run for product context as a guarded write (migrations 0040, 0044).
 
     cd supabase && ../worker/.venv/Scripts/python test_product_context.py
 
@@ -14,9 +14,12 @@ matter are all client-observable:
   * a MEMBER (can_edit_kb, not owner) can — entitlements resolve through the owner, and
     grounding a guide is something that makes articles;
   * someone with no relationship to the KB is refused;
-  * a 601-character description is refused BY THE DATABASE, not merely by the input's
-    maxLength — and the direct table update that used to be the write path now writes
-    nothing at all.
+  * a write over CONTEXT_CHAR_BUDGET is refused BY THE DATABASE, not merely by the
+    client's meter — and the budget is SHARED, so a note that would fit in an empty help
+    center is refused once a description is spending the same pool;
+  * deleting a note frees that budget immediately, and the write refused a moment ago now
+    succeeds unchanged;
+  * the direct table update that used to be the write path now writes nothing at all.
 
 Creates two throwaway auth users and one KB, and deletes all three in the finally block
 whatever happens.
@@ -102,7 +105,7 @@ def main() -> int:
         print("\n1. Signed out sees nothing and can call nothing")
         rows = (
             nobody.table("knowledge_bases")
-            .select("product_name, product_context_updated_at")
+            .select("product_context")
             .eq("id", kb_id)
             .execute()
             .data
@@ -115,30 +118,31 @@ def main() -> int:
             True,
         )
 
-        print("\n2. A member with can_edit_kb() can write it")
+        def ctx():
+            return (
+                owner.table("knowledge_bases").select("product_context")
+                .eq("id", kb_id).single().execute().data["product_context"]
+            )
+
+        print("\n2. A member with can_edit_kb() can write it, notes and all")
         member.rpc(
             "set_product_context",
             {
                 "p_kb_id": kb_id,
                 "p_name": "Acme Dashboard",
                 "p_description": "Inventory tracking for small warehouses.",
-                "p_audience": "New users",
-                "p_tone": "Friendly",
+                "p_notes": [{"id": "", "title": "Glossary", "body": "SKU = one item."}],
             },
         ).execute()
-        row = (
-            owner.table("knowledge_bases")
-            .select("product_name, product_description, audience, tone, "
-                    "product_context_updated_at, product_context_updated_by")
-            .eq("id", kb_id)
-            .single()
-            .execute()
-            .data
-        )
-        chk("name written", row["product_name"], "Acme Dashboard")
-        chk("audience written", row["audience"], "New users")
-        chk("who stamped", row["product_context_updated_by"], member_id)
-        chk("when stamped", row["product_context_updated_at"] is not None, True)
+        c = ctx()
+        chk("name written", c["name"], "Acme Dashboard")
+        chk("one note written", len(c["notes"]), 1)
+        chk("note title written", c["notes"][0]["title"], "Glossary")
+        # The client sent an empty id; the RPC mints one rather than storing a blank.
+        chk("note id minted server-side", len(c["notes"][0]["id"]) >= 32, True)
+        chk("who stamped", c["updated_by"], member_id)
+        chk("when stamped", c.get("updated_at") is not None, True)
+        chk("audience is gone from the shape", "audience" in c, False)
 
         print("\n3. Someone with no relationship to the KB is refused")
         chk(
@@ -148,48 +152,66 @@ def main() -> int:
                 {"p_kb_id": kb_id, "p_name": "Mine now"}).execute()) or "").lower(),
             True,
         )
-        chk(
-            "stranger's write did not land",
-            owner.table("knowledge_bases").select("product_name").eq("id", kb_id)
-            .single().execute().data["product_name"],
-            "Acme Dashboard",
-        )
+        chk("stranger's write did not land", ctx()["name"], "Acme Dashboard")
 
-        print("\n4. The 600 cap is the DATABASE's, not the input's")
-        long_desc = "x" * 601
+        print("\n4. The budget is the DATABASE's, not the client meter's")
+        budget = config.CONTEXT_CHAR_BUDGET
         chk(
-            "601 chars refused",
-            "over 600" in (err(lambda: owner.rpc("set_product_context",
+            "one char over is refused",
+            "over the" in (err(lambda: owner.rpc("set_product_context",
                 {"p_kb_id": kb_id, "p_name": "Acme Dashboard",
-                 "p_description": long_desc}).execute()) or "").lower(),
+                 "p_description": "x" * (budget + 1)}).execute()) or "").lower(),
             True,
         )
-        owner.rpc(
-            "set_product_context",
-            {"p_kb_id": kb_id, "p_name": "Acme Dashboard", "p_description": "x" * 600},
-        ).execute()
-        chk(
-            "600 chars accepted",
-            len(owner.table("knowledge_bases").select("product_description").eq("id", kb_id)
-                .single().execute().data["product_description"]),
-            600,
-        )
+        owner.rpc("set_product_context", {
+            "p_kb_id": kb_id, "p_name": "Acme Dashboard", "p_description": "x" * budget,
+        }).execute()
+        chk("exactly the budget is accepted", len(ctx()["description"]), budget)
 
-        print("\n5. The old direct-table write path is closed")
+        print("\n5. The pool is SHARED - a note and a description compete for it")
+        # Half the budget in prose leaves half for notes. A note that would fit in an empty
+        # help center is refused here, which is the whole point of one pool.
+        half = budget // 2
+        chk(
+            "a note that overflows the REMAINDER is refused",
+            "over the" in (err(lambda: owner.rpc("set_product_context", {
+                "p_kb_id": kb_id, "p_name": "Acme Dashboard",
+                "p_description": "d" * half,
+                "p_notes": [{"id": "", "title": "T", "body": "b" * half}],
+            }).execute()) or "").lower(),
+            True,
+        )
+        # ...and the same note fits once the description makes room. Same call, less prose.
+        owner.rpc("set_product_context", {
+            "p_kb_id": kb_id, "p_name": "Acme Dashboard",
+            "p_description": "d" * 10,
+            "p_notes": [{"id": "", "title": "T", "body": "b" * half}],
+        }).execute()
+        chk("it fits once the description shrinks", len(ctx()["notes"]), 1)
+
+        print("\n6. Deleting a note frees the budget, live")
+        # Sending the notes list WITHOUT that note is the delete. The write that follows is
+        # the one refused in step 5 - it must now succeed, unchanged.
+        owner.rpc("set_product_context", {
+            "p_kb_id": kb_id, "p_name": "Acme Dashboard",
+            "p_description": "d" * 10, "p_notes": [],
+        }).execute()
+        chk("note deleted", len(ctx()["notes"]), 0)
+        owner.rpc("set_product_context", {
+            "p_kb_id": kb_id, "p_name": "Acme Dashboard", "p_description": "d" * half,
+        }).execute()
+        chk("the freed budget is spendable", len(ctx()["description"]), half)
+
+        print("\n7. The old direct-table write path is closed")
         # PostgREST does not error on a column the role cannot write; it writes nothing.
         # So the assertion is on the VALUE, which is the only thing that would have been
         # wrong if the grant were still there.
         err(lambda: owner.table("knowledge_bases")
-            .update({"product_name": "Bypassed", "product_description": long_desc})
+            .update({"product_context": {"name": "Bypassed", "description": "", "notes": []}})
             .eq("id", kb_id).execute())
-        chk(
-            "direct update did not change the name",
-            owner.table("knowledge_bases").select("product_name").eq("id", kb_id)
-            .single().execute().data["product_name"],
-            "Acme Dashboard",
-        )
+        chk("direct update did not change the name", ctx()["name"], "Acme Dashboard")
 
-        print("\n6. An empty name is refused (it is the one required field)")
+        print("\n8. An empty name is refused (it is the one required field)")
         chk(
             "blank name refused",
             "required" in (err(lambda: owner.rpc("set_product_context",

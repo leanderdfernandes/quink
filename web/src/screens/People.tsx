@@ -35,14 +35,13 @@ type Props = {
   // answer whoever is asking — which is the point: a free-plan admin inside a paid help
   // center can invite, and an admin inside a free one cannot.
   ent: Entitlements | null
-  onBack: () => void
   onUpgrade: () => void
   // Called after you remove yourself. There is nothing to render afterwards: the very next
   // read of this KB returns nothing.
   onLeft: () => void
 }
 
-export default function People({ kb, userId, isOwner, ent, onBack, onUpgrade, onLeft }: Props) {
+export default function People({ kb, userId, isOwner, ent, onUpgrade, onLeft }: Props) {
   const [people, setPeople] = useState<Person[]>([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
@@ -147,17 +146,7 @@ export default function People({ kb, userId, isOwner, ent, onBack, onUpgrade, on
   const memberCount = people.filter((p) => p.kind === 'member').length
 
   return (
-    <div className="settings">
-      <header className="settings-top">
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onBack}
-        >
-          ← Help center
-        </button>
-      </header>
-
-      <div className="pp">
+    <div className="pp">
         <h1>People</h1>
         <p className="pp-lede">
           Everyone here can write, edit and publish guides in this help center. No per-seat
@@ -303,7 +292,6 @@ export default function People({ kb, userId, isOwner, ent, onBack, onUpgrade, on
             </div>
           </>
         )}
-      </div>
     </div>
   )
 }

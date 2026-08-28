@@ -67,6 +67,7 @@
      inline style on its root; the authoring app resolves them to Quink's own teal. */
   --brand-edge: transparent;
   --font-heading: var(--font-display);
+  --font-heading-weight: var(--w-display);
   --font-body: var(--font);
   --line: var(--rule);
 }
@@ -3044,7 +3045,7 @@ textarea {
 }
 /* Domain settings (build spec §4) */
 .settings-single {
-  max-width: 620px;
+  max-width: 720px;
   margin: 0 auto;
   padding: 40px 24px 80px;
   width: 100%;
@@ -3367,7 +3368,7 @@ textarea {
 .rs-mast-nm {
   font-family: var(--font-heading, var(--font-display));
   font-size: var(--t-d5);
-  font-weight: var(--w-display-em);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display);
   line-height: var(--lh-display-sm);
 }
@@ -3389,7 +3390,7 @@ textarea {
   color: var(--band-ink);
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d4), 5vw, var(--t-d2));
-  font-weight: var(--w-display);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display-lg);
   line-height: var(--lh-display);
   max-width: var(--measure-hero);
@@ -3492,6 +3493,7 @@ textarea {
 .rs-drop-item:hover,
 .rs-drop-item:focus-visible {
   background: var(--hover);
+  text-decoration: none;
 }
 .rs-drop-t {
   display: block;
@@ -3597,7 +3599,7 @@ a.rs-cat-link:hover {
   margin: 0;
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d4), 3.8vw, var(--t-d3));
-  font-weight: var(--w-display);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display-lg);
   line-height: var(--lh-display);
 }
@@ -3609,7 +3611,9 @@ a.rs-cat-link:hover {
 }
 .rs-row {
   display: block;
-  padding: 17px 40px 17px 0;
+  /* 14px of left padding at REST, holding the space the hover bar slides into. It used to
+     be added on hover, which moved the title sideways under the pointer. */
+  padding: 17px 40px 17px 14px;
   border-bottom: 1px solid var(--rule);
   text-decoration: none;
   color: inherit;
@@ -3632,7 +3636,12 @@ a.rs-cat-link:hover {
 a.rs-row:hover,
 a.rs-row:focus-visible {
   background: var(--hover);
-  padding-left: 14px;
+  /* Re-stated, not inherited: the global `a:hover` underline is more specific than
+     .rs-row's rest-state `text-decoration: none`, so a block anchor wrapping a whole card
+     came out underlined end to end. Same fix the design system's .q-row already carries.
+     This is scoped to the listing card ON PURPOSE — inline links inside article prose keep
+     their underline, which is a real affordance for a text link. */
+  text-decoration: none;
 }
 a.rs-row:hover::before,
 a.rs-row:focus-visible::before {
@@ -3830,7 +3839,7 @@ a.rs-crumb-link:hover {
   margin: 0;
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d4), 4.3vw, var(--t-d2));
-  font-weight: var(--w-display);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display-lg);
   line-height: var(--lh-display);
   max-width: var(--measure-title);
@@ -3899,7 +3908,7 @@ a.rs-crumb-link:hover {
   margin: 0;
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d6), 2.3vw, var(--t-d5));
-  font-weight: var(--w-display-em);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display);
   line-height: var(--lh-display-sm);
 }
@@ -8999,6 +9008,329 @@ div.rail-meter {
 }
 .dock-f-answer:hover {
   background: var(--brand-700);
+}
+
+/* --- Settings → Product & context: the notes list and its budget meter ---------------
+   The notes are the only repeatable editor in the product. Each is an inset well rather
+   than a card, because a card inside the settings card is a box inside a box — the thing
+   v2 removed. The remove control is hover-revealed, like every other destructive tool. */
+.ps-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+.ps-note {
+  position: relative;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+}
+.ps-note .ps-note-t,
+.ps-note .ps-note-b {
+  background: transparent;
+  padding: 0;
+  height: auto;
+  border-radius: 0;
+}
+.ps-note-t {
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+  color: var(--ink);
+  padding-right: var(--s-8);
+}
+.ps-note .ps-note-t:hover,
+.ps-note .ps-note-b:hover {
+  background: transparent;
+}
+/* The WELL is the field here, so focus lifts the whole note rather than ringing one line
+   of it — two rings inside one card is the boxes-inside-boxes problem again. */
+.ps-note .ps-note-t:focus,
+.ps-note .ps-note-b:focus {
+  background: transparent;
+  box-shadow: none;
+}
+.ps-note:focus-within {
+  background: var(--surface-3);
+}
+.ps-note-b {
+  margin-top: var(--s-1);
+  min-height: 64px;
+  font-size: var(--t-ui-sm);
+  color: var(--ink-2);
+  line-height: var(--lh-body);
+}
+.ps-note-x {
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-2);
+  display: grid;
+  place-items: center;
+  width: var(--h-control-sm);
+  height: var(--h-control-sm);
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  opacity: 0;
+  transition:
+    opacity var(--dur-2) var(--ease),
+    background var(--dur-2) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ps-note:hover .ps-note-x,
+.ps-note-x:focus-visible {
+  opacity: 1;
+}
+.ps-note-x:hover {
+  background: var(--critical-soft);
+  color: var(--critical-ink);
+}
+.ps-note-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--h-control-sm);
+  padding: 0 var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--brand-600);
+  transition: background var(--dur-2) var(--ease);
+}
+.ps-note-add:hover {
+  background: var(--hover);
+}
+
+/* Pinned under the list it measures, and driven by STATE, so deleting a note frees budget
+   live rather than at the next save. Amber past 90% — a warning you can act on. */
+.ps-budget {
+  margin-top: var(--s-5);
+}
+.ps-budget .hint {
+  margin-top: var(--s-2);
+}
+.ps-budget.warn .q-progress-fill {
+  background: var(--caution);
+}
+.ps-budget.warn .hint {
+  color: var(--caution-ink);
+}
+
+.ps-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-top: var(--s-5);
+  flex-wrap: wrap;
+}
+
+/* --- Settings: the tab rail, and the surfaces the rail rows became -------------------- */
+.settings-tabs {
+  /* Matches the widest panel column (720) so the rail's left edge lines up with the
+     heading under it. A rail that is centred to a different width than its own content
+     reads as two unrelated things stacked. */
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 24px;
+  width: 100%;
+}
+/* The panels already own their top padding, so the rail must not add a second gap. */
+.settings-tabs + .q-tabpanel > .settings-single,
+.settings-tabs + .q-tabpanel > .pp,
+.settings-tabs + .q-tabpanel > .dm {
+  padding-top: var(--s-8);
+}
+/* Theming brings a full-bleed split preview, so its panel is the one that is not capped. */
+.q-tabpanel > .th {
+  min-height: auto;
+}
+
+/* The live-site link sits with the KB it acts on, not in the rail. */
+.lib-live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--h-control-sm);
+  padding: 0 var(--s-3);
+  margin-left: var(--s-2);
+  border-radius: var(--r-sm);
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--ink-3);
+  text-decoration: none;
+  transition:
+    background var(--dur-2) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-live:hover {
+  background: var(--hover);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* The account menu. One trigger, one popover, on the system's menu surface. */
+.acct {
+  position: relative;
+  flex: none;
+}
+.acct-trigger {
+  display: grid;
+  place-items: center;
+  width: var(--h-control);
+  height: var(--h-control);
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--ink-2);
+  transition:
+    background var(--dur-2) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.acct-trigger:hover,
+.acct-trigger[aria-expanded='true'] {
+  background: var(--surface-4);
+  color: var(--ink);
+}
+.acct-trigger:focus-visible {
+  box-shadow: var(--ring);
+}
+.acct-menu {
+  position: absolute;
+  top: calc(100% + var(--s-2));
+  right: 0;
+  width: 232px;
+  z-index: var(--z-menu);
+  animation: q-pop var(--dur-2) var(--ease) both;
+}
+
+/* The danger zone. Bottom of the Team tab, neutral until you mean it — a red control in
+   the main chrome is a permanent destructive button next to the ones people use daily. */
+.danger-zone {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  margin-top: var(--s-12);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.danger-zone b {
+  display: block;
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+  color: var(--ink);
+}
+.danger-zone p {
+  margin-top: var(--s-1);
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+  max-width: 54ch;
+}
+.danger-go {
+  flex: none;
+  margin-left: auto;
+  height: var(--h-control);
+  padding: var(--pad-control);
+  border-radius: var(--r-md);
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--ink-3);
+  transition:
+    background var(--dur-2) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.danger-go:hover {
+  background: var(--critical-soft);
+  color: var(--critical-ink);
+}
+
+/* Usage, as a subline. The run count used to be a rail row with its own progress bar. */
+.ps-usage {
+  margin-top: var(--s-5);
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+}
+.ps-usage button {
+  font: inherit;
+  color: var(--brand-600);
+  font-weight: var(--w-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ps-usage button:hover {
+  color: var(--brand-700);
+}
+.ps-usage-note {
+  color: var(--ink-4);
+}
+
+/* --- Theming: the background-wash strength ------------------------------------------
+   A property OF the brand colour, so it sits with the hex row rather than in a section of
+   its own. The track is filled with the live mix it produces — the control shows you the
+   thing it makes, not an abstract percentage. */
+.th-wash {
+  margin-bottom: var(--s-3);
+}
+.th-wash label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+.th-wash-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-weight: var(--w-medium);
+}
+.th-wash input[type='range'] {
+  display: block;
+  width: 100%;
+  height: 22px;
+  padding: 0;
+  background: none;
+  appearance: none;
+  cursor: pointer;
+}
+.th-wash input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  /* The gradient IS the answer: bare surface at 0, the strongest wash at 30. */
+  background: linear-gradient(90deg, var(--surface-2), var(--brand-tint));
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.th-wash input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, var(--surface-2), var(--brand-tint));
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.th-wash input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  box-shadow: var(--e2), inset 0 0 0 1.5px var(--brand);
+  transition: transform var(--dur-1) var(--ease);
+}
+.th-wash input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-1);
+  box-shadow: var(--e2), inset 0 0 0 1.5px var(--brand);
+}
+.th-wash input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(0.94);
+}
+.th-wash input[type='range']:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--r-pill);
 }
 
 /* ======================================================================================

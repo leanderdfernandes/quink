@@ -62,53 +62,62 @@ export async function setLastKb(userId: string, kbId: string): Promise<void> {
   await supabase.from('profiles').update({ last_kb_id: kbId }).eq('id', userId)
 }
 
+// The product tier as the UI wants it, from a column that can legitimately be `{}` — the
+// default a KB carries until its first save. Every read site goes through this rather than
+// trusting the shape, because `product_context` is jsonb and nothing in the type system
+// stops the database handing back a row that predates a key.
+export const EMPTY_PRODUCT_CONTEXT: ProductContext = { name: '', description: '', notes: [] }
+
+export function productContextOf(kb: {
+  product_context?: ProductContext | null
+}): ProductContext {
+  const c = kb.product_context
+  if (!c || typeof c !== 'object') return EMPTY_PRODUCT_CONTEXT
+  return {
+    name: c.name ?? '',
+    description: c.description ?? '',
+    notes: Array.isArray(c.notes) ? c.notes : [],
+    updated_at: c.updated_at ?? null,
+    updated_by: c.updated_by ?? null,
+  }
+}
+
 // Remember the product tier on the KB so the next run does not ask for it again
-// (migration 0027). Returns the updated row, because the caller is holding the old one.
+// (migrations 0027, folded by 0044). Returns the updated row, because the caller is
+// holding the old one.
 //
 // Deliberately does NOT touch `about`, and DECIDED not to — this is not an oversight.
-// `about` is reader-facing prose on the public help center; `product_description` is
+// `about` is reader-facing prose on the public help center; the product description is
 // model-facing grounding the user wrote for a different purpose. Prefilling one from the
 // other was considered and rejected: someone types a blunt internal description ("the
 // janky admin panel nobody maintains") and finds it published on their help center home
 // page, from a silent write they never saw. If reader copy is ever seeded from this, it
 // has to be a visible, editable step the user confirms — never a side effect of uploading.
 //
-// Goes through set_product_context() (migration 0040), not a table update: UPDATE on the
-// four columns is revoked from `authenticated`, so a direct write now silently matches
-// zero columns. The RPC is where the 600-char cap and the who/when stamp live.
-//
-// Returns the projection the RPC gives back, merged over the caller's row — NOT the whole
-// KB. The RPC deliberately answers with the seven fields it wrote and nothing else.
+// Goes through set_product_context() (0044), not a table update: `product_context` is not
+// in the UPDATE grant, so a direct write silently matches zero columns. The RPC is where
+// CONTEXT_CHAR_BUDGET, the note normalisation and the who/when stamp live.
 export async function saveProductContext(
   kb: KnowledgeBase,
   product: ProductContext,
 ): Promise<KnowledgeBase> {
   const { data, error } = await supabase.rpc('set_product_context', {
     p_kb_id: kb.id,
-    p_name: product.product_name,
+    p_name: product.name,
     p_description: product.description,
-    p_audience: product.audience,
-    p_tone: product.tone,
+    // Only the three fields the column stores. The RPC mints ids and stamps the audit
+    // fields itself, so sending them back would be sending it its own output.
+    p_notes: product.notes.map((n) => ({ id: n.id, title: n.title, body: n.body })),
   })
   if (error) throw error
   const row = (Array.isArray(data) ? data[0] : data) as {
-    product_name: string
-    product_description: string
-    audience: string
-    tone: string
-    updated_at: string
-    updated_by: string | null
+    product_context: ProductContext
     updated_by_name: string | null
   } | null
   if (!row) return kb
   return {
     ...kb,
-    product_name: row.product_name,
-    product_description: row.product_description,
-    audience: row.audience,
-    tone: row.tone,
-    product_context_updated_at: row.updated_at,
-    product_context_updated_by: row.updated_by,
+    product_context: row.product_context,
     product_context_updated_by_name: row.updated_by_name,
   }
 }

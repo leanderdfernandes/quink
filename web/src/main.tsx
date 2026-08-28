@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
 import App from './App'
 import Admin from './screens/Admin'
 import Claim from './screens/Claim'
@@ -27,6 +27,13 @@ import './styles.css'
 // Only the KB shell and the article are routes. The upload -> account wall -> generating
 // wizard stays a state machine inside App on purpose: routing those steps hands the user a
 // browser back button in the middle of a 90-second job they cannot re-enter.
+// One redirect for every rail route that became a tab. `replace`, so the old URL is not
+// somewhere the back button returns to.
+function SettingsTabRedirect({ tab }: { tab: string }) {
+  const { kbId } = useParams()
+  return <Navigate to={`/app/${kbId}/settings/${tab}`} replace />
+}
+
 function KbQueryRedirect() {
   const [params] = useSearchParams()
   const kb = params.get('kb')
@@ -73,8 +80,17 @@ createRoot(document.getElementById('root')!).render(
                 which KB to open. */}
             <Route path="/app/:kbId" element={<App />} />
             <Route path="/app/:kbId/article/:articleId" element={<App />} />
-            {/* People is a route, not a wizard phase: it is a place you send someone to. */}
-            <Route path="/app/:kbId/people" element={<App />} />
+            {/* Settings is a route with the TAB in the path, not a wizard phase: a refresh
+                keeps your place and a link to Theming is a link someone can send. Bare
+                /settings resolves to the first tab inside App. */}
+            <Route path="/app/:kbId/settings" element={<App />} />
+            <Route path="/app/:kbId/settings/:tab" element={<App />} />
+            {/* The old rail route. People became the Team tab; the link people already
+                have keeps working rather than 404ing. */}
+            <Route
+              path="/app/:kbId/people"
+              element={<SettingsTabRedirect tab="team" />}
+            />
             <Route path="*" element={<KbQueryRedirect />} />
           </Route>
         </Routes>

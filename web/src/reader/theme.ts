@@ -83,8 +83,22 @@ export const BAND_SCRIM_FLOOR_PCT = 75
 // Override the brand ramp the existing reader/app CSS references (--brand-600 is the hero:
 // step-num bg, buttons, active nav). Lighter tints mix toward white, darker toward black,
 // so a single hex yields hover/tint/active/rail without a second input anywhere.
-export function themeVars(primaryColor: string, fontPairing: string): CSSProperties {
+// The wash strength, clamped and defaulted the same way the hex is: an out-of-range or
+// absent value falls back to the design system's own 9% rather than rendering nothing.
+// The CHECK on the column is the real control; this is what keeps a LIVE PREVIEW honest
+// while someone is dragging the slider past the end of it.
+export const DEFAULT_BRAND_WASH = 9
+export function normalizeWash(v: number | null | undefined): number {
+  return Number.isFinite(v) ? Math.max(0, Math.min(30, Math.round(v as number))) : DEFAULT_BRAND_WASH
+}
+
+export function themeVars(
+  primaryColor: string,
+  fontPairing: string,
+  brandWash?: number | null,
+): CSSProperties {
   const c = isValidHex(primaryColor) ? normalizeHex(primaryColor) : '#1f6e6b'
+  const wash = normalizeWash(brandWash)
   const lighter = (pct: number) => `color-mix(in srgb, ${c} ${100 - pct}%, white)`
   const darker = (pct: number) => `color-mix(in srgb, ${c} ${100 - pct}%, black)`
   const pairing = FONT_PAIRINGS[fontPairing] ?? FONT_PAIRINGS.modern
@@ -105,7 +119,12 @@ export function themeVars(primaryColor: string, fontPairing: string): CSSPropert
     // the editor still read --brand-NNN. These are what the reader chassis is built on, and
     // they mix against the reader's own warm neutrals (set on .rs2 in styles.css), so a tint
     // stays warm paper with brand in it rather than brand diluted with cold white.
-    '--brand-tint': `color-mix(in oklab, ${c} 13%, var(--paper))`,
+    // The wash. Customer-controlled strength rather than a fixed 13%: a saturated brand
+    // wants less of itself behind a card than a muted one does, and only they can see it
+    // against their own logo. --brand-wash is the quieter half, used where a tint would be
+    // too much (row hovers, the search field's rest state).
+    '--brand-tint': `color-mix(in oklab, ${c} ${wash}%, var(--paper))`,
+    '--brand-wash': `color-mix(in oklab, ${c} ${(wash / 2).toFixed(1)}%, var(--paper))`,
     '--brand-edge': `color-mix(in oklab, ${c} 30%, var(--border))`,
     // SURFACES only — the ink band, the image scrim. Almost black by design.
     '--brand-deep': `color-mix(in oklab, ${c} 30%, ${DEEP_BASE})`,
@@ -123,5 +142,8 @@ export function themeVars(primaryColor: string, fontPairing: string): CSSPropert
 
     '--font-heading': pairing.heading,
     '--font-body': pairing.body,
+    // The pairing owns the headline WEIGHT too, or a grotesk choice renders at the serif's
+    // 420 and reads underweight at 47px.
+    '--font-heading-weight': pairing.headingWeight,
   } as CSSProperties
 }
