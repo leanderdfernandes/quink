@@ -35,7 +35,6 @@ type Props = {
   // the preview used to derive watermark/noindex from — which was only correct for
   // the owner.
   ent: Entitlements | null
-  onBack: () => void
   onSaved: (kb: KB) => void
 }
 
@@ -159,7 +158,7 @@ export function normalizeLinkUrl(raw: string): string | null {
   }
 }
 
-export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
+export default function ThemeSettings({ kb, ent, onSaved }: Props) {
   const [name, setName] = useState(kb.name)
   const [about, setAbout] = useState(kb.about ?? '')
   const [headline, setHeadline] = useState(kb.headline ?? '')
@@ -454,9 +453,6 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
   return (
     <div className="th">
       <header className="th-bar">
-        <button className="ed-back" onClick={onBack}>
-          ← Help center
-        </button>
         <div className="ed-spacer" />
         <a
           className="ed-back"

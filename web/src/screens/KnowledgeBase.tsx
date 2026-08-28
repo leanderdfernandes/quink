@@ -11,7 +11,7 @@ import DeleteAccountModal from '../components/DeleteAccountModal'
 import LegalFooter from '../components/LegalFooter'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
 import { listInFlightJobs } from '../lib/jobs'
-import { runMeter, runsLeftFrom, type Entitlements } from '../lib/plans'
+import { runsLeftFrom, type Entitlements } from '../lib/plans'
 import type { Person } from '../lib/people'
 import AvatarStack from '../components/AvatarStack'
 import { publicBrandingUrl } from '../lib/storage'
@@ -26,7 +26,7 @@ import { trialBannerLabel, trialFor, trialPillLabel } from '../lib/trial'
 import { articleState, buildProgress } from '../lib/buildState'
 import BuildBar from '../editor/BuildBar'
 import Wordmark from '../components/Wordmark'
-import ThemeToggle from '../components/ThemeToggle'
+import AccountMenu from '../components/AccountMenu'
 import State, { type StateKind } from '../components/State'
 import KbSwitcher from '../components/KbSwitcher'
 import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
@@ -65,9 +65,7 @@ type Props = {
   onNewArticle: () => void
   onWriteFromScratch: () => void
   onOpenArticle: (id: string) => void
-  onOpenTheme: () => void
-  onOpenDomain: () => void
-  onOpenProduct: () => void
+  onOpenSettings: () => void
   onSignOut: () => void
   // Opens the upgrade path. The countdown pill, the sidebar panel and the day-7 banner are
   // all clickable at any point (pricing-spec §6) — a warning you can't act on is anxiety.
@@ -164,9 +162,7 @@ export default function KnowledgeBase({
   onNewArticle,
   onWriteFromScratch,
   onOpenArticle,
-  onOpenTheme,
-  onOpenDomain,
-  onOpenProduct,
+  onOpenSettings,
   onSignOut,
   onUpgrade,
   justClaimed,
@@ -591,7 +587,6 @@ export default function KnowledgeBase({
   // The unit is video RUNS off the append-only ledger, not articles: a deleted guide still
   // burnt a Gemini call. The old copy said "43 recordings turned into a guide here", which
   // reads as a content count and made 43-vs-3-articles look like a bug.
-  const meter = !isOwner || !ent ? null : runMeter(ent)
 
   // Runs and days both drain. ONE pill, escalating with the clock (pricing-spec §6).
   // With no plan to read — an admin inside someone else's help center — there is no clock
@@ -788,11 +783,21 @@ export default function KnowledgeBase({
             </span>
           )}
           <KbSwitcher kb={kb} plan={plan} kbs={kbs} userId={userId} onSwitch={onSwitchKb} />
-          <span className="lib-kb-tag">Help Center</span>
+          {/* An action on the KB beside it, not a nav destination — which is why it sits
+              here rather than in the rail: it leaves the app entirely. */}
+          <a
+            className="lib-live"
+            href={helpCenterUrl(kb.subdomain)}
+            target="_blank"
+            rel="noreferrer"
+            title="Open the published help center"
+          >
+            <ExternalIcon />
+            View live site
+          </a>
         </div>
         <div className="lib-top-right">
           <AvatarStack people={people} onOpen={onOpenPeople} />
-          <ThemeToggle />
           {pill && (
             <button
               className={`counter counter-btn${trial.stage === 'warning' ? ' amber' : ''}`}
@@ -801,9 +806,7 @@ export default function KnowledgeBase({
               {pill}
             </button>
           )}
-          <button className="btn btn-ghost btn-sm" onClick={onSignOut}>
-            Sign out
-          </button>
+          <AccountMenu onSignOut={onSignOut} />
         </div>
       </header>
 
@@ -838,110 +841,22 @@ export default function KnowledgeBase({
       )}
 
       <div className="lib-body">
+        {/* TWO items (ux-spec-v2 §11). The rail carried eight destinations for a product
+            whose whole value is in one of them; everything that is not "make an article"
+            is behind Settings now. View live site moved to the top bar — it is an action
+            on this help center, not a place. The run meter and Delete account moved into
+            Settings, where a number nobody can act on is not competing with the work. */}
         <nav className="rail">
-          <p className="rail-label">Content</p>
-          <div className="rail-item on">
+          <button
+            className="rail-item on"
+            onClick={() => {}}
+          >
             <BookIcon />
             Articles<span className="rail-count">{articles.length}</span>
-          </div>
-          <p className="rail-label">Your help center</p>
-          {/* What the guides are written ABOUT (PRD §4). It sits with theming rather than
-              with the run meter: it describes the help center's subject matter, not its
-              owner's entitlements — the same reason product context travels through
-              claim_kb() while the plan does not. */}
-          <button className="rail-item link" onClick={onOpenProduct}>
-            <BoxIcon />
-            Product details
           </button>
-          <button className="rail-item link" onClick={onOpenTheme}>
-            <BrandIcon />
-            Theming
-          </button>
-          <a
-            className="rail-item link"
-            href={helpCenterUrl(kb.subdomain)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <ExternalIcon />
-            View live site
-          </a>
-          {/* Owner only. A custom domain points a real website at this help center and
-              stays with the person accountable for it (team-access-spec §2). The screen
-              behind this still explains itself to an admin who arrives with the URL — it
-              is the RAIL entry that is gone, not the answer. */}
-          {isOwner && (
-            <button className="rail-item link" onClick={onOpenDomain}>
-              <GlobeIcon />
-              Domain
-            </button>
-          )}
-          {/* Always present, on every plan. Hiding it on free would mean nobody ever learns
-              the capability exists — the gated screen behind it is the upgrade surface. */}
-          <button className="rail-item link" onClick={onOpenPeople}>
-            <PeopleIcon />
-            People
-            {people.length > 1 && <span className="rail-count">{people.length}</span>}
-          </button>
-
-          {/* The run ledger, and nothing else. It sits BELOW a divider with no group
-              heading, outside `Your help center` — a billing meter next to Theming and
-              People read as content configuration, which it is not.
-
-              A6: the number is count(*) over the append-only `jobs` ledger keyed on
-              billed_to_user_id, resolved server-side by kb_entitlements(). Never a stored
-              counter, and never joined through kb_id — a claimed demo's runs stay on the
-              account that spent them. */}
-          {meter && (
-            <>
-              <div className="rail-div" />
-              {meter.cap === null ? (
-                <div className="rail-meter">
-                  <div className="rail-meter-head">
-                    <b>AI runs</b>
-                    <span>{meter.count}</span>
-                  </div>
-                </div>
-              ) : (
-                /* A7: the meter is the proactive path into pricing (pricing-spec §6) —
-                   someone reading how much is left is already asking what more costs. */
-                <button className="rail-meter" onClick={onUpgrade}>
-                  <div className="rail-meter-head">
-                    <b>AI runs</b>
-                    <span>{meter.count}</span>
-                  </div>
-                  <div
-                    className="rail-track"
-                    role="img"
-                    aria-label={`${meter.used} of ${meter.cap} AI runs used`}
-                  >
-                    <i
-                      style={{ width: `${Math.min(meter.used / meter.cap, 1) * 100}%` }}
-                    />
-                  </div>
-                  <p>{meter.copy}</p>
-                </button>
-              )}
-              {/* The trial clock stays on this panel. The header pill is easy to miss and
-                  disappears on day 7 when the banner takes over, so this is the one place
-                  someone can go and look. It is a countdown to a bill: owner-only, like
-                  everything else in this block. */}
-              {trial.stage !== 'none' && (
-                <p className="rail-trial">
-                  {trial.stage === 'offline'
-                    ? 'Your help center is offline.'
-                    : `Free trial · ${plural(trial.daysLeft, 'day')} left`}
-                </p>
-              )}
-            </>
-          )}
-
-          {/* Account deletion. Bottom of the rail, plain text weight, no colour — findable
-              by someone who came looking for it and invisible to everyone else. A red button
-              in the main chrome would be a permanent, destructive control sitting next to
-              the ones people use every day. */}
-          <button className="rail-danger" onClick={() => setDeleting(true)}>
-            Delete account
+          <button className="rail-item link" onClick={onOpenSettings}>
+            <GearIcon />
+            Settings
           </button>
         </nav>
 
@@ -1261,25 +1176,15 @@ const stroke = {
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
 }
+const GearIcon = () => (
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+  </svg>
+)
 const BookIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-  </svg>
-)
-// The thing being documented. Same 16/24 grid and stroke set as the rest of the rail.
-const BoxIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
-    <path d="M12 2.5 21 7v10l-9 4.5L3 17V7l9-4.5Z" />
-    <path d="M3 7l9 4.5L21 7M12 11.5V21.5" />
-  </svg>
-)
-const BrandIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
-    <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
-    <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
-    <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-    <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
-    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2Z" />
   </svg>
 )
 const ExternalIcon = () => (
@@ -1287,20 +1192,6 @@ const ExternalIcon = () => (
     <path d="M15 3h6v6" />
     <path d="M10 14 21 3" />
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-  </svg>
-)
-const GlobeIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
-    <circle cx="12" cy="12" r="10" />
-    <path d="M2 12h20" />
-    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
-  </svg>
-)
-const PeopleIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
-    <path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20" />
-    <circle cx="9" cy="7.5" r="3.5" />
-    <path d="M17 4.2a3.5 3.5 0 0 1 0 6.6M22 20v-1.5a4 4 0 0 0-3-3.87" />
   </svg>
 )
 const SearchIcon = () => (

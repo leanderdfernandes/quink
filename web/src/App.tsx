@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { isSettingsTab, type SettingsTab } from './components/Tabs'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { clearPending, loadPending, savePending } from './lib/pending'
@@ -44,10 +45,7 @@ import Upload from './screens/Upload'
 import Login from './screens/Login'
 import AccountWall from './screens/AccountWall'
 import KnowledgeBaseScreen from './screens/KnowledgeBase'
-import ThemeSettings from './screens/ThemeSettings'
-import DomainSettings from './screens/DomainSettings'
-import ProductSettings from './screens/ProductSettings'
-import People from './screens/People'
+import Settings from './screens/Settings'
 import OwnerOnly from './components/OwnerOnly'
 import Editor from './editor/Editor'
 
@@ -91,11 +89,14 @@ type Phase =
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
 export default function App() {
-  const { kbId: routeKbId, articleId: routeArticleId } = useParams()
+  const { kbId: routeKbId, articleId: routeArticleId, tab: routeTab } = useParams()
   const navigate = useNavigate()
   // People is a ROUTE (main.tsx), not a wizard phase: it is somewhere you send a colleague
   // a link to. Theming and Domain stay phases — nobody links to those.
-  const onPeopleRoute = useLocation().pathname.endsWith('/people')
+  // Settings is a route with the tab in the path. An unknown or missing tab resolves to
+  // the first one rather than 404ing — a hand-edited URL should land somewhere real.
+  const onSettingsRoute = useLocation().pathname.includes('/settings')
+  const settingsTab: SettingsTab = isSettingsTab(routeTab) ? routeTab : 'product'
   // Handed over by the claim flow. One dismissible line, never a modal — the articles are
   // the demo and nothing should stand in front of them. Read-and-clear on mount, so it
   // greets exactly once no matter how many times this component mounts on the way here.
@@ -702,21 +703,29 @@ export default function App() {
     )
   }
 
-  // People. A route rather than a phase, so it survives a refresh and can be linked to.
-  if (onPeopleRoute && kb && userId) {
+  // Settings. A route rather than a phase, so it survives a refresh and can be linked to,
+  // and one screen rather than four: Product & Context, Theming, Domain and Team were four
+  // separate rail rows and four separate phases before this.
+  if (onSettingsRoute && kb && userId && session) {
     return (
       <>
         {adminBar}
-        <People
+        <Settings
           kb={kb}
-          userId={userId}
-          isOwner={isOwner}
+          tab={settingsTab}
+          onTab={(t: SettingsTab) => navigate(`/app/${kb.id}/settings/${t}`)}
           ent={ent}
+          isOwner={isOwner}
+          userId={userId}
+          people={people}
           onBack={() => navigate(`/app/${kb.id}`)}
+          onSaved={setKb}
           onUpgrade={() => setShowUpgrade(true)}
           // Leaving takes away the thing you are looking at. Back to the root, which
           // re-resolves to a help center this account still has.
           onLeft={() => navigate('/')}
+          kbs={kbs}
+          onSignOut={signOut}
         />
         {upgradeUi}
       </>
@@ -806,7 +815,7 @@ export default function App() {
           userId={userId}
           kbs={kbs}
           onSwitchKb={switchKb}
-          onOpenPeople={() => navigate(`/app/${kb.id}/people`)}
+          onOpenPeople={() => navigate(`/app/${kb.id}/settings/team`)}
           onNewArticle={() => {
             setError(null)
             setPhase('upload')
@@ -816,9 +825,7 @@ export default function App() {
             writeFromScratch()
           }}
           onOpenArticle={openArticle}
-          onOpenTheme={() => setPhase('theme')}
-          onOpenDomain={() => setPhase('domain')}
-          onOpenProduct={() => setPhase('product')}
+          onOpenSettings={() => navigate(`/app/${kb.id}/settings/product`)}
           onSignOut={signOut}
           onUpgrade={() => setShowUpgrade(true)}
           justClaimed={justClaimed}
@@ -852,74 +859,6 @@ export default function App() {
             hitting a wall. Same surface either way — one place decides what upgrading looks
             like, so the two paths cannot drift apart. */}
         {upgradeUi}
-      </>
-    )
-  }
-
-  if (phase === 'product' && kb) {
-    return (
-      <>
-        {adminBar}
-        <ProductSettings
-          kb={kb}
-          onBack={() => setPhase('kb')}
-          onSaved={setKb}
-        />
-      </>
-    )
-  }
-
-  if (phase === 'theme' && kb && session) {
-    return (
-      <>
-        {adminBar}
-        <ThemeSettings
-          kb={kb}
-          ent={ent}
-          onBack={() => setPhase('kb')}
-          onSaved={(updated) => setKb(updated)}
-        />
-      </>
-    )
-  }
-
-  if (phase === 'domain' && kb) {
-    // An admin changing the CNAME takes a paying customer's help center off the internet,
-    // so the worker refuses them (_require_owner) — which would land here as a raw 403 on a
-    // screen that looks broken. A named state instead: the rail item still works, it just
-    // says whose decision this is.
-    if (!isOwner) {
-      return (
-        <>
-          {adminBar}
-          <div className="settings">
-            <header className="settings-top">
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setPhase('kb')}
-              >
-                ← Help center
-              </button>
-            </header>
-            <div className="settings-single">
-              <OwnerOnly
-                heading="The address is managed by the owner"
-                body={`${kb.name} is reachable at its Quink address, and a custom domain can be connected to it. Connecting or changing one points a real website at this help center, so it stays with the person accountable for it.`}
-                ownerName={ownerName}
-              />
-            </div>
-          </div>
-        </>
-      )
-    }
-    return (
-      <>
-        {adminBar}
-        <DomainSettings
-          kb={kb}
-          onBack={() => setPhase('kb')}
-          onChange={(updated) => setKb(updated)}
-        />
       </>
     )
   }

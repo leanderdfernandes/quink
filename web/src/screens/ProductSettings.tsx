@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CONTEXT_BUDGET_WARN, CONTEXT_CHAR_BUDGET, contextCharsUsed } from '../lib/config'
 import { productContextOf, saveProductContext } from '../lib/kbs'
+import { runMeter, type Entitlements } from '../lib/plans'
 import Icon from '../components/Icon'
 import type { KnowledgeBase as KB, ProductNote } from '../lib/types'
 
@@ -17,8 +18,9 @@ import type { KnowledgeBase as KB, ProductNote } from '../lib/types'
 
 type Props = {
   kb: KB
-  onBack: () => void
+  ent: Entitlements | null
   onSaved: (kb: KB) => void
+  onUpgrade: () => void
 }
 
 function updatedLine(kb: KB, at: string | null | undefined): string | null {
@@ -36,7 +38,7 @@ function updatedLine(kb: KB, at: string | null | undefined): string | null {
 // for anything arriving without one. crypto.randomUUID is on every browser the SPA targets.
 const newNote = (): ProductNote => ({ id: crypto.randomUUID(), title: '', body: '' })
 
-export default function ProductSettings({ kb, onBack, onSaved }: Props) {
+export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) {
   const initial = productContextOf(kb)
   const [name, setName] = useState(initial.name)
   const [description, setDescription] = useState(initial.description)
@@ -95,16 +97,14 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
   }
 
   const stamp = updatedLine(kb, initial.updated_at)
+  // The run count used to be a rail row with a progress bar, which put a number the user
+  // has no lever over next to the things they use every day. It is a SUBLINE now: still
+  // findable, still the proactive path into pricing for someone on a cap, no longer
+  // competing with "make an article".
+  const meter = ent ? runMeter(ent) : null
 
   return (
-    <div className="settings">
-      <header className="settings-top">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>
-          ← Help center
-        </button>
-      </header>
-
-      <div className="settings-single">
+    <div className="settings-single">
         <h1>Product &amp; context</h1>
         <p className="dm-lede">
           What this help center documents. Every guide you build is written against it, so
@@ -218,6 +218,23 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
             </p>
           )}
 
+          {/* Usage. Small text under the thing it is about, not a nav row and not a
+              number front-and-centre that the user has no lever to act on. On a capped
+              plan it stays the proactive path into pricing (pricing-spec §6) — someone
+              reading how much is left is already asking what more costs. */}
+          {meter && (
+            <p className="ps-usage">
+              {meter.cap === null ? (
+                <span>{meter.count} used</span>
+              ) : (
+                <button type="button" onClick={onUpgrade}>
+                  {meter.count} used
+                </button>
+              )}
+              {meter.copy && <span className="ps-usage-note"> {meter.copy}</span>}
+            </p>
+          )}
+
           <div className="ps-actions">
             <button
               className="btn"
@@ -235,7 +252,6 @@ export default function ProductSettings({ kb, onBack, onSaved }: Props) {
               </span>
             )}
           </div>
-        </div>
       </div>
     </div>
   )

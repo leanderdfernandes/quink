@@ -2,7 +2,25 @@ import { useEffect, useState } from 'react'
 import Icon from './Icon'
 
 const KEY = 'quink-theme'
-type Theme = 'light' | 'dark'
+export type Theme = 'light' | 'dark'
+
+// Exported so AccountMenu drives the same preference. Two components each keeping their
+// own copy of "is it dark" is how one of them ends up showing the wrong icon.
+export function readTheme(): Theme {
+  return (
+    read() ??
+    (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+  )
+}
+
+export function setTheme(theme: Theme) {
+  document.documentElement.setAttribute('data-theme', theme)
+  try {
+    localStorage.setItem(KEY, theme)
+  } catch {
+    /* private mode */
+  }
+}
 
 function read(): Theme | null {
   try {
