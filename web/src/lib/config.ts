@@ -81,24 +81,36 @@ export const DEFAULT_PRIMARY_COLOR = '#1F6E6B'
 // + web-safe serifs — no extra network load on the reader.
 export const FONT_PAIRINGS: Record<
   string,
-  { label: string; heading: string; body: string }
+  { label: string; heading: string; body: string; headingWeight: string }
 > = {
-  // The system's own pairing, and the default: a transitional serif carries the headline,
-  // the grotesk carries body and controls. A help article IS a piece of writing.
+  // THREE PAIRINGS, AND THE HEADING FACE IS WHAT SEPARATES THEM. That is the whole point
+  // of the control: a customer who picks Modern is choosing a grotesk headline, and if all
+  // three set a serif then the setting does nothing and the reader's article titles come
+  // out serif whatever they pick. (They did, briefly — see OPEN-ITEMS H2.)
+  //
+  // Quink's OWN chrome still follows the design system's serif-above-22px rule. This is the
+  // reader wearing the CUSTOMER's brand, which is a different question and always has been.
   modern: {
     label: 'Modern',
-    heading: "'Newsreader', 'Iowan Old Style', Palatino, Georgia, serif",
+    heading: "'Hanken Grotesk', system-ui, sans-serif",
     body: "'Hanken Grotesk', system-ui, sans-serif",
+    // A grotesk headline carries its hierarchy in weight, so it takes --w-bold. The serif
+    // pairings stay light: weight is where a transitional serif turns into advertising.
+    headingWeight: '640',
   },
   editorial: {
     label: 'Editorial',
-    heading: "Georgia, 'Times New Roman', serif",
+    heading: "'Newsreader', 'Iowan Old Style', Palatino, Georgia, serif",
     body: "'Hanken Grotesk', system-ui, sans-serif",
+    headingWeight: '420',
   },
   classic: {
     label: 'Classic',
     heading: "Georgia, 'Times New Roman', serif",
     body: "Georgia, 'Times New Roman', serif",
+    // Georgia has no variable axis, so it snaps to 400/700. 500 renders as regular, which
+    // is what this pairing wants.
+    headingWeight: '500',
   },
 }
 

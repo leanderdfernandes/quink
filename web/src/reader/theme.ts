@@ -123,5 +123,8 @@ export function themeVars(primaryColor: string, fontPairing: string): CSSPropert
 
     '--font-heading': pairing.heading,
     '--font-body': pairing.body,
+    // The pairing owns the headline WEIGHT too, or a grotesk choice renders at the serif's
+    // 420 and reads underweight at 47px.
+    '--font-heading-weight': pairing.headingWeight,
   } as CSSProperties
 }

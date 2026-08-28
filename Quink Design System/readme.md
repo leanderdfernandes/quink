@@ -449,3 +449,37 @@ deliberately not built.
   exist in the source but are not rebuilt as kit screens. The component set covers them.
 - The marketing kit's **pricing section** is the one place I added a section the source
   didn't have. Its content is the product's own pricing logic; flag it if you'd rather it go.
+
+---
+
+## 6. Consumption inventory (Step 0 of the nav-consolidation build)
+
+Recorded because a build brief asked for three primitives — Tabs, ProgressBar, DropdownMenu
+— and only one of them was actually missing. Names matter here: reaching for a component
+that already exists under a different name is how a system grows two of everything.
+
+| Asked for | Status | What it is here |
+|---|---|---|
+| **Tabs** | **ADDED** | `components/core/Tabs.jsx` — `<Tabs>` + `<TabPanel>`, roving tabindex, arrow keys, ink underline on the rail's own hairline. `.q-tabs` in `components.css`. |
+| **ProgressBar** | Already existed | `components/data/Progress.jsx` — `<Progress value={0..1} />`, plus `indeterminate`. `.q-progress` / `.q-progress-fill`. Determinate by default: the system forbids a timer-driven fake. |
+| **DropdownMenu** | Already existed | `components/feedback/Menu.jsx` — `<Menu items={[…]} />` with group, divider, switch and critical item types. `.q-menu`. Positioning is the caller's; it must sit on `--z-menu`. |
+
+**Why Tabs is not Segmented.** `<Segmented>` is a mode switch for two or three options on
+ONE surface, and its sliding thumb is what says the options are a single control. Tabs
+address four or more sections that each own a whole screen, so nothing slides — the page
+changes, and the active tab thickens a slice of the rule the rail already sits on.
+`<TabPanel>` renders only the active panel, because these are screens with their own
+fetches.
+
+Full component list, for the same reason: **brand** Wordmark, Bolt, Micro, ThemeToggle ·
+**core** Button, IconButton, Segmented, Switch, Chip, Icon, **Tabs** · **forms** Field,
+Input, Textarea, Select, Dropzone · **data** Card, State, Row, Group, Thumb, Progress,
+AvatarStack · **feedback** Notice, Sheet, Menu, Toolbar.
+
+### The token question, answered once
+
+`design-system.html` (v1) and this system disagree on nearly every value, and this system
+wins: it ships `tokens/`, which is the condition v1 itself set for being superseded. v1 is
+now a historical reference for the brand's *direction*, not a source of values. The
+disagreements are listed in `OPEN-ITEMS.md` H1 rather than reconciled, because they are
+decisions, not drift.

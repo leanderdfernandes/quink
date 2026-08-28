@@ -67,6 +67,7 @@
      inline style on its root; the authoring app resolves them to Quink's own teal. */
   --brand-edge: transparent;
   --font-heading: var(--font-display);
+  --font-heading-weight: var(--w-display);
   --font-body: var(--font);
   --line: var(--rule);
 }
@@ -3367,7 +3368,7 @@ textarea {
 .rs-mast-nm {
   font-family: var(--font-heading, var(--font-display));
   font-size: var(--t-d5);
-  font-weight: var(--w-display-em);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display);
   line-height: var(--lh-display-sm);
 }
@@ -3389,7 +3390,7 @@ textarea {
   color: var(--band-ink);
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d4), 5vw, var(--t-d2));
-  font-weight: var(--w-display);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display-lg);
   line-height: var(--lh-display);
   max-width: var(--measure-hero);
@@ -3597,7 +3598,7 @@ a.rs-cat-link:hover {
   margin: 0;
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d4), 3.8vw, var(--t-d3));
-  font-weight: var(--w-display);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display-lg);
   line-height: var(--lh-display);
 }
@@ -3830,7 +3831,7 @@ a.rs-crumb-link:hover {
   margin: 0;
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d4), 4.3vw, var(--t-d2));
-  font-weight: var(--w-display);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display-lg);
   line-height: var(--lh-display);
   max-width: var(--measure-title);
@@ -3899,7 +3900,7 @@ a.rs-crumb-link:hover {
   margin: 0;
   font-family: var(--font-heading, var(--font-display));
   font-size: clamp(var(--t-d6), 2.3vw, var(--t-d5));
-  font-weight: var(--w-display-em);
+  font-weight: var(--font-heading-weight, var(--w-display));
   letter-spacing: var(--tr-display);
   line-height: var(--lh-display-sm);
 }
