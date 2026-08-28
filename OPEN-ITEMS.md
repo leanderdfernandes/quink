@@ -258,7 +258,7 @@ Everything here was found while implementing `context-and-editing-prd.md`. Each 
 divergence between the prompt, the PRD and the code, resolved with a stated assumption
 rather than silently.
 
-### G1. `product_context jsonb` was NOT created, deliberately
+### G1. `product_context jsonb` was NOT created, deliberately — CLOSED by 0044 (see H3)
 
 PRD §9 asks for `kbs.product_context jsonb {name, description, updated_at, updated_by}`.
 Migration 0027 had already landed the same four facts as flat columns (`product_name`,
@@ -484,7 +484,7 @@ underweight at 47px:
 Quink's own chrome still obeys the serif-above-22px rule. This is the reader wearing the
 *customer's* brand, which has always been a separate question.
 
-### H3. `product_context jsonb` is being asked for again, and G1 is still open
+### H3. `product_context jsonb` — RESOLVED by the fold (0044)
 
 The brief's Commit 1 asks for `kbs.product_context jsonb` plus a new
 `set_product_context(p_kb_id, p_name, p_description, p_notes)`. Both already exist in a
@@ -510,10 +510,13 @@ fold G1 describes, and it is not additive:
 - `CONTEXT_CHAR_BUDGET = 6000` replacing `product_context_cap()` = 600, a **10x raise**,
 - five read sites updated, including the worker's prompt builder.
 
-> **Prompt:** Answer G1. If the jsonb is wanted, say so and the fold is one commit. If not,
-> `notes[]` needs somewhere else to live and the brief's §4 shape changes.
+**Answered: do the fold.** 0044 moved the four flat columns into `product_context jsonb`,
+dropped them along with `audience`/`tone`, replaced `set_product_context` with a four-arg
+version taking notes, and raised the cap to `CONTEXT_CHAR_BUDGET` = 6000 across description
++ notes. G1 above is closed by this. Retries are unaffected: `jobs.context` keeps its own
+snapshot and the worker still reads the pre-fold key names.
 
-### H4. `tint` is two different controls, and one of them was just removed
+### H4. `tint` is two different controls — RESOLVED, one built
 
 The brief's Commit 3 says to restore a `tint` control "dropped" from Theming. History has
 one, and it is **not** what the brief then describes:
@@ -531,10 +534,9 @@ one, and it is **not** what the brief then describes:
 So this is not a restore. It is either a revert of a design-system decision made four hours
 ago, or a new control that happens to share a word.
 
-> **Prompt:** Which? Reinstating the masthead treatment contradicts the design system §3 and
-> 0024's own rationale — if it is wanted anyway, say so and it is a one-line change to
-> `HEADER_STYLES`. The wash-strength control is a genuinely new feature and needs its own
-> column, RPC path and preview wiring.
+**Answered: build the wash control, leave the masthead treatment retired.** Shipped as
+`knowledge_bases.brand_wash` (0045) and carried to the reader through `reader_kb()` (0046).
+`header_style = 'tint'` stays out of the picker and stored rows keep resolving to `solid`.
 
 ### H5. The brief says five commits and lists four
 
@@ -542,3 +544,20 @@ Commits 1–4 are specified (product context, settings consolidation, tint, read
 hover). No fifth appears.
 
 > **Prompt:** Name it, or the count is stale.
+
+### H6. `SUPABASE_DB_URL` was stale, and it broke every apply script
+
+`db.<ref>.supabase.co` has no DNS records at all any more — not A, not AAAA. Supabase
+retired the direct-connection hostnames in favour of the pooler, so **every
+`supabase/apply_00XX.py` in this repo would have failed to connect**, not just 0044's.
+
+`.env` now points at `aws-0-ap-southeast-1.pooler.supabase.com:5432` with the
+`postgres.<ref>` username shape and the same password. The region was found by probing,
+not guessed from the dashboard — worth writing down, because nothing else in the repo
+records where this project actually lives.
+
+`.env` is gitignored, so this is a local fix. Anyone else running a migration will hit the
+same wall until their own copy is updated.
+
+> **Prompt:** The database password was pasted into a chat transcript while sorting this
+> out. Rotate it (Settings → Database → Reset database password) and update `.env`.
