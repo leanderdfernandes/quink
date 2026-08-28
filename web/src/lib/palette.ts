@@ -26,16 +26,28 @@ const SWATCH_CSS = [...PICK_HUES.map((h) => `oklch(${PICK_L}% ${PICK_C} ${h})`),
 // oklch() -> #rrggbb by asking the browser, which already owns a correct gamut mapping.
 // Doing the OKLab matrix work by hand here would be forty lines that get the easy cases
 // right and the out-of-gamut ones wrong.
+//
+// It goes through a 1x1 CANVAS, not through getComputedStyle. That is the whole fix for a
+// bug that made this row unusable: `getComputedStyle(el).color` no longer serialises to
+// `rgb(...)` for a wide-gamut colour — Chrome hands back `oklch(0.46 0.15 58)` verbatim —
+// so scraping the first three numbers out of it read L, C and HUE as if they were R, G, B.
+// Every swatch came out a near-black blue, and the two hues above 255 both clamped to the
+// exact same #0000FF. A canvas is sRGB by definition, so painting the colour and reading
+// the pixel back makes the browser do the conversion AND the gamut mapping for us.
 function cssToHex(css: string): string | null {
-  if (typeof window === 'undefined' || !window.CSS?.supports?.('color', css)) return null
-  const el = document.createElement('span')
-  el.style.cssText = `color:${css};position:absolute;visibility:hidden`
-  document.body.appendChild(el)
-  const computed = getComputedStyle(el).color
-  el.remove()
-  const m = computed.match(/-?[\d.]+/g)
-  if (!m || m.length < 3) return null
-  return rgbToHex(+m[0], +m[1], +m[2])
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  // An unparseable colour leaves fillStyle at its previous value, which is how a browser
+  // with no oklch() support is detected — it must yield null, not a silently wrong hex.
+  ctx.fillStyle = '#000000'
+  ctx.fillStyle = css
+  if (ctx.fillStyle === '#000000' && css !== '#000000') return null
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return rgbToHex(r, g, b)
 }
 
 function rgbToHex(r: number, g: number, b: number): string {

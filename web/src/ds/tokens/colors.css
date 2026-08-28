@@ -1,0 +1,166 @@
+/* Quink v2 — colour.
+
+   Three decisions drive every value here:
+
+   1. WARM BUT NOT TAUPE. The old system sat at hue ~80 with real chroma, which is what read
+      as 2000s: visible yellow-green in every border and every muted label. v2 keeps warmth
+      but moves to hue 55–65 at a *tenth* of the chroma. It reads warm next to a cool grey
+      and neutral on its own — which is the point.
+   2. NO BORDERS. Regions separate by surface lightness and elevation, so the palette needs a
+      real surface ladder (bg → 1 → 2 → 3) rather than one background plus a border colour.
+      There is no --border token in v2. That is deliberate.
+   3. ONE CHASSIS. The authoring app and the published reader share these neutrals, type and
+      elevation. Only --brand differs: the app pins Quink's teal, the reader takes the
+      customer's hex and mixes the same ramp from it.
+
+   Everything is oklch so the ramps are perceptually even and the dark theme can be derived
+   rather than hand-picked. */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Surface ladder. Lightness IS the separation. ---- */
+  --bg: oklch(98.4% 0.0035 65);        /* the page */
+  --surface-1: oklch(100% 0 0);        /* raised: cards, bars, menus */
+  --surface-2: oklch(97% 0.004 65);    /* inset: inputs, wells, code */
+  --surface-3: oklch(94.2% 0.005 65);  /* hover fill, quiet buttons */
+  --surface-4: oklch(90.5% 0.006 65);  /* pressed, dividers-as-fill */
+
+  /* ---- Ink ladder. Deeper than v1 at the top, greyer at the bottom. ---- */
+  --ink: oklch(19% 0.008 60);          /* headings, primary text */
+  --ink-2: oklch(43% 0.007 60);        /* body copy */
+  --ink-3: oklch(58% 0.006 60);        /* meta, muted labels */
+  --ink-4: oklch(72% 0.005 60);        /* placeholders, disabled */
+
+  /* ---- Brand: deep teal. 600 is the hero. Hue is fixed; only L and C move. ---- */
+  --brand-50: oklch(96.8% 0.014 205);
+  --brand-100: oklch(93.2% 0.03 205);
+  --brand-200: oklch(86.5% 0.055 205);
+  --brand-300: oklch(75.5% 0.08 205);
+  --brand-400: oklch(63.5% 0.095 205);
+  --brand-500: oklch(53% 0.096 205);
+  --brand-600: oklch(44% 0.088 205);
+  --brand-700: oklch(37% 0.078 205);
+  --brand-800: oklch(30% 0.062 205);
+  --brand-900: oklch(23.5% 0.045 205);
+  --brand: var(--brand-600);
+  --on-brand: oklch(99% 0.004 205);
+
+  /* ---- Accent: the bolt green, promoted from "the logo's colour" to a real accent.
+          Used for completion, live state, and the one thing on a screen that is finished. ---- */
+  --accent-50: oklch(96.5% 0.02 158);
+  --accent-100: oklch(92% 0.042 158);
+  --accent-300: oklch(76% 0.09 158);
+  --accent-500: oklch(56% 0.105 158);
+  --accent-600: oklch(48% 0.098 158);
+  --accent-700: oklch(40% 0.082 158);
+  --accent: var(--accent-600);
+  --on-accent: oklch(99% 0.004 158);
+
+  /* ---- Semantics. Low chroma so they read as system voice, not decoration. ---- */
+  --positive: var(--accent-600);
+  --positive-soft: var(--accent-50);
+  --caution: oklch(58% 0.115 72);
+  --caution-soft: oklch(96.5% 0.026 78);
+  --caution-ink: oklch(41% 0.09 62);
+  --critical: oklch(52% 0.155 25);
+  --critical-soft: oklch(96.5% 0.022 25);
+  --critical-ink: oklch(40% 0.13 25);
+  --info: var(--brand-600);
+  --info-soft: var(--brand-50);
+
+  /* ---- Derived brand mixes. In the reader these are recomputed per customer from one hex. ---- */
+  --brand-tint: color-mix(in oklab, var(--brand) 9%, var(--bg));
+  --brand-wash: color-mix(in oklab, var(--brand) 4.5%, var(--bg));
+  --brand-press: color-mix(in oklab, var(--brand) 86%, oklch(15% 0.01 60));
+  --brand-ring: color-mix(in oklab, var(--brand) 34%, transparent);
+  --brand-mark: color-mix(in oklab, var(--brand) 17%, var(--surface-1));
+  --brand-deep: color-mix(in oklab, var(--brand) 26%, oklch(16% 0.008 60));
+  --on-deep: oklch(97% 0.004 205);
+
+  /* ---- Dark chrome: floating toolbars and tooltips, in both themes. ---- */
+  --chrome: oklch(24% 0.008 60);
+  --chrome-2: oklch(30% 0.009 60);
+  --chrome-ink: oklch(96% 0.004 70);
+  --chrome-ink-2: oklch(72% 0.006 70);
+
+  /* ---- Semantic aliases — reach for these by name. ---- */
+  --text-heading: var(--ink);
+  --text-body: var(--ink-2);
+  --text-muted: var(--ink-3);
+  --text-faint: var(--ink-4);
+  --text-link: var(--brand-600);
+  --text-link-hover: var(--brand-700);
+  --field: var(--surface-2);
+  --field-hover: var(--surface-3);
+  --hover: color-mix(in oklab, var(--ink) 4%, transparent);
+  --pressed: color-mix(in oklab, var(--ink) 7.5%, transparent);
+  --selected: var(--brand-tint);
+  /* The ONE hairline left in the system, for tables and long lists where elevation cannot
+     help. It is a colour-mix of ink, not a beige — that is the whole difference. */
+  --rule: color-mix(in oklab, var(--ink) 8%, transparent);
+  --rule-strong: color-mix(in oklab, var(--ink) 14%, transparent);
+  --scrim: color-mix(in oklab, oklch(16% 0.008 60) 46%, transparent);
+}
+
+/* ---- Dark. Warm near-black, never blue-black: the same hue family, inverted lightness.
+        Depth stops coming from shadow (invisible on dark) and starts coming from surface
+        lightness plus a 1px top inner light — see tokens/elevation.css. ---- */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: oklch(16.5% 0.006 62);
+  --surface-1: oklch(20.5% 0.007 62);
+  --surface-2: oklch(24% 0.0075 62);
+  --surface-3: oklch(28.5% 0.008 62);
+  --surface-4: oklch(33% 0.009 62);
+
+  --ink: oklch(96.5% 0.004 70);
+  --ink-2: oklch(78% 0.006 70);
+  --ink-3: oklch(62% 0.007 70);
+  --ink-4: oklch(48% 0.007 70);
+
+  /* The ramp flips: 600 stays the hero but lifts, because a deep teal on a near-black page
+     has no contrast left to spend. Tints go DARKER, not lighter. */
+  --brand-50: oklch(26% 0.032 205);
+  --brand-100: oklch(31% 0.05 205);
+  --brand-200: oklch(38% 0.068 205);
+  --brand-300: oklch(48% 0.086 205);
+  --brand-400: oklch(58% 0.096 205);
+  --brand-500: oklch(66% 0.1 205);
+  --brand-600: oklch(72% 0.098 205);
+  --brand-700: oklch(80% 0.078 205);
+  --brand-800: oklch(87% 0.055 205);
+  --brand-900: oklch(93% 0.032 205);
+  --on-brand: oklch(17% 0.02 205);
+
+  --accent-50: oklch(26% 0.04 158);
+  --accent-100: oklch(31% 0.055 158);
+  --accent-300: oklch(50% 0.09 158);
+  --accent-500: oklch(68% 0.105 158);
+  --accent-600: oklch(74% 0.1 158);
+  --accent-700: oklch(82% 0.08 158);
+  --on-accent: oklch(17% 0.02 158);
+
+  --caution: oklch(78% 0.115 78);
+  --caution-soft: oklch(28% 0.045 72);
+  --caution-ink: oklch(88% 0.08 82);
+  --critical: oklch(68% 0.14 25);
+  --critical-soft: oklch(27% 0.055 25);
+  --critical-ink: oklch(84% 0.08 25);
+
+  --brand-tint: color-mix(in oklab, var(--brand) 14%, var(--bg));
+  --brand-wash: color-mix(in oklab, var(--brand) 7%, var(--bg));
+  --brand-press: color-mix(in oklab, var(--brand) 84%, oklch(99% 0 0));
+  --brand-mark: color-mix(in oklab, var(--brand) 24%, var(--surface-1));
+  --brand-deep: color-mix(in oklab, var(--brand) 22%, oklch(14% 0.008 62));
+
+  --chrome: oklch(28% 0.008 62);
+  --chrome-2: oklch(34% 0.009 62);
+
+  --hover: color-mix(in oklab, oklch(100% 0 0) 6%, transparent);
+  --pressed: color-mix(in oklab, oklch(100% 0 0) 10%, transparent);
+  --rule: color-mix(in oklab, oklch(100% 0 0) 9%, transparent);
+  --rule-strong: color-mix(in oklab, oklch(100% 0 0) 16%, transparent);
+  --scrim: color-mix(in oklab, oklch(8% 0.004 62) 62%, transparent);
+}

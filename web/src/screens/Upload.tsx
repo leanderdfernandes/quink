@@ -27,19 +27,19 @@ const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 // Drawn to the same grid and weight as the existing set (KnowledgeBase.tsx) — no emoji as
 // iconography, including the padlock that used to sit on the deletion note.
 const FilmIcon = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
     <path d="M7.5 5v14M16.5 5v14M2.5 12h19" />
   </svg>
 )
 const LockIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <rect x="4" y="10" width="16" height="10" rx="2" />
     <path d="M8 10V7a4 4 0 0 1 8 0v3" />
   </svg>
 )
 const BackIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M15 6l-6 6 6 6" />
   </svg>
 )
@@ -166,20 +166,6 @@ export default function Upload({
             </button>
           )}
         </header>
-
-        <div className="seam" style={{ marginBottom: 20 }}>
-          <span className="line" />
-          <span className="tick" />
-          <div className="ticks">
-            <span className="tick" />
-            <span className="tick" />
-            <span className="dot" />
-            <span className="tick" />
-            <span className="tick" />
-          </div>
-          <span className="tick" />
-          <span className="line" />
-        </div>
 
         <h1 style={{ marginBottom: 14 }}>
           Turn a recording

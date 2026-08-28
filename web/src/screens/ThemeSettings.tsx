@@ -42,7 +42,6 @@ type Props = {
 const HEADER_STYLES: { id: HeaderStyle; name: string }[] = [
   { id: 'solid', name: 'Solid' },
   { id: 'ink', name: 'Ink' },
-  { id: 'tint', name: 'Tint' },
   { id: 'image', name: 'Image' },
 ]
 
@@ -505,7 +504,7 @@ export default function ThemeSettings({ kb, ent, onBack, onSaved }: Props) {
                   })}
                 </div>
                 <p className="th-hint">
-                  All four are built from your brand colour, so none of them can clash.
+                  Each one is built from your brand colour, so none of them can clash.
                 </p>
               </div>
 
@@ -929,7 +928,7 @@ const AlertIcon = () => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="1.75"
     strokeLinecap="round"
     aria-hidden
   >

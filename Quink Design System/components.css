@@ -1,0 +1,381 @@
+/* Quink v2 — component primitives.
+
+   Three rules the whole file obeys:
+   1. NO BORDERS on containers. Depth is surface lightness + elevation (+ the inner --edge
+      light in dark mode). The only 1px lines left are list rules, drawn as an ink mix.
+   2. ONE hover model. Interactive surfaces overlay --hover (an ink mix), 120ms in / 180ms
+      out. Nothing changes border colour, because nothing has a border.
+   3. ONE focus model. --ring, drawn outside the control. Never layout-affecting.
+
+   z-layers are declared once here so the floating toolbar can never land under the top bar
+   again — that collision was a real bug in v1, not a styling preference. */
+
+:root {
+  --z-base: 0; /* @kind other */
+  --z-rail: 10; /* @kind other */
+  --z-bar: 20; /* @kind other */
+  --z-sticky: 30; /* @kind other */
+  --z-dock: 40; /* @kind other */
+  --z-menu: 50; /* @kind other */
+  --z-toolbar: 60; /* @kind other */   /* the floating selection toolbar: above every persistent control */
+  --z-overlay: 80; /* @kind other */
+  --z-toast: 90; /* @kind other */
+}
+
+/* ============ Button ============ */
+.q-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--h-control); padding: var(--pad-control);
+  background: var(--brand); color: var(--on-brand);
+  border-radius: var(--r-md);
+  font-size: var(--t-ui); font-weight: var(--w-strong); letter-spacing: var(--tr-ui);
+  white-space: nowrap; text-decoration: none;
+  box-shadow: var(--e1), var(--edge);
+  transition: background var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease),
+              transform var(--dur-2) var(--ease-spring), color var(--dur-1) var(--ease);
+}
+.q-btn:hover:not(:disabled) { background: var(--brand-press); text-decoration: none; box-shadow: var(--e2), var(--edge) }
+/* Press is a 1.5% settle, not a bounce. It is the difference between "responsive" and "cute". */
+.q-btn:active:not(:disabled) { transform: scale(0.985); box-shadow: var(--e1), var(--edge); transition-duration: var(--dur-1) }
+.q-btn:focus-visible { box-shadow: var(--ring) }
+.q-btn:disabled { background: var(--surface-3); color: var(--ink-4); box-shadow: none; cursor: not-allowed }
+
+.q-btn--accent { background: var(--accent); color: var(--on-accent) }
+.q-btn--accent:hover:not(:disabled) { background: var(--accent-700) }
+/* Secondary: a raised neutral surface, not an outline. */
+.q-btn--secondary { background: var(--surface-1); color: var(--ink) }
+.q-btn--secondary:hover:not(:disabled) { background: color-mix(in oklab, var(--ink) 4%, var(--surface-1)) }
+/* Ghost: no surface at rest. The most common non-primary control in v2. */
+.q-btn--ghost { background: transparent; color: var(--ink-2); box-shadow: none }
+.q-btn--ghost:hover:not(:disabled) { background: var(--hover); color: var(--ink); box-shadow: none }
+.q-btn--ghost:active:not(:disabled) { background: var(--pressed); box-shadow: none }
+.q-btn--critical { background: var(--critical); color: oklch(99% 0.004 25) }
+.q-btn--critical:hover:not(:disabled) { background: color-mix(in oklab, var(--critical) 86%, black) }
+
+.q-btn--sm { height: var(--h-control-sm); padding: 0 12px; font-size: var(--t-ui-sm); border-radius: var(--r-sm) }
+.q-btn--lg { height: var(--h-control-lg); padding: var(--pad-control-lg); font-size: var(--t-body); border-radius: var(--r-lg) }
+.q-btn--pill { border-radius: var(--r-pill) }
+.q-btn--full { width: 100% }
+
+/* ============ IconButton ============ */
+.q-ib {
+  display: inline-grid; place-items: center; flex: none;
+  width: var(--h-control); height: var(--h-control);
+  border-radius: var(--r-md); color: var(--ink-3); background: transparent;
+  transition: background var(--dur-2) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-2) var(--ease-spring);
+}
+.q-ib:hover:not(:disabled) { background: var(--hover); color: var(--ink) }
+.q-ib:active:not(:disabled) { background: var(--pressed); transform: scale(0.94) }
+.q-ib:focus-visible { box-shadow: var(--ring) }
+.q-ib:disabled { color: var(--ink-4); cursor: not-allowed }
+.q-ib--sm { width: var(--h-control-sm); height: var(--h-control-sm); border-radius: var(--r-sm) }
+.q-ib--raised { background: var(--surface-1); color: var(--ink-2); box-shadow: var(--e1), var(--edge) }
+.q-ib--raised:hover:not(:disabled) { box-shadow: var(--e2), var(--edge); color: var(--ink) }
+.q-ib--critical:hover:not(:disabled) { color: var(--critical); background: var(--critical-soft) }
+
+/* ============ Segmented ============ */
+/* A sliding thumb rather than a filled active segment — the movement is what tells you the
+   two options are one control. */
+.q-seg { position: relative; display: inline-flex; padding: 3px; background: var(--surface-2); border-radius: var(--r-md); flex: none }
+.q-seg-thumb {
+  position: absolute; top: 3px; bottom: 3px; left: 3px;
+  background: var(--surface-1); border-radius: 7px; box-shadow: var(--e1), var(--edge);
+  transition: transform var(--dur-3) var(--ease-spring), width var(--dur-3) var(--ease-spring);
+}
+.q-seg button {
+  position: relative; z-index: 1;
+  height: 30px; padding: 0 15px; border-radius: 7px;
+  font-size: var(--t-ui-sm); font-weight: var(--w-strong); color: var(--ink-3);
+  transition: color var(--dur-2) var(--ease);
+}
+.q-seg button[aria-pressed='true'] { color: var(--ink) }
+.q-seg button:not([aria-pressed='true']):hover { color: var(--ink-2) }
+.q-seg button:focus-visible { box-shadow: var(--ring) }
+
+/* ============ Switch ============ */
+.q-sw {
+  position: relative; flex: none; width: 40px; height: 24px; border-radius: var(--r-pill);
+  background: var(--surface-4);
+  transition: background var(--dur-3) var(--ease);
+}
+.q-sw::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--surface-1); box-shadow: var(--e1);
+  transition: transform var(--dur-3) var(--ease-spring);
+}
+.q-sw.on { background: var(--brand) }
+.q-sw.on::after { transform: translateX(16px) }
+.q-sw:focus-visible { box-shadow: var(--ring) }
+
+/* ============ Fields ============ */
+/* Filled, not outlined. An inset ring appears only on focus. */
+.q-field { display: block }
+.q-field + .q-field { margin-top: var(--s-5) }
+.q-label { display: block; font-size: var(--t-ui-sm); font-weight: var(--w-strong); color: var(--ink); margin-bottom: 7px }
+.q-label span { font-weight: var(--w-body); color: var(--ink-3) }
+.q-hint { margin-top: 7px; font-size: var(--t-meta); color: var(--ink-3); line-height: 1.5 }
+.q-input, .q-textarea, .q-select {
+  width: 100%; min-height: var(--h-field); padding: 10px 14px;
+  background: var(--surface-2); color: var(--ink);
+  border-radius: var(--r-md); font-size: var(--t-ui);
+  transition: background var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.q-input::placeholder, .q-textarea::placeholder { color: var(--ink-4) }
+.q-input:hover, .q-textarea:hover, .q-select:hover { background: var(--surface-3) }
+.q-input:focus, .q-textarea:focus, .q-select:focus {
+  background: var(--surface-1); box-shadow: var(--ring-inset), var(--e1), var(--edge);
+}
+.q-textarea { min-height: 104px; resize: vertical; line-height: 1.6; padding: 12px 14px }
+.q-select { appearance: none; padding-right: 38px; cursor: pointer }
+.q-search { position: relative }
+.q-search > svg { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none }
+.q-search input { padding-left: 44px; border-radius: var(--r-pill) }
+
+/* ============ Dropzone ============ */
+/* No dashed border. The affordance is an inset well plus a lifted icon tile — dashed
+   rectangles are the single most dated pattern in the old system. */
+.q-dz {
+  position: relative; display: grid; place-items: center; gap: var(--s-4);
+  padding: var(--s-16) var(--s-8); text-align: center;
+  background: var(--surface-2); border-radius: var(--r-xl);
+  cursor: pointer; overflow: hidden;
+  transition: background var(--dur-3) var(--ease), box-shadow var(--dur-3) var(--ease), transform var(--dur-3) var(--ease-spring);
+}
+.q-dz::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 0 1.5px transparent;
+  transition: box-shadow var(--dur-3) var(--ease);
+}
+.q-dz:hover { background: var(--brand-wash) }
+.q-dz.over { background: var(--brand-tint); transform: scale(1.006) }
+.q-dz.over::after { box-shadow: inset 0 0 0 1.5px var(--brand-300) }
+.q-dz-tile {
+  display: grid; place-items: center; width: 56px; height: 56px;
+  border-radius: var(--r-lg); background: var(--surface-1); color: var(--brand);
+  box-shadow: var(--e2), var(--edge);
+  transition: transform var(--dur-3) var(--ease-spring);
+}
+.q-dz:hover .q-dz-tile { transform: translateY(-2px) }
+.q-dz-title { font-family: var(--font-display); font-size: var(--t-d5); font-weight: var(--w-display); color: var(--ink); letter-spacing: var(--tr-display) }
+.q-dz-sub { font-size: var(--t-ui-sm); color: var(--ink-3) }
+.q-dz--loaded { padding: var(--s-4); cursor: default; background: var(--surface-2) }
+.q-dz--loaded:hover { background: var(--surface-2) }
+
+/* ============ Card / Panel ============ */
+.q-card {
+  background: var(--surface-1); border-radius: var(--r-lg);
+  box-shadow: var(--e1), var(--edge);
+}
+.q-card--pad { padding: var(--pad-card) }
+.q-card--pad-lg { padding: var(--pad-card-lg) }
+.q-card--inset { background: var(--surface-2); box-shadow: none }
+.q-card--interactive { cursor: pointer; transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease-spring) }
+.q-card--interactive:hover { box-shadow: var(--e2), var(--edge); transform: translateY(-1px) }
+.q-panel { background: var(--surface-1); border-radius: var(--r-xl); box-shadow: var(--e3), var(--edge) }
+
+/* ============ State ============ */
+/* v1 said state with a coloured dot inside a pill. That read as filler. v2 says it with an
+   icon glyph and a weighted label, no container — the colour and the glyph carry it. */
+.q-state {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--t-meta); font-weight: var(--w-strong); color: var(--ink-3);
+  letter-spacing: var(--tr-ui); white-space: nowrap;
+}
+.q-state > svg { flex: none }
+.q-state--live { color: var(--accent-600) }
+.q-state--edits { color: var(--caution-ink) }
+.q-state--failed { color: var(--critical-ink) }
+.q-state--building { color: var(--brand-600) }
+.q-state-sub { font-weight: var(--w-body); color: var(--ink-3) }
+
+/* Filter chip — the one remaining "pill", and it earns it: it is a control, not a label. */
+.q-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: var(--h-control-sm); padding: 0 14px; border-radius: var(--r-pill);
+  font-size: var(--t-ui-sm); font-weight: var(--w-strong); color: var(--ink-2);
+  background: transparent;
+  transition: background var(--dur-2) var(--ease), color var(--dur-1) var(--ease);
+}
+.q-chip:hover { background: var(--hover); color: var(--ink) }
+.q-chip.on { background: var(--ink); color: var(--bg) }
+.q-chip-n { font-variant-numeric: tabular-nums; font-weight: var(--w-medium); opacity: 0.6 }
+.q-chip:focus-visible { box-shadow: var(--ring) }
+
+/* ============ Rows ============ */
+/* The list row. Hairline rules (ink mix, not beige), full-bleed hover fill, and a chevron
+   that slides. No indent-on-hover: shifting text under the pointer is the tic that made v1's
+   rows feel novelty. */
+.q-rows { display: flex; flex-direction: column }
+.q-row {
+  position: relative; display: flex; align-items: center; gap: var(--s-4);
+  width: 100%; padding: var(--s-4) var(--s-5); text-align: left;
+  border-radius: var(--r-md); color: inherit; text-decoration: none;
+  transition: background var(--dur-2) var(--ease);
+}
+.q-row + .q-row { box-shadow: 0 -1px 0 0 var(--rule) }
+.q-row:hover { background: var(--hover); box-shadow: none; text-decoration: none }
+.q-row:hover + .q-row, .q-row:has(+ .q-row:hover) { box-shadow: none }
+.q-row:focus-visible { box-shadow: var(--ring) }
+.q-row-main { flex: 1; min-width: 0 }
+.q-row-title { display: block; font-size: var(--t-body); font-weight: var(--w-strong); color: var(--ink); letter-spacing: var(--tr-ui) }
+.q-row-desc { display: block; margin-top: 3px; font-size: var(--t-ui-sm); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.q-row-arw { flex: none; color: var(--ink-4); opacity: 0; transform: translateX(-4px); transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease) }
+.q-row:hover .q-row-arw, .q-row:focus-visible .q-row-arw { opacity: 1; transform: none }
+.q-row-actions { display: flex; align-items: center; gap: var(--s-1); flex: none; opacity: 0; transition: opacity var(--dur-2) var(--ease) }
+.q-row:hover .q-row-actions, .q-row:focus-within .q-row-actions { opacity: 1 }
+@media (hover: none) { .q-row-actions, .q-row-arw { opacity: 1 } }
+
+/* ============ Group (replaces the folder card) ============ */
+/* A group is a heading plus its rows on the page surface — not a bordered box inside a
+   bordered box. Nesting cards was a big part of why v1 felt cluttered. */
+.q-group + .q-group { margin-top: var(--s-10) }
+.q-group-hd { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-5) var(--s-3) }
+.q-group-name { font-family: var(--font-display); font-size: var(--t-d6); font-weight: var(--w-display-em); color: var(--ink); letter-spacing: var(--tr-display) }
+.q-group-n { font-family: var(--font-mono); font-size: var(--t-mono); letter-spacing: var(--tr-mono); text-transform: uppercase; color: var(--ink-4) }
+.q-group-actions { margin-left: auto; display: flex; gap: var(--s-1) }
+.q-group-body { background: var(--surface-1); border-radius: var(--r-lg); box-shadow: var(--e1), var(--edge); padding: var(--s-1-5) }
+.q-group--quiet .q-group-body { background: var(--surface-2); box-shadow: none }
+.q-group-empty { padding: var(--s-6); text-align: center; font-size: var(--t-ui-sm); color: var(--ink-3) }
+
+/* ============ Thumb ============ */
+.q-thumb {
+  position: relative; display: block; flex: none; overflow: hidden;
+  width: 44px; height: 30px; border-radius: var(--r-xs);
+  background: var(--surface-3); box-shadow: var(--e1), var(--edge);
+  transition: box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease-spring);
+}
+.q-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center }
+.q-thumb--tall { width: 32px; height: 42px }
+.q-thumb--empty { display: grid; place-items: center; background: var(--surface-2); box-shadow: none }
+.q-thumb-n { font-family: var(--font-mono); font-size: 10px; color: var(--ink-4) }
+.q-thumb.is-active { box-shadow: var(--ring-inset), var(--e2), var(--edge); transform: scale(1.04) }
+
+/* ============ Menu ============ */
+.q-menu {
+  min-width: 260px; padding: var(--s-1-5);
+  background: var(--surface-1); border-radius: var(--r-lg);
+  box-shadow: var(--e3), var(--edge);
+  animation: q-pop var(--dur-3) var(--ease-spring) both;
+  /* q-pop ends at `transform: none`. Position menus with top/left, not a transform — or swap
+     this for q-fade-in, as .q-toolbar and .q-tip do. */
+}
+.q-menu-cap { padding: 9px 11px 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tr-mono); text-transform: uppercase; color: var(--ink-4) }
+.q-menu-it {
+  display: flex; align-items: flex-start; gap: 11px; width: 100%;
+  padding: 9px 11px; border-radius: var(--r-sm); text-align: left;
+  font-size: var(--t-ui); font-weight: var(--w-medium); color: var(--ink);
+  transition: background var(--dur-1) var(--ease);
+}
+.q-menu-it:hover:not(:disabled) { background: var(--hover) }
+.q-menu-it:focus-visible { box-shadow: var(--ring) }
+.q-menu-it:disabled { color: var(--ink-4); cursor: not-allowed }
+.q-menu-it small { display: block; margin-top: 3px; font-size: var(--t-meta); font-weight: var(--w-body); color: var(--ink-3); line-height: 1.45 }
+.q-menu-ic { flex: none; margin-top: 2px; color: var(--ink-3) }
+.q-menu-it--critical { color: var(--critical-ink) }
+.q-menu-it--critical .q-menu-ic { color: var(--critical) }
+.q-menu-it--critical:hover:not(:disabled) { background: var(--critical-soft) }
+.q-menu-sep { height: 1px; margin: var(--s-1-5) 9px; background: var(--rule) }
+
+/* ============ Notice (replaces the amber banner) ============ */
+.q-notice {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: 13px var(--s-5); border-radius: var(--r-md);
+  font-size: var(--t-ui-sm); color: var(--ink-2);
+  background: var(--surface-2);
+}
+.q-notice > svg { flex: none; color: var(--ink-3) }
+.q-notice-text { flex: 1 }
+.q-notice--caution { background: var(--caution-soft); color: var(--caution-ink) }
+.q-notice--caution > svg { color: var(--caution) }
+.q-notice--brand { background: var(--brand-tint); color: var(--brand-800) }
+.q-notice--brand > svg { color: var(--brand) }
+.q-notice--critical { background: var(--critical-soft); color: var(--critical-ink) }
+.q-notice--critical > svg { color: var(--critical) }
+.q-notice--bar { border-radius: 0; padding: 12px var(--gutter) }
+
+/* ============ Overlay + Sheet ============ */
+.q-overlay {
+  position: fixed; inset: 0; z-index: var(--z-overlay);
+  display: grid; place-items: center; padding: var(--s-10) var(--s-6);
+  background: var(--scrim);
+  animation: q-fade var(--dur-3) var(--ease) both;
+}
+.q-sheet {
+  width: 100%; max-width: 480px; padding: var(--pad-sheet);
+  background: var(--surface-1); border-radius: var(--r-2xl);
+  box-shadow: var(--e4), var(--edge);
+  animation: q-rise var(--dur-4) var(--ease-spring) both;
+}
+.q-sheet h2 { font-size: var(--t-d4); margin-bottom: 10px }
+.q-sheet-lede { font-size: var(--t-ui); color: var(--ink-2); line-height: 1.55 }
+.q-sheet-tile { display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-lg); background: var(--brand-tint); color: var(--brand); margin-bottom: var(--s-5) }
+.q-sheet-tile--done { background: var(--accent-50); color: var(--accent-600) }
+.q-sheet-actions { display: flex; gap: var(--s-2); margin-top: var(--s-7) }
+
+/* ============ Floating toolbar ============ */
+/* The selection toolbar. z-index sits above every persistent control, and .q-quiet-tools on
+   an ancestor fades hover-only controls out while it is open — that pairing is the fix for
+   the toolbar landing on top of the step tools. */
+.q-toolbar {
+  position: absolute; z-index: var(--z-toolbar);
+  display: flex; align-items: center; gap: 2px; padding: 5px;
+  background: var(--chrome); border-radius: var(--r-md);
+  box-shadow: var(--e4);
+  animation: q-fade-in var(--dur-2) var(--ease) both;
+}
+.q-toolbar button {
+  display: inline-grid; place-items: center; height: 30px; min-width: 30px; padding: 0 9px;
+  border-radius: var(--r-xs); color: var(--chrome-ink-2);
+  font-size: var(--t-ui-sm); font-weight: var(--w-strong);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.q-toolbar button:hover { background: var(--chrome-2); color: var(--chrome-ink) }
+.q-toolbar button.on { background: var(--brand); color: var(--on-brand) }
+.q-toolbar-sep { width: 1px; height: 18px; margin: 0 4px; background: color-mix(in oklab, var(--chrome-ink) 18%, transparent) }
+.q-quiet-tools .q-row-actions, .q-quiet-tools .q-hovertools { opacity: 0 !important; pointer-events: none }
+
+/* ============ Progress ============ */
+/* Determinate, driven by real stage data. No spinner anywhere in v2. */
+.q-progress { position: relative; height: 3px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden }
+.q-progress-fill { height: 100%; border-radius: inherit; background: var(--brand); transition: width var(--dur-5) var(--ease) }
+.q-progress--indeterminate .q-progress-fill { width: 40%; animation: q-indeterminate 1.6s var(--ease) infinite }
+
+/* Skeleton: a single slow sweep of light, not a loop of shimmer. */
+.q-skel { position: relative; overflow: hidden; border-radius: var(--r-sm); background: var(--surface-3) }
+.q-skel::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--surface-1) 60%, transparent), transparent);
+  animation: q-sweep 1.8s var(--ease) infinite;
+}
+
+/* ============ Avatars ============ */
+.q-avs { display: flex; align-items: center }
+.q-av {
+  display: grid; place-items: center; flex: none;
+  width: 28px; height: 28px; border-radius: 50%;
+  font-size: 11px; font-weight: var(--w-bold); color: oklch(99% 0 0);
+  box-shadow: 0 0 0 2px var(--bg);
+  margin-left: -8px;
+}
+.q-av:first-child { margin-left: 0 }
+.q-av--more { background: var(--surface-3); color: var(--ink-2) }
+
+/* ============ On-brand surfaces ============ */
+/* Anything sitting on a brand fill (the reader masthead) needs its ink derived from
+   --on-brand, which is itself WCAG-picked per customer colour. Placeholders can't be set
+   inline, so the band field needs a real class. */
+.q-on-brand { color: var(--on-brand) }
+.q-on-brand .q-ib { color: color-mix(in oklab, var(--on-brand) 72%, transparent) }
+.q-on-brand .q-ib:hover:not(:disabled) { color: var(--on-brand); background: color-mix(in oklab, var(--on-brand) 14%, transparent) }
+.q-band-field::placeholder { color: color-mix(in oklab, var(--on-brand) 62%, transparent); opacity: 1 }
+.q-band-field:focus { box-shadow: 0 0 0 2px color-mix(in oklab, var(--on-brand) 45%, transparent) }
+
+/* ============ Tooltip ============ */
+.q-tip {
+  position: absolute; z-index: var(--z-toolbar);
+  padding: 6px 9px; border-radius: var(--r-xs);
+  background: var(--chrome); color: var(--chrome-ink);
+  font-size: var(--t-meta); font-weight: var(--w-medium); white-space: nowrap;
+  box-shadow: var(--e3);
+  animation: q-fade-in var(--dur-1) var(--ease) both;
+}

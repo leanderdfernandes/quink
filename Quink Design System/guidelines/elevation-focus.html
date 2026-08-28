@@ -1,0 +1,14 @@
+<!-- @dsCard group="Elevation" viewport="900x220" name="Focus & control states" subtitle="Fields sink at rest and rise on focus. Nothing recolours a border, because nothing has one." -->
+<meta charset="utf-8"><title>Focus</title><link rel="stylesheet" href="../styles.css"><style>body{background:var(--bg);padding:22px 24px}.cap{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-4)}.sw{border-radius:var(--r-md);height:56px;display:flex;align-items:flex-end;padding:8px 9px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.04em}.grid{display:grid;gap:8px}.row{display:flex;align-items:baseline;gap:18px;margin-bottom:12px}.row .cap{width:92px;flex:none;text-align:right}</style>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:start">
+<div><p class="cap" style="margin-bottom:9px">rest</p><input class="q-input" value="northwind.com" readonly></div>
+<div><p class="cap" style="margin-bottom:9px">hover</p><input class="q-input" value="northwind.com" readonly style="background:var(--surface-3)"></div>
+<div><p class="cap" style="margin-bottom:9px">focus</p><input class="q-input" value="northwind.com" readonly style="background:var(--surface-1);box-shadow:var(--ring-inset),var(--e1),var(--edge)"></div>
+</div>
+<div style="display:flex;gap:18px;margin-top:26px;align-items:center;flex-wrap:wrap">
+<button class="q-btn">Rest</button>
+<button class="q-btn" style="background:var(--brand-press);box-shadow:var(--e2),var(--edge)">Hover</button>
+<button class="q-btn" style="transform:scale(.985)">Pressed</button>
+<button class="q-btn" style="box-shadow:var(--ring)">Focus ring</button>
+<button class="q-btn" disabled>Disabled</button>
+</div>

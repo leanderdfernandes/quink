@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" viewport="900x520" name="Feedback — notices, sheet, menu, floating toolbar" subtitle="Tinted surfaces instead of bordered banners; the toolbar owns the top z-layer" -->
+<meta charset="utf-8">
+<title>Quink — feedback</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:24px 26px}.stack{display:flex;flex-direction:column;gap:26px}.set{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cap{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-4);margin-bottom:12px}.q-overlay{position:relative;inset:auto;padding:0;background:none;display:block;animation:none}.q-sheet{animation:none;margin:0}.q-menu{animation:none}.q-toolbar{position:relative;width:max-content}</style>
+<div id="root"></div>
+<script type="text/babel">
+const { Notice, Sheet, Menu, Toolbar, Button } = window.QuinkDesignSystem_6ae0bd
+function Demo(){
+  const [hidden,setHidden]=React.useState(false)
+  return <div className="stack">
+    <div><p className="cap">Notice — neutral · brand · caution · critical</p>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        <Notice>3 free guides from video, kept 30 days. Writing by hand is unlimited.</Notice>
+        <Notice tone="brand" icon="sparkle">You'll be able to swap any screenshot and edit every step before publishing.</Notice>
+        <Notice tone="caution" action={<Button size="sm" variant="secondary">Add a plan</Button>} onDismiss={()=>{}}>5 days until your help center goes dark.</Notice>
+        <Notice tone="critical" action={<Button size="sm" variant="secondary">Email us</Button>}>We couldn't read this recording. Nothing was charged.</Notice>
+      </div></div>
+    <div style={{display:'grid',gridTemplateColumns:'1fr 330px',gap:32,alignItems:'start'}}>
+      <div><p className="cap">Sheet — left-aligned, not centred</p>
+        <Sheet icon="globe" title="Publish to your help center" lede="It'll be live at docs.northwind.com/getting-started in a few seconds."
+          actions={<><Button>Publish</Button><Button variant="ghost">Not now</Button></>} />
+        <p className="cap" style={{marginTop:26}}>Floating toolbar</p>
+        <Toolbar items={[{icon:'bold',label:'Bold',on:true},{icon:'italic',label:'Italic'},{icon:'link',label:'Link'},{type:'divider'},{icon:'sparkle',label:'Rewrite this'}]} />
+      </div>
+      <div><p className="cap">Menu</p>
+        <Menu items={[
+          {type:'group',label:'This article'},
+          {label:'Copy link',icon:'link'},
+          {label:'View live page',icon:'external'},
+          {type:'divider'},
+          {label:'Hide from search and browsing',sub:'Stays live at its link.',icon:'eye-off',switch:hidden,onToggle:setHidden},
+          {type:'divider'},
+          {label:'Unpublish',sub:'Takes it off your help center. Keeps the content.',icon:'eye-off',critical:true},
+        ]} /></div>
+    </div>
+  </div>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>)
+</script>

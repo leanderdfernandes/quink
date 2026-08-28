@@ -35,23 +35,31 @@ type Props = {
 }
 
 const ChevronIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M6 15l6-6 6 6" />
   </svg>
 )
 const CheckIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M20 6L9 17l-5-5" />
   </svg>
 )
 const LockIcon = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <rect x="4" y="10" width="16" height="10" rx="2" />
     <path d="M8 10V7a4 4 0 0 1 8 0v3" />
   </svg>
 )
+// The working glyph, matching <State state="building"> — v2 replaced the pulsing dot, and
+// the dock and the editor must not describe the same run in two vocabularies.
+const SparkIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 3.5l1.7 4.6 4.6 1.7-4.6 1.7L12 16.1l-1.7-4.6L5.7 9.8l4.6-1.7Z" />
+    <path d="M18.5 16.5l.65 1.7 1.7.65-1.7.65-.65 1.7-.65-1.7-1.7-.65 1.7-.65Z" />
+  </svg>
+)
 const CloseIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden>
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 )
@@ -227,7 +235,9 @@ export default function QueueDock({
                     ) : item.state === 'queued' ? (
                       position + 2
                     ) : (
-                      <span className="dock-f-dot" />
+                      <span className="dock-f-dot">
+                        <SparkIcon />
+                      </span>
                     )}
                   </span>
                   <span className="dock-f-n">{item.title || item.name}</span>

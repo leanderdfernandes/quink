@@ -1,6 +1,7 @@
 import { COPY } from '../lib/config'
 import LegalFooter from '../components/LegalFooter'
 import Wordmark from '../components/Wordmark'
+import ThemeToggle from '../components/ThemeToggle'
 
 // The marketing landing — the front door (Quink Flow design).
 //
@@ -45,6 +46,7 @@ export default function Home({ onStart, onLogin }: Props) {
         <nav>
           <a href="#how">How it works</a>
           <a href="#how">Pricing</a>
+          <ThemeToggle />
           {/* Prominent, so returning users spot the way in without hunting. */}
           <button className="btn btn-ghost nav-login" onClick={onLogin}>
             Log in
@@ -56,11 +58,7 @@ export default function Home({ onStart, onLogin }: Props) {
         <p className="eyebrow hero-eyebrow">
           For the support &amp; ops teams who write the docs
         </p>
-        <h1 className="hero-title">
-          The week of article-writing
-          <br />
-          you never have to do.
-        </h1>
+        <h1 className="hero-title">The week of article-writing you never have to do.</h1>
         <p className="lede hero-lede">
           Record your screen once. Quink turns it into a polished, step-by-step help
           article — published straight to your own branded help center at

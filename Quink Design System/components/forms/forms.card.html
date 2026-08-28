@@ -1,0 +1,38 @@
+<!-- @dsCard group="Components" viewport="900x460" name="Forms — fields, select, textarea, dropzone" subtitle="Filled at rest, lifted on focus. The dashed dropzone is gone." -->
+<meta charset="utf-8">
+<title>Quink — forms</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:24px 26px}.stack{display:flex;flex-direction:column;gap:26px}.set{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cap{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-4);margin-bottom:12px}</style>
+<div id="root"></div>
+<script type="text/babel">
+const { Field, Input, Textarea, Select, Dropzone, Row, State, Icon, IconButton } = window.QuinkDesignSystem_6ae0bd
+function Demo(){
+  const [over,setOver]=React.useState(false)
+  return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0 32px',alignItems:'start'}}>
+    <div>
+      <Field label="Product name" hint="The name your customers use."><Input defaultValue="Northwind" /></Field>
+      <Field label="What does this recording show?" optional hint="Name the task, not the product."><Input placeholder="e.g. Connecting a Postgres read replica" /></Field>
+      <Field label="Audience" optional><Select options={['New users','Existing customers','Internal team','Admins']} /></Field>
+      <Field label="Search"><Input search placeholder="Search your articles…" /></Field>
+    </div>
+    <div>
+      <Field label="What does your product do?" hint="Up to 600 characters."><Textarea placeholder="Northwind syncs analytics warehouses." /></Field>
+      <p className="cap" style={{marginTop:24}}>Dropzone — idle, drag-over, loaded</p>
+      <Dropzone sub="MP4 or MOV · up to 100 MB and 6 minutes each" onMouseEnter={()=>setOver(false)} />
+      <div style={{height:14}}></div>
+      <Dropzone state="over" title="Release to add" sub="1 file" />
+      <div style={{height:14}}></div>
+      <Dropzone state="loaded">
+        <Row arrow={false} title="onboarding-flow.mp4" desc="4:12 · 38.2 MB" state={<State state="live" label="Ready" />}
+          thumb={<span style={{display:'grid',placeItems:'center',width:44,height:30,borderRadius:'var(--r-xs)',background:'var(--surface-1)',color:'var(--brand)',boxShadow:'var(--e1), var(--edge)',flex:'none'}}><Icon name="film" size={15} /></span>}
+          actions={<IconButton icon="x" label="Remove" size="sm" />} />
+      </Dropzone>
+    </div>
+  </div>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>)
+</script>

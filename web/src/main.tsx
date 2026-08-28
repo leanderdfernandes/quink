@@ -8,6 +8,7 @@ import Invite from './screens/Invite'
 import ReaderSite from './reader/ReaderSite'
 import StagingBanner from './components/StagingBanner'
 import { readerKeyFromHost } from './lib/config'
+import { applyStoredTheme } from './components/ThemeToggle'
 import './styles.css'
 
 // Two apps, one bundle. Which one renders is decided by the HOST:
@@ -31,6 +32,9 @@ function KbQueryRedirect() {
   const kb = params.get('kb')
   return kb ? <Navigate to={`/kb/${kb}`} replace /> : <App />
 }
+
+// Before the first paint, so a dark-mode user never gets a white flash.
+applyStoredTheme()
 
 const hostKey = readerKeyFromHost(window.location.host)
 

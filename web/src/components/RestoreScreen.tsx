@@ -32,7 +32,7 @@ export default function RestoreScreen({ kbName, trial, articleCount, onContinue 
   return (
     <div className="page" style={{ justifyContent: 'center' }}>
       <div className="card wall">
-        <span className="pill amber">Offline</span>
+        <span className="eyebrow caution">Offline</span>
         <h2 style={{ marginTop: 14 }}>Your help center is offline</h2>
 
         {/* pricing-spec §7, verbatim. The count and the grace window are the whole message:

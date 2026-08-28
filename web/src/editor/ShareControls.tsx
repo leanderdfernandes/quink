@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { helpCenterUrl } from '../lib/config'
 import type { SaveState } from '../lib/useAutosave'
 import type { Visibility } from '../lib/types'
+import State, { type StateKind } from '../components/State'
 
-// Publishing, as one status pill + one button + one menu.
+// Publishing, as one status + one button + one menu.
 //
 // The header used to carry four publishing concepts flat and competing: a Listed/Unlisted
 // segmented control, Publish changes, a locked slug line, Copy link and View. Nothing said
 // what state the article was actually in, and save state floated beside them as a separate
-// string. Now: the PILL is the only place article state and save state appear, the BUTTON
+// string. Now: the STATE is the only place article state and save state appear, the BUTTON
 // is whatever the single most useful action is right now, and everything else — including
 // both destructive actions — is behind the caret where people already look for them.
 //
@@ -56,48 +57,48 @@ type Props = {
 }
 
 const CaretIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M6 9l6 6 6-6" />
   </svg>
 )
 const LinkIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
     <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
   </svg>
 )
 const OutIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     <path d="M15 3h6v6" />
     <path d="M10 14L21 3" />
   </svg>
 )
 const RowsIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden>
     <path d="M4 7h16M4 12h16M4 17h10" />
   </svg>
 )
 const RevertIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M3 12a9 9 0 1 0 9-9" />
     <path d="M3 4v5h5" />
   </svg>
 )
 const HideIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M17.94 17.94A10 10 0 0 1 12 20c-7 0-10-8-10-8a18 18 0 0 1 5-6" />
     <path d="M1 1l22 22" />
   </svg>
 )
 const TrashIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
   </svg>
 )
 
 // The pill. One component, five states, always in the same place.
-function StatusPill({
+function StatusState({
   building,
   saveState,
   conflict,
@@ -115,48 +116,55 @@ function StatusPill({
   | 'everPublished'
   | 'pendingEdits'
 >) {
-  let cls = ''
+  // v2 says state with a glyph and a weighted label, never a coloured dot in a pill: at
+  // list scale those bubbles competed with the titles beside them, which is what read as
+  // generated rather than designed. The branch order below is unchanged.
+  let kind: StateKind = 'draft'
   let label = 'Draft'
   let sub: string | null = null
 
   // First, and ahead of save state: while a run owns the document nothing is being saved
   // and there is nothing else worth saying here.
   if (building) {
-    cls = 'bld'
+    kind = 'building'
     label = 'Building'
   } else if (opError) {
-    cls = 'err'
+    kind = 'failed'
     label = opError
   } else if (conflict) {
     // A refused write is not a broken one. The strip under the bar carries the explanation
     // and the two ways out; this just stops the status claiming a failure that isn't ours.
-    cls = 'dirty'
+    kind = 'edits'
     label = 'Not saved'
     sub = 'someone else edited this'
   } else if (saveState === 'error') {
-    cls = 'err'
+    kind = 'failed'
     label = 'Couldn’t save'
     sub = 'retrying on your next edit'
   } else if (saveState === 'saving') {
+    kind = 'saving'
     label = 'Saving…'
   } else if (visibility === 'draft') {
+    kind = everPublished ? 'unlisted' : 'draft'
     label = everPublished ? 'Unpublished' : 'Draft'
     sub = everPublished ? 'was published' : null
   } else if (pendingEdits > 0) {
-    cls = 'dirty'
+    kind = 'edits'
     label = 'Published'
     sub = `${pendingEdits} unpublished ${pendingEdits === 1 ? 'edit' : 'edits'}`
   } else {
-    cls = 'live'
+    kind = 'live'
     label = 'Published'
   }
 
   return (
-    <span className={`ed-status ${cls}`} role="status">
-      <span className="ed-status-dot" aria-hidden />
-      {label}
-      {sub && <span className="ed-status-sub">· {sub}</span>}
-    </span>
+    <State
+      className="ed-status"
+      state={kind}
+      label={label}
+      sub={sub ? `· ${sub}` : null}
+      role="status"
+    />
   )
 }
 
@@ -273,7 +281,7 @@ export default function ShareControls({
 
   return (
     <>
-      <StatusPill
+      <StatusState
         building={building}
         saveState={saveState}
         conflict={conflict}

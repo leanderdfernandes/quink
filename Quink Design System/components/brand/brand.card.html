@@ -1,0 +1,34 @@
+<!-- @dsCard group="Components" viewport="900x300" name="Brand — wordmark, bolt, micro-label, theme toggle" subtitle="The bolt keeps its green in the wordmark; alone it takes currentColor" -->
+<meta charset="utf-8">
+<title>Quink — brand</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{background:var(--bg);padding:24px 26px}.stack{display:flex;flex-direction:column;gap:26px}.set{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cap{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tr-mono);text-transform:uppercase;color:var(--ink-4);margin-bottom:12px}body{padding:0}</style>
+<div id="root"></div>
+<script type="text/babel">
+const { Wordmark, Bolt, Micro, ThemeToggle } = window.QuinkDesignSystem_6ae0bd
+function Demo(){
+  return <div>
+    <div style={{padding:'28px 26px',display:'flex',alignItems:'center',gap:38,flexWrap:'wrap'}}>
+      <Wordmark height={32} tone="ink" />
+      <span style={{color:'var(--brand)',display:'flex',alignItems:'center',gap:12}}><Bolt height={28} /><Bolt height={18} /><Bolt height={12} /></span>
+      <span style={{marginLeft:'auto'}}><ThemeToggle /></span>
+    </div>
+    <div style={{padding:'26px',background:'var(--brand-600)',display:'flex',alignItems:'center',gap:38}}>
+      <Wordmark height={32} tone="light" />
+      <span style={{color:'var(--on-brand)',display:'flex'}}><Bolt height={24} /></span>
+    </div>
+    <div style={{padding:'26px'}}>
+      <Micro>On this page</Micro>
+      <div style={{height:10}}></div>
+      <Micro>8 steps · updated 12 Mar · getting started</Micro>
+      <div style={{height:10}}></div>
+      <Micro>44 AI runs this cycle</Micro>
+    </div>
+  </div>
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>)
+</script>

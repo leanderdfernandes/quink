@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import State from '../components/State'
 import { supabase } from '../lib/supabase'
 import { READER_DOMAIN, WORKER_URL } from '../lib/config'
 import type { KnowledgeBase as KB } from '../lib/types'
@@ -221,8 +222,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
     <div className="settings">
       <header className="settings-top">
         <button
-          className="btn btn-ghost"
-          style={{ padding: '6px 12px', fontSize: 13 }}
+          className="btn btn-ghost btn-sm"
           onClick={onBack}
         >
           ← Help center
@@ -242,7 +242,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
           <div className="dm-card serving">
             <div className="dm-row1">
               <Address host={customHost} />
-              <span className="dm-tag serving">Serving readers</span>
+              <State className="dm-tag" state="live" label="Serving readers" />
               <CopyButton value={`https://${customHost}`} />
             </div>
             <p className="dm-note">
@@ -275,9 +275,11 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
         <div className={`dm-card${customServing ? '' : ' serving'}`}>
           <div className="dm-row1">
             <Address host={freeHost} />
-            <span className={`dm-tag ${customServing ? 'backup' : 'serving'}`}>
-              {customServing ? 'Redirects' : 'Serving readers'}
-            </span>
+            <State
+              className="dm-tag"
+              state={customServing ? 'unlisted' : 'live'}
+              label={customServing ? 'Redirects' : 'Serving readers'}
+            />
             <CopyButton value={`https://${freeHost}`} />
           </div>
           <p className="dm-note">
@@ -293,7 +295,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
           <div className="dm-card">
             <div className="dm-row1">
               <Address host={customHost} live={false} />
-              <span className="dm-tag wait">Waiting on DNS</span>
+              <State className="dm-tag" state="saving" label="Waiting on DNS" />
             </div>
             <p className="dm-note">
               Add this record with whoever manages {customHost}, then we'll take it from
@@ -332,7 +334,7 @@ export default function DomainSettings({ kb, onBack, onChange }: Props) {
           <div className="dm-card bad">
             <div className="dm-row1">
               <Address host={customHost} live={false} />
-              <span className="dm-tag bad">Not connected</span>
+              <State className="dm-tag" state="failed" label="Not connected" />
             </div>
             <p className="dm-bad">
               {error || kb.domain_error || 'We checked and could not reach this domain yet.'}
@@ -420,7 +422,7 @@ const ExternalIcon = () => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="2"
+    strokeWidth="1.75"
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden

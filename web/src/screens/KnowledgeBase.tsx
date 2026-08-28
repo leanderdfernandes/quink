@@ -26,6 +26,8 @@ import { trialBannerLabel, trialFor, trialPillLabel } from '../lib/trial'
 import { articleState, buildProgress } from '../lib/buildState'
 import BuildBar from '../editor/BuildBar'
 import Wordmark from '../components/Wordmark'
+import ThemeToggle from '../components/ThemeToggle'
+import State, { type StateKind } from '../components/State'
 import KbSwitcher from '../components/KbSwitcher'
 import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
 
@@ -104,27 +106,33 @@ type Meta = {
   build: Build
 }
 
-type StatusBadge = { label: string; cls: 'gen' | 'draft' | 'unlisted' | 'listed' | 'dirty' }
+// v2 says article state with a glyph and a weighted label — <State> — never a coloured dot
+// in a pill. `state: null` means "this row is the norm": a plain draft carries no state at
+// all, because forty bubbles competing with forty titles is what read as generated.
+type RowState = { label: string; state: StateKind | null }
 
-function statusBadge(a: ArticleRow, pending: number, build: Build | null): StatusBadge {
-  // Same derived state the editor's pill reads (lib/buildState). An article being written
+function rowState(a: ArticleRow, pending: number, build: Build | null): RowState {
+  // Same derived state the editor's status reads (lib/buildState). An article being written
   // needs its OWN row state, or someone who leaves the tab opens a half-written article
   // expecting a finished one — and the count is the same count the editor's bar shows.
   if (articleState(a) === 'building') {
     return {
       label: build?.total ? `Building · ${build.done} of ${build.total}` : 'Building',
-      cls: 'gen',
+      state: 'building',
     }
   }
   // The draft is ahead of what readers see — that is the more useful thing to say than
-  // repeating that it is published. Same count as the editor's status pill.
+  // repeating that it is published. Same count as the editor's status.
   if (pending > 0 && a.visibility !== 'draft') {
-    return { label: `${pending} unpublished ${pending === 1 ? 'edit' : 'edits'}`, cls: 'dirty' }
+    return {
+      label: `${pending} unpublished ${pending === 1 ? 'edit' : 'edits'}`,
+      state: 'edits',
+    }
   }
-  if (a.visibility === 'listed') return { label: 'Published', cls: 'listed' }
+  if (a.visibility === 'listed') return { label: 'Published', state: 'live' }
   // "Link only" is a label for the existing `unlisted` value, not a state of its own.
-  if (a.visibility === 'unlisted') return { label: 'Link only', cls: 'unlisted' }
-  return { label: 'Draft', cls: 'draft' }
+  if (a.visibility === 'unlisted') return { label: 'Link only', state: 'unlisted' }
+  return { label: 'Draft', state: null }
 }
 
 // Exported for the admin KB table, which needs the same shape of label. One helper, so
@@ -601,7 +609,7 @@ export default function KnowledgeBase({
   function renderRow(a: ArticleRow) {
     const m = meta[a.id]
     const building = articleState(a) === 'building'
-    const badge = statusBadge(a, m?.pending ?? 0, m?.build ?? null)
+    const rs = rowState(a, m?.pending ?? 0, m?.build ?? null)
     const fb = m?.fb
     const rate = fb && fb.total ? Math.round((fb.helpful / fb.total) * 100) : null
     const isSelected = selected.has(a.id)
@@ -638,7 +646,7 @@ export default function KnowledgeBase({
         <button className="al-open" onClick={() => onOpenArticle(a.id)}>
           <span className="al-titleline">
             <b>{a.title || 'Untitled'}</b>
-            <span className={`al-badge ${badge.cls}`}>{badge.label}</span>
+            {rs.state && <State className="al-state" state={rs.state} label={rs.label} />}
             {!!m?.missingShots && (
               <span className="al-flag">
                 {plural(m.missingShots, 'step')} with no screenshot
@@ -784,6 +792,7 @@ export default function KnowledgeBase({
         </div>
         <div className="lib-top-right">
           <AvatarStack people={people} onOpen={onOpenPeople} />
+          <ThemeToggle />
           {pill && (
             <button
               className={`counter counter-btn${trial.stage === 'warning' ? ' amber' : ''}`}
@@ -792,7 +801,7 @@ export default function KnowledgeBase({
               {pill}
             </button>
           )}
-          <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 13 }} onClick={onSignOut}>
+          <button className="btn btn-ghost btn-sm" onClick={onSignOut}>
             Sign out
           </button>
         </div>
@@ -1253,19 +1262,19 @@ const stroke = {
   strokeLinejoin: 'round' as const,
 }
 const BookIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
   </svg>
 )
 // The thing being documented. Same 16/24 grid and stroke set as the rest of the rail.
 const BoxIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <path d="M12 2.5 21 7v10l-9 4.5L3 17V7l9-4.5Z" />
     <path d="M3 7l9 4.5L21 7M12 11.5V21.5" />
   </svg>
 )
 const BrandIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
     <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
     <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
@@ -1274,21 +1283,21 @@ const BrandIcon = () => (
   </svg>
 )
 const ExternalIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <path d="M15 3h6v6" />
     <path d="M10 14 21 3" />
     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
   </svg>
 )
 const GlobeIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <circle cx="12" cy="12" r="10" />
     <path d="M2 12h20" />
     <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z" />
   </svg>
 )
 const PeopleIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" {...stroke}>
+  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <path d="M16 20v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V20" />
     <circle cx="9" cy="7.5" r="3.5" />
     <path d="M17 4.2a3.5 3.5 0 0 1 0 6.6M22 20v-1.5a4 4 0 0 0-3-3.87" />
@@ -1308,20 +1317,20 @@ const FolderPlusIcon = () => (
   </svg>
 )
 const PencilIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+  <svg width="15" height="15" viewBox="0 0 24 24" {...stroke}>
     <path d="M12 20h9" />
     <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
   </svg>
 )
 const TrashIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" {...stroke}>
+  <svg width="15" height="15" viewBox="0 0 24 24" {...stroke}>
     <path d="M3 6h18" />
     <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
   </svg>
 )
 const DotsIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
     <circle cx="5" cy="12" r="1.7" />
     <circle cx="12" cy="12" r="1.7" />
     <circle cx="19" cy="12" r="1.7" />

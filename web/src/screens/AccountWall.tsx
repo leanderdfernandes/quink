@@ -94,7 +94,7 @@ export default function AccountWall({ fileName, fileSize, extraFiles = 0 }: Prop
 
         {/* The file pill reminds them their recording is loaded and waiting. */}
         <div style={{ marginBottom: 22 }}>
-          <span className="pill" title={fileName}>
+          <span className="eyebrow" title={fileName}>
             {COPY.wallFilePill}
             <span className="size">{fileSize}</span>
           </span>

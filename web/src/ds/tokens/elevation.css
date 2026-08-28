@@ -1,0 +1,71 @@
+/* Quink v2 — elevation. THIS is the file that replaces borders.
+
+   Light theme: four layered shadows. Each is two-or-three stops — a tight contact shadow
+   for the edge, a mid shadow for the lift, a wide ambient for the room. One-stop shadows are
+   what read as flat, and that was the complaint.
+
+   Dark theme: shadows are nearly invisible on a near-black page, so depth switches
+   mechanism — surface lightness does the lifting, and a 1px inner top light gives the edge
+   its definition. Same token names, different physics, so no component knows about themes.
+
+   Shadow colour is a mix of --ink, so it inherits the palette's warmth instead of adding
+   a grey cast on a warm page. */
+
+:root {
+  --sh-color: 60 8% 12%; /* @kind other */
+
+  /* e0 — flush. Sits IN the page, no lift. Wells, inputs, code blocks. */
+  --e0: none; /* @kind shadow */
+  /* e1 — resting. Cards, list surfaces, the top bar. */
+  --e1:
+    0 1px 1.5px -0.5px hsl(var(--sh-color) / 7%),
+    0 2.5px 5px -1.5px hsl(var(--sh-color) / 5%);
+  /* e2 — interactive lift. Hovered cards, the segmented control's thumb. */
+  --e2:
+    0 1px 1.5px -0.5px hsl(var(--sh-color) / 7%),
+    0 4px 10px -2px hsl(var(--sh-color) / 7%),
+    0 10px 24px -8px hsl(var(--sh-color) / 6%);
+  /* e3 — overlays. Menus, popovers, the search dropdown, the queue dock. */
+  --e3:
+    0 1px 2px -0.5px hsl(var(--sh-color) / 8%),
+    0 6px 16px -3px hsl(var(--sh-color) / 9%),
+    0 20px 44px -12px hsl(var(--sh-color) / 11%);
+  /* e4 — modals, and the floating selection toolbar. */
+  --e4:
+    0 2px 4px -1px hsl(var(--sh-color) / 10%),
+    0 12px 28px -6px hsl(var(--sh-color) / 13%),
+    0 36px 76px -20px hsl(var(--sh-color) / 16%);
+
+  /* The inner top light. Zero in light mode (a white card on a white page needs no help);
+     it is the whole edge definition in dark mode. Composable: append it to any shadow. */
+  --edge: inset 0 0 0 0 transparent; /* @kind shadow */
+
+  /* Focus. A 2px brand ring at 2px offset, drawn OUTSIDE the control so it never changes
+     layout and never sits under the label. There is no border to recolour any more, which is
+     what made v1's focus feel bolted on. */
+  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--brand-ring); /* @kind shadow */
+  --ring-inset: inset 0 0 0 1.5px var(--brand-400); /* @kind shadow */
+
+  /* Radii. More generous than v1 — the single cheapest lever on "does this feel modern".
+     Small controls 8, fields 10, cards 16, panels 20, sheets 26. */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-2xl: 26px;
+  --r-3xl: 34px;
+  --r-pill: 999px;
+}
+
+[data-theme='dark'] {
+  --sh-color: 62 12% 4%; /* @kind other */
+
+  --e1: 0 1px 2px -1px hsl(var(--sh-color) / 40%);
+  --e2: 0 2px 6px -2px hsl(var(--sh-color) / 45%), 0 8px 18px -8px hsl(var(--sh-color) / 40%);
+  --e3: 0 4px 12px -3px hsl(var(--sh-color) / 55%), 0 18px 40px -12px hsl(var(--sh-color) / 50%);
+  --e4: 0 8px 24px -6px hsl(var(--sh-color) / 60%), 0 32px 68px -20px hsl(var(--sh-color) / 55%);
+
+  /* Now load-bearing: this 1px is what separates a raised surface from the page. */
+  --edge: inset 0 1px 0 0 hsl(70 20% 100% / 7%); /* @kind shadow */
+}

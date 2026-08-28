@@ -1,0 +1,56 @@
+/* Quink v2 — spacing & rhythm.
+
+   A real 4px-based scale this time, but with the two half-steps the product genuinely needs
+   (2 and 6). Every screen in v2 is measurably roomier than v1: gutters up ~40%, control
+   padding up, and the vertical rhythm between blocks driven by a small set of large values
+   rather than whatever looked right. "Fewer things per screen" is a spacing decision. */
+:root {
+  --s-0: 0px;
+  --s-px: 1px;
+  --s-0-5: 2px;
+  --s-1: 4px;
+  --s-1-5: 6px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 28px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-14: 56px;
+  --s-16: 64px;
+  --s-20: 80px;
+  --s-24: 96px;
+  --s-32: 128px;
+
+  /* Control geometry. Heights are fixed so a row of mixed controls aligns without hacks. */
+  --h-control-sm: 32px; /* @kind spacing */
+  --h-control: 38px; /* @kind spacing */
+  --h-control-lg: 46px; /* @kind spacing */
+  --h-field: 42px; /* @kind spacing */
+  --pad-control: 0 16px; /* @kind spacing */
+  --pad-control-lg: 0 22px; /* @kind spacing */
+  --pad-field: 0 14px; /* @kind spacing */
+  --pad-card: 24px; /* @kind spacing */
+  --pad-card-lg: 32px; /* @kind spacing */
+  --pad-sheet: 32px 32px 28px; /* @kind spacing */
+
+  /* Shells + rails. Wider prose measure, wider rails, more air at the edges. */
+  --shell: 1240px;
+  --shell-app: 960px;
+  --shell-form: 680px;
+  --shell-prose: 720px;
+  --rail: 248px;
+  --rail-steps: 232px;
+  --rail-spine: 180px;
+  --gutter: 40px;
+  --gutter-sm: 24px;
+
+  /* Icon sizes. One step up from v1 across the board — 16 was small next to 16px body. */
+  --icon-sm: 15px;
+  --icon-md: 17px;
+  --icon-lg: 19px;
+  --icon-xl: 22px;
+}
