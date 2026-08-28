@@ -46,6 +46,7 @@ import Login from './screens/Login'
 import AccountWall from './screens/AccountWall'
 import KnowledgeBaseScreen from './screens/KnowledgeBase'
 import Settings from './screens/Settings'
+import AppShell from './components/AppShell'
 import OwnerOnly from './components/OwnerOnly'
 import Editor from './editor/Editor'
 
@@ -710,23 +711,41 @@ export default function App() {
     return (
       <>
         {adminBar}
-        <Settings
+        <AppShell
           kb={kb}
-          tab={settingsTab}
-          onTab={(t: SettingsTab) => navigate(`/app/${kb.id}/settings/${t}`)}
+          plan={plan}
           ent={ent}
           isOwner={isOwner}
           userId={userId}
-          people={people}
-          onBack={() => navigate(`/app/${kb.id}`)}
-          onSaved={setKb}
-          onUpgrade={() => setShowUpgrade(true)}
-          // Leaving takes away the thing you are looking at. Back to the root, which
-          // re-resolves to a help center this account still has.
-          onLeft={() => navigate('/')}
           kbs={kbs}
+          people={people}
+          active="settings"
+          onSwitchKb={switchKb}
+          onOpenArticles={() => navigate(`/app/${kb.id}`)}
+          // Already here — see AppShell, a nav row that goes dead when you are on it reads
+          // as broken rather than as current.
+          onOpenSettings={() => {}}
+          onOpenPeople={() => navigate(`/app/${kb.id}/settings/team`)}
+          onUpgrade={() => setShowUpgrade(true)}
           onSignOut={signOut}
-        />
+        >
+          <Settings
+            kb={kb}
+            tab={settingsTab}
+            onTab={(t: SettingsTab) => navigate(`/app/${kb.id}/settings/${t}`)}
+            ent={ent}
+            isOwner={isOwner}
+            userId={userId}
+            people={people}
+            onSaved={setKb}
+            onUpgrade={() => setShowUpgrade(true)}
+            // Leaving takes away the thing you are looking at. Back to the root, which
+            // re-resolves to a help center this account still has.
+            onLeft={() => navigate('/')}
+            kbs={kbs}
+            onSignOut={signOut}
+          />
+        </AppShell>
         {upgradeUi}
       </>
     )

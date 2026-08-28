@@ -701,12 +701,19 @@ textarea {
 .rail {
   padding: var(--s-6) var(--s-3);
   background: var(--surface-1);
+  /* The row icons land at 24px — the same gutter the wordmark uses in the bar above. */
+  align-self: stretch;
 }
 .rail-item {
+  /* Spans the rail. A <button> is width:auto by default, so the active row's fill used to
+     stop at the end of its label — which read as a stray pill rather than as the selected
+     row of a list. */
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  height: var(--h-control-lg);
+  padding: 0 12px;
   border-radius: var(--r-sm);
   font-size: var(--t-ui);
   font-weight: var(--w-medium);
@@ -1036,14 +1043,32 @@ textarea {
   display: grid;
   grid-template-columns: var(--rail) 1fr;
 }
+/* ONE content column, LEFT-ALIGNED at a fixed gutter from the rail.
+   It used to be `margin: 0 auto` inside whatever space the rail left over, so on a wide
+   screen the page drifted into the middle and the rail was stranded against the left edge
+   with 200px of nothing between them. Now the rail, the page heading and every settings
+   panel share one vertical line. */
 .lib-main {
-  padding: 28px 40px 70px;
+  padding: var(--s-8) var(--gutter) var(--s-10);
   overflow: auto;
+  /* A column, so the legal footer sits at the BOTTOM of the viewport on a short page
+     rather than riding up under an empty state. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 .lib-main > * {
-  max-width: 880px;
-  margin-left: auto;
-  margin-right: auto;
+  width: 100%;
+}
+.lib-main > .lf {
+  margin-top: auto;
+  /* Its own 40px gutter would push the links past the column every other row starts on. */
+  padding: var(--s-12) 0 0;
+}
+.lib-main > * {
+  max-width: var(--shell-app);
+  margin-left: 0;
+  margin-right: 0;
 }
 .lib-head {
   display: flex;
@@ -9125,20 +9150,80 @@ div.rail-meter {
 }
 
 /* --- Settings: the tab rail, and the surfaces the rail rows became -------------------- */
-.settings-tabs {
-  /* Matches the widest panel column (720) so the rail's left edge lines up with the
-     heading under it. A rail that is centred to a different width than its own content
-     reads as two unrelated things stacked. */
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 0 24px;
-  width: 100%;
+/* --- Settings, inside the shell -------------------------------------------------------
+   Nothing here re-centres or re-pads: the page heading, the tab rail and every panel sit
+   directly on `.lib-main`'s column, which is what makes moving between Articles and
+   Settings change the content and nothing else. */
+.set-hd {
+  margin-bottom: var(--s-6);
 }
-/* The panels already own their top padding, so the rail must not add a second gap. */
-.settings-tabs + .q-tabpanel > .settings-single,
-.settings-tabs + .q-tabpanel > .pp,
-.settings-tabs + .q-tabpanel > .dm {
-  padding-top: var(--s-8);
+.set-hd h1 {
+  font-family: var(--font-display);
+  font-size: var(--t-d3);
+  font-weight: var(--w-display);
+  letter-spacing: var(--tr-display-lg);
+  line-height: var(--lh-display);
+}
+.set-hd .cap {
+  margin-top: var(--s-1);
+}
+.set-tabs {
+  margin-bottom: var(--s-8);
+}
+/* Settings is the one screen that runs wider than the 960 library column, because Theming
+   carries a live preview beside its controls. It is capped at the shell width so the tab
+   rule does not stretch to a metre on a wide monitor, and the LEFT EDGE is unchanged —
+   which is the property that actually matters for reading the two screens as one app. */
+.lib-main > .set {
+  max-width: var(--shell);
+}
+/* The panels used to own the page: their own max-width, their own centring, their own
+   40px of top padding. Inside the shell all three are the shell's job. */
+.set .settings-single,
+.set .pp,
+.set .dm {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: auto;
+}
+/* The prose column inside a panel. Wide enough for a form, narrow enough to read — and
+   the same for all three, so the tab row is not sitting over three different measures. */
+.set .settings-single > *,
+.set .pp > *,
+.set .dm > * {
+  max-width: var(--shell-form);
+}
+/* Theming is the exception, and a deliberate one: its live preview needs the width. The
+   CONTROL column keeps the same left edge and the same measure as every other panel, and
+   the preview takes what is left — the same page with a tool attached. */
+.set .th {
+  min-height: 0;
+}
+.set .th-bar {
+  display: none;
+}
+.set .th-split {
+  /* The control column matches the other panels' measure WHEN THERE IS ROOM, and yields to
+     the preview when there is not — the preview has a floor, so it can never be squeezed to
+     a thumbnail by a control column insisting on its full width. The left edge does not
+     move either way, which is the property that makes these read as one screen. */
+  grid-template-columns: minmax(380px, var(--shell-form)) minmax(400px, 1fr);
+  gap: var(--gutter);
+  height: auto;
+  min-height: 62vh;
+}
+.set .th-ctrl {
+  border-right: 0;
+  padding-right: var(--gutter);
+}
+.set .th-scroll {
+  padding: 0;
+  overflow: visible;
+}
+.set .th-scroll > h2:first-child,
+.set .th-scroll > .th-lede {
+  display: none;
 }
 /* Theming brings a full-bleed split preview, so its panel is the one that is not capped. */
 .q-tabpanel > .th {

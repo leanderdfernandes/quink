@@ -1,3 +1,4 @@
+import AppShell from '../components/AppShell'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { helpCenterUrl } from '../lib/config'
@@ -7,14 +8,10 @@ import {
   publishArticle,
   unpublishArticle,
 } from '../lib/articles'
-import DeleteAccountModal from '../components/DeleteAccountModal'
-import LegalFooter from '../components/LegalFooter'
 import { pendingEditCount, type StepLite } from '../lib/pendingEdits'
 import { listInFlightJobs } from '../lib/jobs'
-import { runsLeftFrom, type Entitlements } from '../lib/plans'
+import { runsLeftFrom, type Entitlements, type PlanId } from '../lib/plans'
 import type { Person } from '../lib/people'
-import AvatarStack from '../components/AvatarStack'
-import { publicBrandingUrl } from '../lib/storage'
 import {
   createFolder,
   deleteFolder,
@@ -22,13 +19,9 @@ import {
   moveArticle,
   renameFolder,
 } from '../lib/folders'
-import { trialBannerLabel, trialFor, trialPillLabel } from '../lib/trial'
 import { articleState, buildProgress } from '../lib/buildState'
 import BuildBar from '../editor/BuildBar'
-import Wordmark from '../components/Wordmark'
-import AccountMenu from '../components/AccountMenu'
 import State, { type StateKind } from '../components/State'
-import KbSwitcher from '../components/KbSwitcher'
 import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
 
 // Screen 4 — the article library (ux-spec §2).
@@ -48,7 +41,7 @@ type Props = {
   // The owner's plan (profiles.plan). Entitlements are owner-level, never per-KB — and
   // NULL when this account is not the owner: a member cannot read the owner's tier and must
   // not be shown it (team-access-spec L7). Every billing surface below keys on that.
-  plan: string | null
+  plan: PlanId | null
   // The OWNER's limits and usage for this KB, resolved by kb_entitlements(). This is what
   // the run meter and the trial clock read — never the caller's own plan, which is the
   // wrong answer for everyone except the owner.
@@ -177,7 +170,6 @@ export default function KnowledgeBase({
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'live' | 'drafts'>('all')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
 
   // Row menu, and the folder picker nested inside it.
   const [rowMenu, setRowMenu] = useState<string | null>(null)
@@ -200,7 +192,6 @@ export default function KnowledgeBase({
   const [confirmArticleId, setConfirmArticleId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   // The day-7 banner is dismissible PER SESSION only (pricing-spec §7) — never permanently.
-  const [bannerHidden, setBannerHidden] = useState(false)
   const renameInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -588,17 +579,7 @@ export default function KnowledgeBase({
   // burnt a Gemini call. The old copy said "43 recordings turned into a guide here", which
   // reads as a content count and made 43-vs-3-articles look like a bug.
 
-  // Runs and days both drain. ONE pill, escalating with the clock (pricing-spec §6).
-  // With no plan to read — an admin inside someone else's help center — there is no clock
-  // to show. The countdown is a bill arriving, and it is not theirs.
-  const trial = ent ? trialFor(kb, ent.expiry_days) : { stage: 'none' as const, daysLeft: 0, graceLeft: 0 }
-  // Both are billing surfaces — a countdown to a bill and a button to pay it — so neither
-  // renders for someone who cannot act on them (team-access-spec L7).
-  const pill = isOwner ? trialPillLabel(trial, left) : null
-  const showBanner = isOwner && trial.stage === 'urgent' && !bannerHidden && !loading
 
-  const initial = (kb.name.trim()[0] || 'Q').toUpperCase()
-  const logo = publicBrandingUrl(kb.logo_path)
   const libEmpty = !loading && articles.length === 0
 
   function renderRow(a: ArticleRow) {
@@ -770,97 +751,28 @@ export default function KnowledgeBase({
   }
 
   return (
-    <div className="lib">
-      <header className="lib-top">
-        <div className="lib-top-brand">
-          <Wordmark height={20} />
-          <span className="lib-sep">/</span>
-          {logo ? (
-            <img className="lib-kb-logo" src={logo} alt="" />
-          ) : (
-            <span className="lib-kb-badge" style={{ background: kb.primary_color }}>
-              {initial}
-            </span>
-          )}
-          <KbSwitcher kb={kb} plan={plan} kbs={kbs} userId={userId} onSwitch={onSwitchKb} />
-          {/* An action on the KB beside it, not a nav destination — which is why it sits
-              here rather than in the rail: it leaves the app entirely. */}
-          <a
-            className="lib-live"
-            href={helpCenterUrl(kb.subdomain)}
-            target="_blank"
-            rel="noreferrer"
-            title="Open the published help center"
-          >
-            <ExternalIcon />
-            View live site
-          </a>
-        </div>
-        <div className="lib-top-right">
-          <AvatarStack people={people} onOpen={onOpenPeople} />
-          {pill && (
-            <button
-              className={`counter counter-btn${trial.stage === 'warning' ? ' amber' : ''}`}
-              onClick={onUpgrade}
-            >
-              {pill}
-            </button>
-          )}
-          <AccountMenu onSignOut={onSignOut} />
-        </div>
-      </header>
-
-      {/* Handover greeting. Two sentences, above the articles, gone on click. */}
-      {justClaimed && (
-        <div className="claim-welcome">
-          <span>
-            <b>{kb.name} is yours.</b> Every article is editable — open one and change
-            anything. Add more from a recording or write one by hand.
-          </span>
-          <button className="trial-banner-x" onClick={onDismissWelcome} aria-label="Dismiss">
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Days 7–0: a persistent banner, not a pill (pricing-spec §7). */}
-      {showBanner && (
-        <div className="trial-banner">
-          <span>{trialBannerLabel(trial, articles.length)}</span>
-          <button className="btn" onClick={onUpgrade}>
-            Keep my help center
-          </button>
-          <button
-            className="trial-banner-x"
-            onClick={() => setBannerHidden(true)}
-            aria-label="Dismiss until next visit"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      <div className="lib-body">
-        {/* TWO items (ux-spec-v2 §11). The rail carried eight destinations for a product
-            whose whole value is in one of them; everything that is not "make an article"
-            is behind Settings now. View live site moved to the top bar — it is an action
-            on this help center, not a place. The run meter and Delete account moved into
-            Settings, where a number nobody can act on is not competing with the work. */}
-        <nav className="rail">
-          <button
-            className="rail-item on"
-            onClick={() => {}}
-          >
-            <BookIcon />
-            Articles<span className="rail-count">{articles.length}</span>
-          </button>
-          <button className="rail-item link" onClick={onOpenSettings}>
-            <GearIcon />
-            Settings
-          </button>
-        </nav>
-
-        <main className="lib-main">
+    <AppShell
+      kb={kb}
+      plan={plan}
+      ent={ent}
+      isOwner={isOwner}
+      userId={userId}
+      kbs={kbs}
+      people={people}
+      active="articles"
+      articleCount={articles.length}
+      loading={loading}
+      onSwitchKb={onSwitchKb}
+      // Already here. The row still answers, because a nav row that does nothing when you
+      // are on it reads as broken rather than as current.
+      onOpenArticles={() => {}}
+      onOpenSettings={onOpenSettings}
+      onOpenPeople={onOpenPeople}
+      onUpgrade={onUpgrade}
+      onSignOut={onSignOut}
+      justClaimed={justClaimed}
+      onDismissWelcome={onDismissWelcome}
+    >
           {selected.size > 0 ? (
             <div className="al-selbar">
               <span className="al-selcount">{plural(selected.size, 'article')} selected</span>
@@ -1141,30 +1053,12 @@ export default function KnowledgeBase({
               )}
             </>
           )}
-        </main>
-      </div>
-
       {toast && (
         <div className="al-toast" role="status">
           {toast}
         </div>
       )}
-
-      {/* The app's legal footer. Compact and at the very bottom: this is a working surface,
-          not a marketing page, but the links have to be reachable by clicking (Razorpay
-          checks for footer links, not just live URLs). */}
-      <LegalFooter compact />
-
-      {/* Every KB this account owns, not just the one on screen — deletion is account-level
-          and the dialog has to name everything that goes, or it isn't informed consent. */}
-      {deleting && (
-        <DeleteAccountModal
-          kbs={kbs.length ? kbs : [kb]}
-          onClose={() => setDeleting(false)}
-          onDeleted={onSignOut}
-        />
-      )}
-    </div>
+    </AppShell>
   )
 }
 
@@ -1176,24 +1070,6 @@ const stroke = {
   strokeLinecap: 'round' as const,
   strokeLinejoin: 'round' as const,
 }
-const GearIcon = () => (
-  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <circle cx="12" cy="12" r="3.2" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-  </svg>
-)
-const BookIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
-    <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-  </svg>
-)
-const ExternalIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
-    <path d="M15 3h6v6" />
-    <path d="M10 14 21 3" />
-    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-  </svg>
-)
 const SearchIcon = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" {...stroke}>
     <circle cx="11" cy="11" r="8" />

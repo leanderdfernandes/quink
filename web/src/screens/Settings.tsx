@@ -33,7 +33,6 @@ type Props = {
   isOwner: boolean
   userId: string
   people: Person[]
-  onBack: () => void
   onSaved: (kb: KB) => void
   onUpgrade: () => void
   onLeft: () => void
@@ -49,7 +48,6 @@ export default function Settings({
   isOwner,
   userId,
   people,
-  onBack,
   onSaved,
   onUpgrade,
   onLeft,
@@ -58,14 +56,16 @@ export default function Settings({
 }: Props) {
   const [deleting, setDeleting] = useState(false)
   return (
-    <div className="settings">
-      <header className="settings-top">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>
-          ← Help center
-        </button>
-      </header>
+    <div className="set">
+      {/* A page header, on the same column and the same left edge as "All articles" one
+          level up — so moving between the two rail rows changes the content and nothing
+          else. No back button: the rail is the way back now. */}
+      <div className="set-hd">
+        <h1>Settings</h1>
+        <p className="cap">{kb.name}</p>
+      </div>
 
-      <div className="settings-tabs">
+      <div className="set-tabs">
         <Tabs
           label="Settings sections"
           value={tab}
@@ -85,8 +85,9 @@ export default function Settings({
         <ProductSettings kb={kb} ent={ent} onSaved={onSaved} onUpgrade={onUpgrade} />
       </TabPanel>
 
-      {/* Theming brings its own full-width split preview rather than a form column, so it
-          is the one panel that is not inside `settings-single`. */}
+      {/* Theming's CONTROL column is the same width and starts on the same line as every
+          other panel; the live preview takes the space to its right. It reads as this page
+          with a tool attached rather than as a different screen. */}
       <TabPanel tab="theming" value={tab}>
         <ThemeSettings kb={kb} ent={ent} onSaved={onSaved} />
       </TabPanel>
