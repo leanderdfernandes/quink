@@ -981,10 +981,32 @@ textarea {
 }
 
 /* ---- Article library (CONTENT screen: folders + Unfiled) ---- */
-.lib {
+/* The app fills the viewport and nothing else scrolls. `#root` is a flex column rather
+   than the shell being a flat 100vh, because the staging and viewing-as-admin bars are
+   SIBLINGS above it — a flat 100vh plus a 44px bar is a document 44px too tall, which is
+   exactly the "the whole page scrolls" feeling.
+   min-height, not height: the reader mounts in the same root and must scroll normally. */
+#root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+/* Only when the AUTHORING app is mounted. A flex child cannot shrink inside a container
+   that is free to grow, so the shell needs a real height here — but the reader mounts in
+   this same root and must scroll the document normally, which is what `:has()` buys:
+   one rule, no class to remember to set, and no effect on the reader. */
+#root:has(> .lib) {
+  height: 100vh;
+  overflow: hidden;
+}
+.lib {
+  /* Takes what the bars leave, and scrolls INSIDE. With min-height:100vh here the shell
+     grew with its content and the document scrolled — top bar and rail included. */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--paper);
 }
 .lib-top {
@@ -1042,6 +1064,12 @@ textarea {
   flex: 1;
   display: grid;
   grid-template-columns: var(--rail) 1fr;
+  /* Without this a grid row refuses to shrink below its content, so the overflow on
+     .lib-main never engages and the whole page scrolls instead. */
+  min-height: 0;
+}
+.rail {
+  overflow-y: auto;
 }
 /* ONE content column, LEFT-ALIGNED at a fixed gutter from the rail.
    It used to be `margin: 0 auto` inside whatever space the rail left over, so on a wide
@@ -3517,7 +3545,7 @@ textarea {
 }
 .rs-drop-item:hover,
 .rs-drop-item:focus-visible {
-  background: var(--hover);
+  background: var(--brand-tint);
   text-decoration: none;
 }
 .rs-drop-t {
@@ -3660,7 +3688,9 @@ a.rs-cat-link:hover {
 }
 a.rs-row:hover,
 a.rs-row:focus-visible {
-  background: var(--hover);
+  /* The customer's colour, at the strength they chose. At 0% this resolves to plain paper
+     and the row stops highlighting at all — which is what "leaves them plain" means. */
+  background: var(--brand-tint);
   /* Re-stated, not inherited: the global `a:hover` underline is more specific than
      .rs-row's rest-state `text-decoration: none`, so a block anchor wrapping a whole card
      came out underlined end to end. Same fix the design system's .q-row already carries.
@@ -3970,7 +4000,7 @@ a.rs-crumb-link:hover {
 .rs-prose code {
   font-family: var(--rs-mono);
   font-size: 0.85em;
-  background: var(--subtle);
+  background: var(--brand-wash);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
   border-radius: 5px;
@@ -4041,7 +4071,7 @@ a.rs-crumb-link:hover {
 .rs-fb {
   margin: 64px 0 0;
   padding: 25px 27px;
-  background: var(--surface);
+  background: var(--brand-wash);
   border: 1px solid var(--border);
   border-radius: var(--rs-r-lg);
   max-width: var(--rs-measure);
@@ -7672,6 +7702,7 @@ div.rail-meter {
 }
 .rs-faq-i > summary:hover {
   color: var(--brand);
+  background: var(--brand-wash);
 }
 .rs-faq-i > summary::after {
   content: "";
@@ -9035,66 +9066,81 @@ div.rail-meter {
   background: var(--brand-700);
 }
 
-/* --- Settings → Product & context: the notes list and its budget meter ---------------
-   The notes are the only repeatable editor in the product. Each is an inset well rather
-   than a card, because a card inside the settings card is a box inside a box — the thing
-   v2 removed. The remove control is hover-revealed, like every other destructive tool. */
+/* --- Settings → Product & context: the notes list ------------------------------------
+   Notes are COLLAPSED rows, not stacked textareas. Expanded cards do not scale — by the
+   third note the screen is a wall of inputs and you can no longer see what you already
+   wrote, only what you are typing. A row names itself and carries its size; open the one
+   you want. */
+.ps-sect {
+  margin-top: var(--s-6);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--rule);
+}
 .ps-notes {
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
-  margin-top: var(--s-5);
+  gap: var(--s-2);
 }
 .ps-note {
-  position: relative;
   background: var(--surface-2);
   border-radius: var(--r-md);
-  padding: var(--s-3) var(--s-4) var(--s-4);
+  transition: background var(--dur-2) var(--ease);
 }
-.ps-note .ps-note-t,
-.ps-note .ps-note-b {
-  background: transparent;
-  padding: 0;
-  height: auto;
-  border-radius: 0;
+.ps-note.open {
+  background: var(--surface-2);
+  box-shadow: var(--e1), var(--edge);
 }
-.ps-note-t {
+.ps-note-hd {
+  display: flex;
+  align-items: center;
+}
+.ps-note-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: var(--h-control-lg);
+  padding: 0 var(--s-2) 0 var(--s-4);
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  text-align: left;
+  transition: color var(--dur-1) var(--ease);
+}
+.ps-note-toggle:hover {
+  color: var(--ink);
+}
+.ps-note-nm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--t-ui);
   font-weight: var(--w-strong);
   color: var(--ink);
-  padding-right: var(--s-8);
 }
-.ps-note .ps-note-t:hover,
-.ps-note .ps-note-b:hover {
-  background: transparent;
+.ps-note-nm i {
+  font-style: normal;
+  font-weight: var(--w-body);
+  color: var(--ink-4);
 }
-/* The WELL is the field here, so focus lifts the whole note rather than ringing one line
-   of it — two rings inside one card is the boxes-inside-boxes problem again. */
-.ps-note .ps-note-t:focus,
-.ps-note .ps-note-b:focus {
-  background: transparent;
-  box-shadow: none;
-}
-.ps-note:focus-within {
-  background: var(--surface-3);
-}
-.ps-note-b {
-  margin-top: var(--s-1);
-  min-height: 64px;
-  font-size: var(--t-ui-sm);
-  color: var(--ink-2);
-  line-height: var(--lh-body);
+.ps-note-c {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-4);
 }
 .ps-note-x {
-  position: absolute;
-  top: var(--s-2);
-  right: var(--s-2);
+  flex: none;
   display: grid;
   place-items: center;
   width: var(--h-control-sm);
   height: var(--h-control-sm);
+  margin-right: var(--s-2);
   border-radius: var(--r-sm);
-  color: var(--ink-3);
+  color: var(--ink-4);
   opacity: 0;
   transition:
     opacity var(--dur-2) var(--ease),
@@ -9109,6 +9155,24 @@ div.rail-meter {
   background: var(--critical-soft);
   color: var(--critical-ink);
 }
+.ps-note-body {
+  padding: 0 var(--s-4) var(--s-4);
+  animation: q-fade-in var(--dur-2) var(--ease) both;
+}
+.ps-note .ps-note-t,
+.ps-note .ps-note-b {
+  background: var(--surface-1);
+  height: auto;
+}
+.ps-note .ps-note-t {
+  height: var(--h-field);
+  font-weight: var(--w-strong);
+}
+.ps-note .ps-note-b {
+  margin-top: var(--s-2);
+  min-height: 96px;
+  line-height: var(--lh-body);
+}
 .ps-note-add {
   align-self: flex-start;
   display: inline-flex;
@@ -9116,6 +9180,7 @@ div.rail-meter {
   gap: var(--s-2);
   height: var(--h-control-sm);
   padding: 0 var(--s-3);
+  margin-top: var(--s-1);
   border-radius: var(--r-sm);
   font-size: var(--t-ui-sm);
   font-weight: var(--w-strong);
@@ -9129,7 +9194,7 @@ div.rail-meter {
 /* Pinned under the list it measures, and driven by STATE, so deleting a note frees budget
    live rather than at the next save. Amber past 90% — a warning you can act on. */
 .ps-budget {
-  margin-top: var(--s-5);
+  margin-top: var(--s-6);
 }
 .ps-budget .hint {
   margin-top: var(--s-2);
@@ -9141,13 +9206,41 @@ div.rail-meter {
   color: var(--caution-ink);
 }
 
-.ps-actions {
+/* The save bar FOLLOWS the edit. It used to be a button at the foot of a long page, so
+   someone typed a note, saw nothing that looked like a save, and left. */
+.ps-savebar {
+  /* Static at rest, so it sits at the foot of the card like any other row and does not
+     hover over the budget meter it is nowhere near. It only LIFTS when there is something
+     to save — which is the moment you want it following the edit. */
+  position: static;
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  margin-top: var(--s-5);
-  flex-wrap: wrap;
+  margin: var(--s-6) calc(var(--s-6) * -1) calc(var(--s-6) * -1);
+  padding: var(--s-4) var(--s-6);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  background: var(--surface-1);
+  box-shadow: 0 -1px 0 0 var(--rule);
+  opacity: 0.62;
+  transition: opacity var(--dur-2) var(--ease);
 }
+.ps-savebar.show {
+  position: sticky;
+  bottom: 0;
+  opacity: 1;
+  box-shadow: 0 -1px 0 0 var(--rule), var(--e2);
+}
+.ps-savebar-l {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-meta);
+  color: var(--ink-3);
+}
+.ps-savebar-l b {
+  color: var(--caution-ink);
+  font-weight: var(--w-strong);
+}
+
 
 /* --- Settings: the tab rail, and the surfaces the rail rows became -------------------- */
 /* --- Settings, inside the shell -------------------------------------------------------
@@ -9214,8 +9307,13 @@ div.rail-meter {
   min-height: 62vh;
 }
 .set .th-ctrl {
+  /* No panel. Its own white background started exactly at the content edge, so every
+     control inside it was flush against that edge and the selected tile's ring looked
+     sliced off. On the page, the controls line up with the other tabs' fields and the ring
+     has the column's own gutter to breathe into. */
+  background: transparent;
   border-right: 0;
-  padding-right: var(--gutter);
+  padding: 0 var(--gutter) var(--s-12) 0;
 }
 .set .th-scroll {
   padding: 0;
@@ -9418,6 +9516,23 @@ div.rail-meter {
   border-radius: var(--r-pill);
 }
 
+/* The reader's own light/dark control. A preference belonging to the PERSON READING, on
+   their device — the customer themes the brand, the reader chooses the light. It defaults
+   to the operating system and only overrides it once they ask. */
+.rs-ft-theme {
+  width: var(--h-control-sm);
+  height: var(--h-control-sm);
+  color: var(--ink-3);
+  margin-left: var(--s-1);
+}
+.rs-ft-theme:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+/* It cannot appear in the theming or editor previews: ReaderChrome renders the band and
+   the article, never the footer. Checked, rather than guarded against — a `display: none`
+   for a thing that does not render is a rule nobody can ever tell is wrong. */
+
 /* ======================================================================================
    v2 RECONCILIATION — the surfaces that used a border as their only edge
    ======================================================================================
@@ -9548,10 +9663,18 @@ div.rail-meter {
 .pp-list,
 .pp-empty,
 .dm-card,
-.rs-fb,
 .th-tile {
   border: 0;
   background: var(--surface-1);
+  border-radius: var(--r-lg);
+  box-shadow: var(--e1), var(--edge);
+}
+/* The reader's one resting secondary surface. Same card shape, but its fill is the
+   CUSTOMER's wash rather than the neutral raised surface — it was in the list above, which
+   is why the Background opacity slider appeared to do nothing on it. */
+.rs-fb {
+  border: 0;
+  background: var(--brand-wash);
   border-radius: var(--r-lg);
   box-shadow: var(--e1), var(--edge);
 }
@@ -9564,10 +9687,17 @@ div.rail-meter {
 .dm-dns,
 .inv-mismatch,
 .al-bulkconfirm,
-.ed-addstep kbd,
-.rs-prose code {
+.ed-addstep kbd {
   border: 0;
   background: var(--surface-2);
+  box-shadow: none;
+}
+/* Inline code in a published article is a well too, but it is the reader's, so it takes
+   the customer's wash. Also previously in the neutral list, and also therefore deaf to the
+   slider. */
+.rs-prose code {
+  border: 0;
+  background: var(--brand-wash);
   box-shadow: none;
 }
 

@@ -53,7 +53,7 @@ export function applyStoredTheme() {
 
 // v2 ships light and dark, both fully tokenised. The toggle writes data-theme on <html> and
 // remembers the choice; with no stored choice it follows the OS.
-export default function ThemeToggle() {
+export default function ThemeToggle({ className = '' }: { className?: string } = {}) {
   const [theme, setTheme] = useState<Theme>(
     () =>
       read() ??
@@ -73,7 +73,7 @@ export default function ThemeToggle() {
   return (
     <button
       type="button"
-      className="q-ib"
+      className={`q-ib ${className}`.trim()}
       aria-label={`Switch to ${next} mode`}
       title={`Switch to ${next} mode`}
       onClick={() => setTheme(next)}

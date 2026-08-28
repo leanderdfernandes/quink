@@ -8,6 +8,7 @@ import {
 import DOMPurify from 'dompurify'
 import { useNavigate, useParams } from 'react-router-dom'
 import AnnotatedImage from '../components/AnnotatedImage'
+import ThemeToggle from '../components/ThemeToggle'
 import { publicBrandingUrl, publicFrameUrl } from '../lib/storage'
 import { DEFAULT_HEADER_STYLE, headerStyleOf, themeVars } from './theme'
 import {
@@ -520,6 +521,11 @@ export function ReaderChrome({
         <span>
           © {new Date().getFullYear()} {kb.name}
         </span>
+        {/* A reader's own preference, on their own device. It defaults to the operating
+            system and only overrides it once they ask, so a help center opened at night is
+            already dark without anyone choosing anything. Nothing about it is stored on the
+            KB — the customer themes the BRAND, the reader chooses the light. */}
+        <ThemeToggle className="rs-ft-theme" />
         {/* The watermark gate is unchanged — only the Quink line is gated, so a paid help
             center still gets a footer rule and its own copyright.
 

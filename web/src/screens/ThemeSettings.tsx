@@ -617,7 +617,7 @@ export default function ThemeSettings({ kb, ent, onSaved }: Props) {
                     the split preview shows it moving live, same as the hex does. */}
                 <div className="th-wash">
                   <label htmlFor="th-wash">
-                    Background wash <span className="th-wash-n">{wash}%</span>
+                    Background opacity <span className="th-wash-n">{wash}%</span>
                   </label>
                   <input
                     id="th-wash"
@@ -629,7 +629,8 @@ export default function ThemeSettings({ kb, ent, onSaved }: Props) {
                     onChange={(e) => setWash(normalizeWash(Number(e.target.value)))}
                   />
                   <p className="th-hint">
-                    How much of your colour sits behind cards and rows. 0 leaves them plain.
+                    How much of your colour shows through row highlights, code and the
+                    feedback card. 0% leaves them plain.
                   </p>
                 </div>
                 <div className="th-hexrow">
