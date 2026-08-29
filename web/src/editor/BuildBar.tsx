@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import Icon from '../components/Icon'
 import { Bolt } from '../components/Wordmark'
 import type { StageKey } from '../lib/config'
 
@@ -28,12 +29,6 @@ const PHASES = [
   { key: 'words', label: 'Tightening the wording', stages: ['writing'] },
 ] as const
 
-const CheckIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M4 12.5l5.5 5.5L20 6.5" />
-  </svg>
-)
-
 type Props = {
   stage?: BuildStage
   // Steps finished / steps that exist. Both counted (lib/buildState buildProgress), never
@@ -47,8 +42,8 @@ type Props = {
   compact?: boolean
   // The run has read the recording and is holding the WRITE stage for an answer
   // (PRD §5.4). Screenshots are still landing, so `capturing` stays the current phase and
-  // the writing row is annotated instead — "waiting for you", which names who the machine
-  // is waiting on. Without it the last phase reads as stalled, which is our fault-shaped.
+  // the WRITING phase renames itself to "Waiting on your answers" — which names who the
+  // machine is waiting on. Without it the last phase reads as stalled, our-fault-shaped.
   awaitingInput?: boolean
 }
 
@@ -97,25 +92,6 @@ export default function BuildBar({
 
   return (
     <div className={`bbar${compact ? ' bbar-sm' : ''}`}>
-      {!compact && (
-        <ol className="bbar-phases">
-          {PHASES.map((p, i) => (
-            <li
-              key={p.key}
-              className={i < at ? 'done' : i === at ? 'now' : ''}
-              aria-current={i === at ? 'step' : undefined}
-            >
-              <span className="bbar-pip" aria-hidden>
-                {i < at ? <CheckIcon /> : null}
-              </span>
-              {p.label}
-              {awaitingInput && p.key === 'words' && (
-                <small className="bbar-waiting">waiting for you</small>
-              )}
-            </li>
-          ))}
-        </ol>
-      )}
       <div className="bbar-meter" role="status" aria-live="polite">
         <span
           className={`bbar-track${frac === null ? ' idet' : ''}`}
@@ -142,6 +118,47 @@ export default function BuildBar({
         </span>
         {!compact && <span className="bbar-count">{count}</span>}
       </div>
+
+      {/* THE FOUR PHASES, under the track rather than beside it — the arrangement in the
+          design system's first-run kit (ui_kits/first-run/Building.jsx, StageRow). Each one
+          carries a state GLYPH instead of an abstract pip, which is what lets the pause say
+          what it is: done ticks, the running phase is the brand sparkle, and a phase held
+          for an answer turns into a clock and RENAMES ITSELF. It used to keep the label
+          "Tightening the wording" and hang a small "waiting for you" off the end, so the
+          phase that had stopped still read as the one in progress. */}
+      {!compact && (
+        <ol className="bbar-phases">
+          {PHASES.map((p, i) => {
+            // Only the phase that is actually held. Screenshots keep landing behind the
+            // panel, so `capturing` stays "now" and normal — which is the point being made.
+            const waiting = awaitingInput && p.key === 'words'
+            const st = i < at ? 'done' : i === at ? 'now' : 'next'
+            return (
+              <li
+                key={p.key}
+                className={`${st}${waiting ? ' wait' : ''}`}
+                aria-current={i === at ? 'step' : undefined}
+              >
+                <span className="bbar-ic" aria-hidden>
+                  <Icon
+                    name={
+                      waiting
+                        ? 'clock'
+                        : st === 'done'
+                          ? 'check-circle'
+                          : st === 'now'
+                            ? 'sparkle'
+                            : 'dot-circle'
+                    }
+                    size={17}
+                  />
+                </span>
+                {waiting ? 'Waiting on your answers' : p.label}
+              </li>
+            )
+          })}
+        </ol>
+      )}
     </div>
   )
 }

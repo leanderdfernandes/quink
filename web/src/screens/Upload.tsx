@@ -1,11 +1,11 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   ACCEPTED_VIDEO_EXTENSIONS,
   ACCEPTED_VIDEO_TYPES,
-  CONTEXT_CHAR_BUDGET,
   COPY,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_MINUTES,
+  wakeWorker,
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
 import Wordmark from '../components/Wordmark'
@@ -96,7 +96,6 @@ export default function Upload({
   const [error, setError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const [productName, setProductName] = useState(saved?.name ?? '')
-  const [description, setDescription] = useState(saved?.description ?? '')
   // Known product context collapses to one line. Expanding is an explicit act, and it says
   // plainly that it only affects what happens next. NOTES are not editable here — they are
   // a Settings surface (PRD §4), and the upload card asks the minimum that a run needs.
@@ -105,15 +104,15 @@ export default function Upload({
   // run; this one describes the video in the dropzone. Its absence is why the run that
   // matters most — the first one — has had no per-video grounding at all.
   const [recording, setRecording] = useState('')
-  // Notes are written in Settings and are not editable here, but they still spend the
-  // shared pool — so the description's ceiling on this screen is what they leave behind.
-  const notesChars = (saved?.notes ?? []).reduce(
-    (n, note) => n + note.title.length + note.body.length,
-    0,
-  )
+  const noteCount = (saved?.notes ?? []).length
   const inputRef = useRef<HTMLInputElement>(null)
   // null when we do not yet know the window — then nothing is claimed at all (PRD §8).
   const retentionNote = COPY.videoDeletion(videoRetentionDays)
+
+  // Landing here is the earliest honest signal that a run is coming, and it is minutes
+  // ahead of POST /api/generate — plenty to absorb a ~30s cold start on Render's free tier
+  // (see wakeWorker). Once per mount; StrictMode's double mount costs one extra no-op GET.
+  useEffect(wakeWorker, [])
 
   function accept(chosen: FileList | File[] | null | undefined) {
     const list = Array.from(chosen ?? [])
@@ -144,7 +143,10 @@ export default function Upload({
     onSubmit(files, {
       product: {
         name: productName.trim(),
-        description: description.trim(),
+        // Always empty. `description` is the pre-notes field and nothing writes it any
+        // more — Settings folds an old one into a note on its next save, and this screen
+        // never had a reason to own a second copy of the workspace's context.
+        description: '',
         // Carried through untouched: the upload card does not edit notes, and dropping
         // them here would silently clear what someone wrote in Settings.
         notes: saved?.notes ?? [],
@@ -275,7 +277,11 @@ export default function Upload({
             {!showProduct ? (
               <div className="up-known">
                 <span className="up-known-t">{productName}</span>
-                <span className="up-known-d">{description}</span>
+                <span className="up-known-d">
+                  {noteCount
+                    ? `${noteCount} note${noteCount === 1 ? '' : 's'} from Settings`
+                    : 'no notes yet'}
+                </span>
                 <button
                   type="button"
                   className="up-known-a"
@@ -317,25 +323,17 @@ export default function Upload({
                   <p className="hint">Used so the guide calls things by their real names.</p>
                 </div>
 
-                <div className="field">
-                  <label htmlFor="description">
-                    Anything else we should know? <span className="optional">Optional</span>
-                  </label>
-                  <textarea
-                    id="description"
-                    placeholder="What this workflow is for, terms we should use, anything the recording does not say out loud."
-                    value={description}
-                    // The shared pool, and the upload card is the only place notes are not
-                    // competing for it — so what is left after the KB's notes is the real
-                    // ceiling here, not the whole budget.
-                    maxLength={CONTEXT_CHAR_BUDGET - notesChars}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </div>
+                {/* "Anything else we should know?" used to live here — a free textarea
+                    writing product_context.description. It is gone, and nothing replaces
+                    it on this screen. Notes are the ONE mechanism for workspace context
+                    (PRD §4), they are a Settings surface, and a second field that said the
+                    same thing into a different column is exactly what made the two screens
+                    disagree about what the model had been told. */}
               </>
             )}
 
-            {/* The RECORDING tier (3b) — the ONE visible input once the product is known. */}
+            {/* The RECORDING tier (3b) — the ONE context input on this screen, and the only
+                one that is about the file in the dropzone rather than about the workspace. */}
             <div className="field">
               <label htmlFor="recording">
                 What does this recording show? <span className="optional">Optional</span>
@@ -345,8 +343,12 @@ export default function Upload({
                 type="text"
                 placeholder={COPY.recordingPlaceholder}
                 value={recording}
+                maxLength={600}
                 onChange={(e) => setRecording(e.target.value)}
               />
+              <p className="hint">
+                A specific answer gets a specific guide. Name the task, not the product.
+              </p>
               {files.length > 1 && (
                 <p className="hint">
                   Applies to all of these. You can describe each one separately in the queue.

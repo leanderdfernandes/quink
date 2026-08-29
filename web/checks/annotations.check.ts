@@ -73,15 +73,18 @@ for (const col of ['annotations', 'is_edited', 'timestamp_seconds', 'screenshot_
   )
 }
 
-// 4b. duplicateStep still rebuilds a row inside the editor, and still has to carry the
-// column. It is the one rebuild that is genuinely local.
+// 4b. NOTHING in the editor rebuilds a step row from another one any more. duplicateStep
+// went with merge and split (PRD "Context & AI Editing" §6.5), and the only local insert
+// left is insertStep, which writes a BLANK row — it has no annotations to lose. The count
+// is asserted at zero rather than deleted, so that re-adding any row-copying gesture fails
+// here instead of quietly shipping without the column.
 const inserts = payloadsIn(editor, 'article_id: articleId,').filter(
   (b) => b.includes('screenshot_url: s.screenshot_url') || b.includes('screenshot_url: src.screenshot_url'),
 )
 assert.strictEqual(
   inserts.length,
-  1,
-  `expected duplicateStep to be the only in-editor row rebuild, found ${inserts.length} — a new one was added and is unchecked`,
+  0,
+  `found ${inserts.length} in-editor row rebuild(s) — duplicateStep is gone, so a new one was added and is unchecked`,
 )
 for (const [n, body] of inserts.entries()) {
   assert.ok(
