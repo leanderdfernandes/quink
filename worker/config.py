@@ -160,6 +160,20 @@ CONTEXT_CHAR_BUDGET = 6000
 # caller. See the note raised alongside this commit.
 RECORDING_NOTE_MAX = 600
 
+# THE ROLLBACK for the precedence ladder, and the only flag in this change.
+#
+# The ladder tells Stage 1 how to RANK the reference material against the footage: the
+# recording is the only source of steps, the note and the product context name things and
+# scope things and are never a source of steps. It is the one edit here that can move
+# faithfulness, which is a release-blocking hard gate (EVAL-PLAN), and it ships ahead of the
+# eval cycle -- so it gets a switch and the rest does not.
+#
+# False makes the Stage 1 prompt BYTE-IDENTICAL to the tree before the ladder landed:
+# it drops the ladder block and the one clarification line that ranks the note, and nothing
+# else. Fencing and budget enforcement stay on in both positions -- they close live holes,
+# and a kill switch on a hole is not a rollback. Demonstrated by prompts.py's self-check.
+CONTEXT_PRECEDENCE_ENABLED = True
+
 # How many generations one ACCOUNT may have running at once (slice 3c). See lanes.py for
 # why this exists: the real reason is the read-then-act window in the daily spend breaker,
 # not tiering. Kept small on every plan, `internal` included.

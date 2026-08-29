@@ -400,7 +400,14 @@ def _run(
                 model=config.TEXT_MODEL,
                 contents=[
                     prompts.build_polish_prompt(
-                        context_block=prompts.build_context_block(context),
+                        # recording_note=False: Stage 2 gets the PRODUCT context only. The
+                        # note described the video to the model that watched it; this one
+                        # never saw the video and is polishing a draft that already carries
+                        # the note's effect. Passing it again is a second injection surface
+                        # into a second call, for nothing.
+                        context_block=prompts.build_context_block(
+                            context, recording_note=False
+                        ),
                         article_json=blueprint.model_dump_json(indent=2),
                         answers_block=prompts.build_answers_block(asked, answers),
                     )
