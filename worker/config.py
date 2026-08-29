@@ -310,10 +310,27 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 SELF_DELETE_PLANS = ("free", "internal")
 
 # --- Limits -----------------------------------------------------------------
-# Gemini's inline ceiling for Part.from_bytes. Above this the File API is required;
-# we don't implement that fallback yet, so we fail loudly instead of silently
-# truncating (CLAUDE.md §5).
-MAX_INLINE_BYTES = 100 * 1024 * 1024
+# Where Stage 1 stops sending the recording INLINE and starts streaming it through the
+# File API. NOT Gemini's ceiling (that is 100MB) — this is OURS, and it is a memory
+# number, not an API one.
+#
+# google-genai base64-encodes an inline Part and then serialises the request through
+# several full copies of the result, so the peak is roughly 5x the file. On 2026-08-29 a
+# 45MB recording (every run that had ever succeeded was under 9MB) blew a 512MB Render
+# free instance twice: the kernel killed the process mid-Stage-1, so no `except` ran, no
+# failure code was written, and the user sat on "Detecting each action" until a sweep
+# that was also dead with the process failed to notice. The upload path holds none of the
+# file, so above this line we pay one round trip and stop caring how big it is.
+#
+# 16MB leaves ~80MB of peak against the instance's 512 — comfortable, and still inline
+# for the recordings we actually see.
+INLINE_VIDEO_MAX_BYTES = 16 * 1024 * 1024
+
+# How long to wait for an uploaded video to finish PROCESSING before Gemini will accept it.
+# A minute of screen capture settles in seconds; this is the wedged case, and it sits far
+# inside JOB_TIMEOUT_MIN so the job's own ceiling stays the outer bound.
+FILE_API_ACTIVE_TIMEOUT_SECONDS = 180
+FILE_API_POLL_SECONDS = 2.0
 
 # Duration ceiling, checked after ffprobe (pipeline.py raises `video_too_long` above it).
 # The 100MB size cap the SPA enforces is a proxy for this and a bad one — a low-bitrate

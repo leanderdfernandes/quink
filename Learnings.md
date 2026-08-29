@@ -287,6 +287,48 @@ pipeline is untouched.
 
 If a trigger is ever added anyway, `worker/pipeline.py` needs looking at first.
 
+### 10. A 45MB recording OOM-killed the worker — and the taxonomy could not see it (2026-08-29)
+
+A user uploaded a 66-second, **45MB** screen recording. Every run that had ever succeeded
+was under 9MB. Twice — once on 08-26, once on 08-29 — the job reached `detecting` and
+stopped dead: `status='running'`, no `failure_code`, no `finished_at`, nothing in the row
+to render. She sat on "Detecting each action" for hours.
+
+**The cause is memory, not Gemini.** `Part.from_bytes` looks like it hands the SDK a
+reference to your bytes. It does not: google-genai base64-encodes the payload (45MB ->
+60MB), serialises the request JSON around it, and encodes that to bytes, while the caller
+still holds the original. Peak is roughly **5x the file**, and production runs on Render's
+**free tier — 512MB**. The kernel killed the process mid-call.
+
+**The part worth remembering is the shape of the failure, not the arithmetic.** The whole
+taxonomy (§10g) rests on classification happening at the source, inside an `except`. A
+SIGKILL runs no `except`, no `finally`, and no `fail()`. It is the ONE way to fail that
+`pipeline.run`'s catch-all cannot classify, so it lands in the exact state that catch-all
+exists to prevent: a job at `running` forever. Everything downstream then fails to help —
+`retention.sweep_timeouts()` is the backstop, but it is driven by `domain.run_loop()` in
+the *same process*, so the death that created the stuck row also killed the only thing that
+would have noticed. **A worker cannot be its own dead-man's switch.**
+
+Fixes, in order of what each one buys:
+
+- `gemini.video_part()` streams anything over `INLINE_VIDEO_MAX_BYTES` (16MB) through the
+  **File API**, which reads from disk and holds none of it. Verified on the real 47.4MB
+  file: ACTIVE in 66s, no spike. The inline path stays for normal recordings — it is one
+  round trip fewer and covers everything we actually see.
+- `pipeline._run` drops its own reference to the bytes the moment they are on disk. Holding
+  it *next to* an inline Part was half the peak.
+- `domain.run_loop()` wraps the tick. Each sweep already caught its own query failure, but
+  only around the query — `sweep_source_videos` does a second lookup outside its `try`.
+  Anything escaping cancels the task for the life of the process, and the process keeps
+  answering `/health` the whole time: six sweeps dead, nothing to see.
+
+**A memory ceiling is not an API ceiling, and only one of them is documented.** The 100MB
+in the SPA and in the old `MAX_INLINE_BYTES` was Gemini's published inline limit, correctly
+transcribed and completely irrelevant — we could never have reached it. Any limit copied
+from a vendor's docs should be checked against what the box we run on can survive.
+
+---
+
 ---
 
 ## Accepted holes (known, deliberately not fixed)

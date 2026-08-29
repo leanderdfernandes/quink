@@ -127,8 +127,13 @@ Capturing screenshots · Writing your guide`.
 
 **Gemini robustness:** instruct model to return only valid JSON (no markdown fences); strip
 accidental fences before parsing; retry once on malformed JSON, then fail loudly with the raw
-output in the error. Video inline via `Part.from_bytes` (100MB inline limit); File API
-fallback only above ~100MB. Read `GEMINI_API_KEY` from env; ship `.env.example`.
+output in the error. The video reaches Stage 1 through `gemini.video_part`: inline via
+`Part.from_bytes` up to `INLINE_VIDEO_MAX_BYTES`, and streamed through the **File API**
+above it. That threshold is a MEMORY number, not Gemini's 100MB API one — google-genai
+base64-encodes an inline part and serialises the request through several full copies, so a
+45MB recording OOM-killed a 512MB Render instance mid-Stage-1 twice, and a SIGKILL runs no
+`except`: no failure code, no classified screen, a spinner that never ended (LEARNINGS #10).
+Read `GEMINI_API_KEY` from env; ship `.env.example`.
 
 ---
 

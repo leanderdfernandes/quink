@@ -18,6 +18,7 @@ from pathlib import Path
 
 import config
 import failures
+import gemini
 import pipeline
 from models import Blueprint, BlueprintStep
 
@@ -189,6 +190,12 @@ class _Gemini:
         self.stage1_error = stage1_error
         self.stage2_error = stage2_error
         self.n = 0
+
+    # The real one: it is the branch that decides whether the recording travels inline or
+    # through the File API, and the fake download here is small, so this stays offline and
+    # keeps the pipeline's own call to it honest. Its own branches are covered by
+    # gemini.demo().
+    video_part = staticmethod(gemini.video_part)
 
     def generate_json(self, *, model, contents, schema):
         self.n += 1

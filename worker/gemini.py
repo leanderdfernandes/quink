@@ -5,9 +5,12 @@ accidental fences before parsing; retry once on malformed JSON, then fail loudly
 raw output in the error.
 """
 
+import contextlib
 import json
+import logging
 import re
 import time
+from pathlib import Path
 
 from google import genai
 from google.genai import errors as genai_errors
@@ -32,6 +35,8 @@ _BLOCKED_FINISH = {
     "RECITATION",
 }
 
+log = logging.getLogger("quink.gemini")
+
 _client: genai.Client | None = None
 
 
@@ -42,6 +47,67 @@ def client() -> genai.Client:
             raise RuntimeError("GEMINI_API_KEY is not set. See worker/.env.example.")
         _client = genai.Client(api_key=config.GEMINI_API_KEY)
     return _client
+
+
+def _state(file) -> str:
+    """The file's state as a bare upper-case name. Enum reprs stringify as
+    "FileState.ACTIVE"; take the last segment, same as blocked_reason()."""
+    return str(getattr(file, "state", "") or "").rsplit(".", 1)[-1].upper()
+
+
+@contextlib.contextmanager
+def video_part(path: Path, size_bytes: int):
+    """The recording, as something Stage 1's `contents` can hold.
+
+    Under INLINE_VIDEO_MAX_BYTES the bytes ride inline — one round trip fewer, and it is
+    what every recording we have actually seen does. Over it they MUST NOT: google-genai
+    base64-encodes an inline Part and serialises the request through several full copies,
+    so a 45MB recording peaked past a 512MB Render instance and the kernel killed the
+    worker mid-Stage-1 (2026-08-29). A SIGKILL runs no `except`, so the job row stayed at
+    'running' with no failure code — the stuck spinner, arrived at from the one direction
+    the taxonomy cannot classify. `files.upload` streams from disk and holds none of it.
+
+    Reads the file lazily in the inline branch so the caller can drop its own copy of the
+    bytes before we make ours.
+    """
+    if size_bytes <= config.INLINE_VIDEO_MAX_BYTES:
+        yield types.Part.from_bytes(data=path.read_bytes(), mime_type="video/mp4")
+        return
+
+    log.info("video is %.1fMB — uploading via the File API", size_bytes / 1e6)
+    try:
+        file = client().files.upload(file=str(path), config={"mime_type": "video/mp4"})
+    except Exception as e:
+        # Same class as a dropped Stage 1 transport: ours, not their recording.
+        raise failures.Failed(
+            failures.MODEL_UNAVAILABLE, f"File API upload failed: {e}"
+        ) from e
+
+    try:
+        deadline = time.monotonic() + config.FILE_API_ACTIVE_TIMEOUT_SECONDS
+        while _state(file) == "PROCESSING":
+            if time.monotonic() > deadline:
+                raise failures.Failed(
+                    failures.MODEL_UNAVAILABLE,
+                    f"File API still PROCESSING {file.name} after "
+                    f"{config.FILE_API_ACTIVE_TIMEOUT_SECONDS}s.",
+                )
+            time.sleep(config.FILE_API_POLL_SECONDS)
+            file = client().files.get(name=file.name)
+        if _state(file) != "ACTIVE":
+            # Gemini could not decode the container. That IS about their file, and it is
+            # the same thing ffprobe would have said if it had been the one to choke.
+            raise failures.Failed(
+                failures.VIDEO_UNREADABLE,
+                f"File API could not process the recording (state {_state(file)}).",
+            )
+        yield file
+    finally:
+        # Uploaded files expire on their own in 48h, so this is tidiness against the
+        # per-project storage quota, never correctness. It must not be able to turn a
+        # finished Stage 1 into a failure.
+        with contextlib.suppress(Exception):
+            client().files.delete(name=file.name)
 
 
 def strip_fences(text: str) -> str:
@@ -179,3 +245,83 @@ def generate_json[T: BaseModel](
             # second draw usually parses.
 
     raise MalformedModelJSON(model, last_raw, last_detail)
+
+
+def demo() -> None:
+    """Self-check for the branch that decides how the recording travels: `python gemini.py`.
+
+    The whole point of video_part is that a big recording never becomes an inline Part —
+    that is what killed the worker. So the check is: which branch, and does the uploaded
+    file get released afterwards. No network; a fake files service records the calls.
+    """
+    import tempfile
+
+    global _client
+
+    class _File:
+        def __init__(self, states):
+            self.name = "files/abc"
+            self._states = list(states)
+            self.state = self._states.pop(0)
+
+        def advance(self):
+            if self._states:
+                self.state = self._states.pop(0)
+            return self
+
+    class _Files:
+        def __init__(self, states):
+            self.file = _File(states)
+            self.uploaded = self.deleted = False
+
+        def upload(self, *, file, config=None):
+            self.uploaded = True
+            return self.file
+
+        def get(self, *, name):
+            return self.file.advance()
+
+        def delete(self, *, name):
+            self.deleted = True
+
+    class _Client:
+        def __init__(self, states):
+            self.files = _Files(states)
+
+    saved, real_poll = _client, config.FILE_API_POLL_SECONDS
+    config.FILE_API_POLL_SECONDS = 0.0
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "source.mp4"
+            path.write_bytes(b"x" * 1024)
+
+            # Small: inline, and the File API is never touched.
+            _client = _Client(["ACTIVE"])
+            with video_part(path, 1024) as part:
+                assert isinstance(part, types.Part), type(part)
+                assert part.inline_data is not None
+            assert not _client.files.uploaded, "small video must not hit the File API"
+
+            # Big: uploaded, waited out of PROCESSING, and released on the way out.
+            _client = _Client(["PROCESSING", "FileState.ACTIVE"])
+            with video_part(path, config.INLINE_VIDEO_MAX_BYTES + 1) as part:
+                assert part is _client.files.file, "big video must yield the uploaded file"
+                assert not _client.files.deleted, "released too early"
+            assert _client.files.uploaded and _client.files.deleted
+
+            # Gemini could not decode it: their file, and still released.
+            _client = _Client(["FileState.FAILED"])
+            try:
+                with video_part(path, config.INLINE_VIDEO_MAX_BYTES + 1):
+                    raise AssertionError("FAILED state must not yield")
+            except failures.Failed as e:
+                assert e.code == failures.VIDEO_UNREADABLE, e.code
+            assert _client.files.deleted, "must release the file even on failure"
+    finally:
+        _client, config.FILE_API_POLL_SECONDS = saved, real_poll
+
+    print("gemini video_part OK")
+
+
+if __name__ == "__main__":
+    demo()

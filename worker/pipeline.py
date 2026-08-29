@@ -209,18 +209,15 @@ def _run(
             f"download of {video_path}",
             lambda: db().storage.from_(config.BUCKET_VIDEOS).download(video_path),
         )
-        if len(video_bytes) > config.MAX_INLINE_BYTES:
-            # The File API fallback isn't built. Fail loudly rather than silently
-            # truncate or hang (CLAUDE.md §5). The SPA rejects oversize files at the
-            # dropzone, so reaching here means it was bypassed — still ours, not theirs.
-            raise failures.Failed(
-                failures.INTERNAL_ERROR,
-                f"Recording is {len(video_bytes) / 1e6:.1f}MB; the inline limit is "
-                f"{config.MAX_INLINE_BYTES / 1e6:.0f}MB. The File API fallback is not built yet.",
-            )
-
         local_video = tmpdir / "source.mp4"
         local_video.write_bytes(video_bytes)
+
+        # Drop OUR copy the moment it is on disk. gemini.video_part decides from the size
+        # whether to re-read it inline or stream it, and above the inline threshold nobody
+        # holds the whole recording in memory again. Keeping this reference alive next to
+        # an inline Part is how a 45MB video killed the worker (gemini.video_part).
+        video_size = len(video_bytes)
+        del video_bytes
 
         duration = frames_mod.probe_duration(local_video)
         if duration > config.MAX_VIDEO_MINUTES * 60:
@@ -251,14 +248,12 @@ def _run(
             context_block=prompts.build_context_block(context),
         )
 
-        blueprint = gemini.generate_json(
-            model=config.VIDEO_MODEL,
-            contents=[
-                types.Part.from_bytes(data=video_bytes, mime_type="video/mp4"),
-                draft_prompt,
-            ],
-            schema=Blueprint,
-        )
+        with gemini.video_part(local_video, video_size) as part:
+            blueprint = gemini.generate_json(
+                model=config.VIDEO_MODEL,
+                contents=[part, draft_prompt],
+                schema=Blueprint,
+            )
         if not blueprint.steps:
             # Stage 1 is the one model call with nothing to fall back on — there is no
             # article to degrade to. A real failure (spec: "Total ffmpeg failure, or

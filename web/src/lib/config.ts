@@ -127,9 +127,12 @@ export const FREE_ARTICLE_EXPIRY_DAYS = 30
 // the migration — if these drift, the inline rename field pre-fills wrong.
 export const DEFAULT_KB_NAME = 'My Help Center'
 
-// Upload validation. MP4/MOV only (ux-spec §2). Gemini's inline Part.from_bytes
-// limit is 100MB (CLAUDE.md §5); above that needs the File API, which we haven't
-// built — so reject early and loudly rather than fail deep in the pipeline.
+// Upload validation. MP4/MOV only (ux-spec §2). 100MB is a TRANSPORT ceiling, not a model
+// one: the worker streams anything over worker/config.py INLINE_VIDEO_MAX_BYTES through
+// Gemini's File API, so nothing here is bounded by Part.from_bytes any more. Kept because
+// MAX_VIDEO_MINUTES is the limit that actually matters and a 100MB upload over a phone
+// tether is a worse experience than being told no — reject early rather than deep in the
+// pipeline.
 export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/quicktime'] as const
 export const ACCEPTED_VIDEO_EXTENSIONS = ['.mp4', '.mov'] as const
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024

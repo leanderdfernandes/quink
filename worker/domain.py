@@ -472,20 +472,32 @@ async def run_loop() -> None:
     log.info("domain re-check loop started (interval %ss)", config.DOMAIN_CHECK_INTERVAL_SECONDS)
     last_purge = 0.0
     while True:
-        await asyncio.to_thread(sweep)
-        await asyncio.to_thread(retention.sweep_timeouts)
-        # Every tick, like the timeout sweep and for the same reason: both exist so a run
-        # nobody is working on cannot sit at 'running' forever, and an hourly cadence would
-        # leave the stuck spinner up for an hour.
-        await asyncio.to_thread(retention.sweep_abandoned_pauses)
-        if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
-            last_purge = time.monotonic()
-            await asyncio.to_thread(retention.sweep)
-            # The retention-policy sweep for SUCCEEDED runs (PRD §8). Same cadence and same
-            # shape as the failed-job one beside it: a state query with a per-plan window,
-            # so a missed tick self-heals and running it twice collects nothing extra.
-            await asyncio.to_thread(retention.sweep_source_videos)
-            await asyncio.to_thread(trial.sweep)
+        # One guard for all six. Each sweep already catches its own query failure, but only
+        # around the query — `sweep_source_videos` does a second lookup outside its try, and
+        # the next sweep somebody adds will have its own gap. Anything that escapes here
+        # cancels this task for the life of the process, and the process goes on answering
+        # /health the whole time: no domain checks, no retention, no trial lifecycle, and no
+        # timeout sweep, which is the one that clears a stuck spinner. A tick is a state
+        # query, so losing one to an exception costs nothing but the wait for the next.
+        try:
+            await asyncio.to_thread(sweep)
+            await asyncio.to_thread(retention.sweep_timeouts)
+            # Every tick, like the timeout sweep and for the same reason: both exist so a run
+            # nobody is working on cannot sit at 'running' forever, and an hourly cadence would
+            # leave the stuck spinner up for an hour.
+            await asyncio.to_thread(retention.sweep_abandoned_pauses)
+            if time.monotonic() - last_purge >= config.VIDEO_PURGE_INTERVAL_SECONDS:
+                last_purge = time.monotonic()
+                await asyncio.to_thread(retention.sweep)
+                # The retention-policy sweep for SUCCEEDED runs (PRD §8). Same cadence and same
+                # shape as the failed-job one beside it: a state query with a per-plan window,
+                # so a missed tick self-heals and running it twice collects nothing extra.
+                await asyncio.to_thread(retention.sweep_source_videos)
+                await asyncio.to_thread(trial.sweep)
+        except asyncio.CancelledError:
+            raise  # shutdown, not a sweep failure
+        except Exception:
+            log.exception("sweep tick failed; the loop continues")
         await asyncio.sleep(config.DOMAIN_CHECK_INTERVAL_SECONDS)
 
 
