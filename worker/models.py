@@ -292,6 +292,26 @@ if __name__ == "__main__":  # `python models.py` — the JSON contract, no serve
     # THE BOUNDARY. A step whose text begins with a tag the recording put on screen must be
     # escaped, not passed through — `startswith("<")` used to hand it straight to the
     # database. Emphasis still applies to the rest of the sentence.
+    # THE ALLOWLIST, from the other side: `**` and `*` are recognised, and EVERY other
+    # markup convention a model might reach for is inert text. These are the exact payloads
+    # the brief asks to see rendered literally, and the property they assert -- the only
+    # tags in a stored body are <p>, <strong> and <em>, and every model-authored angle
+    # bracket is an entity -- is what makes BOTH renderers safe. The reader sanitizes with
+    # DOMPurify and the editor reparses through TipTap's schema; neither can un-escape an
+    # entity, so this is the boundary that has to hold.
+    for _src, _want in [
+        ("See [the docs](https://evil.test) first.",
+         "<p>See [the docs](https://evil.test) first.</p>"),
+        ("Run `rm -rf /` now.", "<p>Run `rm -rf /` now.</p>"),
+        ("```js\nalert(1)\n```", "<p>```js alert(1) ```</p>"),
+        ("<script>alert(1)</script>",
+         "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>"),
+        ("# Heading", "<p># Heading</p>"),
+        ("- a list item", "<p>- a list item</p>"),
+        ("_not italic_", "<p>_not italic_</p>"),
+    ]:
+        assert canonical_body(_src) == _want, (_src, canonical_body(_src), _want)
+
     _inj = canonical_body("<img onerror=alert(1)> shown **on screen**")
     assert _inj == "<p>&lt;img onerror=alert(1)&gt; shown <strong>on screen</strong></p>", _inj
     assert "<img" not in _inj
