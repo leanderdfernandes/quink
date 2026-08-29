@@ -1334,7 +1334,12 @@ export default function Editor({
   const { done: stepsReady, total: stepTotal } = buildProgress(shownSteps)
   const skeleton = building && shownSteps.length === 0
 
-  const stage: BuildStage = uploading ? 'uploading' : (gen.job?.stage ?? 'analyzing')
+  // NULL when there is no job row to read, and deliberately not 'analyzing'. The old
+  // default meant an editor that could not see its run lit "Watching your recording"
+  // and held it there forever — which is the screen a user reports as stuck, and the
+  // same condition that hides the clarification panel (`awaitingInput` is false with
+  // no job). Naming a phase we cannot observe made one bug look like a different one.
+  const stage: BuildStage | null = uploading ? 'uploading' : (gen.job?.stage ?? null)
 
   // The pause (PRD §5.4). `awaiting_input` and not the stage: the stage is still
   // `capturing`, because screenshots really are still being taken — writing has not begun,

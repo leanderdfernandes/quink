@@ -15,6 +15,12 @@ const MAP = {
   unlisted: { icon: 'eye-off', label: 'Unlisted', cls: '' },
   edits: { icon: 'arrow-up-circle', label: 'Unpublished edits', cls: 'q-state--edits' },
   building: { icon: 'sparkle', label: 'Writing your guide', cls: 'q-state--building' },
+  // The run is holding the write stage for an answer. Same clock and same caution ink as
+  // the build bar's held phase, so the two surfaces say the pause the same way. It reuses
+  // --edits' class rather than forking the vendored ds/components.css for an ink that is
+  // already defined there; if it ever needs its own colour, add the token upstream in
+  // `Quink Design System/` and re-copy (CLAUDE.md §12).
+  waiting: { icon: 'clock', label: 'Waiting for your answer', cls: 'q-state--edits' },
   failed: { icon: 'alert', label: 'Couldn’t finish', cls: 'q-state--failed' },
   saving: { icon: 'dot-circle', label: 'Saving', cls: '' },
 } as const

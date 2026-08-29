@@ -9,6 +9,14 @@ import re
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 MMSS = re.compile(r"^\d{1,3}:[0-5]\d$")
+# The ONLY two pieces of formatting generation may produce, applied in canonical_body().
+# The lookarounds keep them off a lone " * " in prose; the [^*] class stops a run of
+# asterisks pairing across a paragraph break and swallowing everything between.
+_BOLD = re.compile(r"\*\*(?=\S)([^*\n]+?)(?<=\S)\*\*")
+_ITALIC = re.compile(r"(?<!\*)\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)")
+# What counts as "already markup" for the pass-through in canonical_body(). Deliberately a
+# closed list of the block tags we emit, not "starts with a <".
+_BLOCK_START = re.compile(r"<(p|ul|ol|li|h[1-6]|blockquote|pre)[\s>]", re.I)
 
 
 class BlueprintStep(BaseModel):
@@ -222,14 +230,70 @@ def canonical_body(text: str) -> str:
     Escapes before wrapping, because this is prose being turned into markup: an ampersand or
     a less-than in a heading is text, not the start of a tag. TipTap escapes the same three.
     Text that is ALREADY markup is passed through untouched.
+
+    EMPHASIS. Both prompts may return `**bold**` and `*italic*`, and only those two, which
+    become <strong> and <em> here. The editor has offered bold and italic since it shipped
+    and generation never produced either, so every generated article arrived as flat prose
+    -- and the one thing worth emphasising in a help article, the literal on-screen label
+    the reader has to find, read exactly like the words around it.
+
+    The model returns a CONVENTION, never markup. That is the whole safety argument: the
+    escape below runs FIRST, so those two tags are the only ones that can exist in the
+    result, and a recording showing an `<img onerror=...>` on screen is still inert text by
+    the time the patterns are applied. Widening this to "the model may emit HTML" would hand
+    every pixel of the user's screen a path into the reader's DOM.
     """
     s = (text or "").strip()
     if not s:
         return ""
-    if s.startswith("<"):
+    # ALREADY-MARKUP PASS-THROUGH, narrowed to the block tags this function itself emits.
+    # It used to be `s.startswith("<")`, which returned ANY string beginning with a tag
+    # verbatim -- and in the worker this function only ever receives MODEL output, whose
+    # text is drawn from what was on the user's screen. A step body starting with
+    # `<img onerror=...>` was therefore stored raw. The reader's DOMPurify still stripped
+    # it, so this was never live XSS, but "escaped unless we recognise it" is the property
+    # the emphasis conversion above is claiming, and it has to actually hold.
+    if _BLOCK_START.match(s):
         return s
     s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Bold first: `**x**` would otherwise be eaten as two empty italics from the outside
+    # in. Neither may span a blank line or wrap whitespace, so a stray or unmatched
+    # asterisk is left alone as the literal character it is.
+    s = _BOLD.sub(r"<strong>\1</strong>", s)
+    s = _ITALIC.sub(r"<em>\1</em>", s)
     # Blank lines separate paragraphs, which is what TipTap does with pasted prose. Single
     # newlines are joined -- a wrapped sentence is one sentence.
     paras = [" ".join(p.split()) for p in re.split(r"\n\s*\n", s)]
     return "".join(f"<p>{p}</p>" for p in paras if p)
+if __name__ == "__main__":  # `python models.py` — the JSON contract, no server needed
+    # canonical_body is the ONLY place model prose becomes markup, so it is the only place
+    # a recording's on-screen text could become a tag. Every case below is either the
+    # emphasis feature working or that boundary holding.
+    _cases = [
+        # The feature: the two marks the editor has always offered, now generated.
+        ("Tap **Ask ChatGPT** to begin.", "<p>Tap <strong>Ask ChatGPT</strong> to begin.</p>"),
+        ("Choose *Settings* first.", "<p>Choose <em>Settings</em> first.</p>"),
+        ("Press **Save** then *Done*.", "<p>Press <strong>Save</strong> then <em>Done</em>.</p>"),
+        # Asterisks that are not emphasis stay as typed.
+        ("A 2 * 3 grid.", "<p>A 2 * 3 grid.</p>"),
+        ("Unmatched **bold here", "<p>Unmatched **bold here</p>"),
+        # A mark may not pair across a paragraph break and swallow what is between.
+        ("start **one\n\ntwo** end", "<p>start **one</p><p>two** end</p>"),
+        ("**a**\n\n**b**", "<p><strong>a</strong></p><p><strong>b</strong></p>"),
+        # The three characters TipTap escapes, escaped the same way.
+        ("a < b & c > d", "<p>a &lt; b &amp; c &gt; d</p>"),
+        # Already-markup round-trips; anything else is prose and gets escaped.
+        ("<p>already markup</p>", "<p>already markup</p>"),
+        ("", ""),
+    ]
+    for _src, _want in _cases:
+        assert canonical_body(_src) == _want, (_src, canonical_body(_src), _want)
+
+    # THE BOUNDARY. A step whose text begins with a tag the recording put on screen must be
+    # escaped, not passed through — `startswith("<")` used to hand it straight to the
+    # database. Emphasis still applies to the rest of the sentence.
+    _inj = canonical_body("<img onerror=alert(1)> shown **on screen**")
+    assert _inj == "<p>&lt;img onerror=alert(1)&gt; shown <strong>on screen</strong></p>", _inj
+    assert "<img" not in _inj
+
+    print("models OK")
