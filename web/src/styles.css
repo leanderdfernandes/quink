@@ -1569,7 +1569,7 @@ textarea {
   margin-bottom: 24px;
 }
 
-/* ---- Editor + theming — editor-theming-design-pass ------------------------------------
+/* ---- Editor + theming -----------------------------------------------------------------
    The APP never wears the customer's colour. Everything here is Quink's own --brand from
    :root; the customer's brand appears only inside preview panes, where themeVars() sets it
    on the .rs2 subtree. That separation is what stops the authoring UI changing appearance
@@ -3213,7 +3213,7 @@ textarea {
   font-size: var(--t-meta);
 }
 
-/* ---- Public help center — reader-design-pass-v2.html ---------------------------------
+/* ---- Public help center ---------------------------------------------------------------
    One stylesheet serves every customer. --brand is the ONLY customer-supplied value; every
    brand shade is mixed from it in themeVars(), never hardcoded here.
 
@@ -4624,7 +4624,7 @@ a.rs-crumb-link:hover {
 }
 
 /* ======================================================================================
-   Article list — articles-domain-design-pass.html §01
+   Article list
    ======================================================================================
    Rebuilt from a row with three persistent controls (category select, Edit, bin) into a row
    that IS the control, with everything else behind one hover menu. The old version put ~66
@@ -5197,7 +5197,7 @@ div.rail-meter {
 }
 
 /* ======================================================================================
-   Domain — articles-domain-design-pass.html §02
+   Domain
    ====================================================================================== */
 .dm {
   max-width: 720px;
@@ -5446,7 +5446,7 @@ div.rail-meter {
 }
 
 /* ======================================================================================
-   Theming amendments — editor-theming-design-pass.html §04
+   Theming amendments
    ====================================================================================== */
 .th-swlabel {
   margin: 0 0 7px;
@@ -8022,7 +8022,7 @@ div.rail-meter {
    ======================================================================================
    Floating chrome, mounted on <body> by TipTap's BubbleMenu so the flip and the clamp
    measure against the viewport. Every value here is a token; the four --tool-* ones are
-   declared at :root above and in design-system.html §06. */
+   declared at :root above. */
 
 .tb {
   display: flex;

@@ -5,7 +5,7 @@
 // warning users, and Razorpay's activation review needs all four before we can take money.
 // Both fetch the URL directly. A React route at /privacy serves an empty <div id="root">
 // to anything that does not execute JavaScript — the same constraint already blocking
-// reader-site indexing (UI-STATE-INVENTORY §D).
+// reader-site indexing.
 //
 // The property we actually want is broader than "a crawler can read it": these pages keep
 // working when the worker is down, when the SPA bundle fails to parse, when Supabase is
@@ -63,7 +63,7 @@ const PLACEHOLDER = /\[(PROPRIETOR LEGAL NAME|BUSINESS ADDRESS|UDYAM NUMBER|EFFE
 const esc = (s) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-// Typographic, not templated. design-system.html is the source of truth: Hanken Grotesk,
+// Typographic, not templated. `Quink Design System/` is the source of truth: Hanken Grotesk,
 // warm neutrals, the teal-blue accent, a real measure. No card, no shadow, no rounded
 // everything — this is a document, and it should look like the same company as the app.
 //

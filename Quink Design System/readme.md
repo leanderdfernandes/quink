@@ -438,6 +438,10 @@ deliberately not built.
 ### Known gaps
 
 - **No slide template** exists in this system: no deck was provided.
+> **Note, added later:** both files named just below were deleted from the repo once the app
+> had been rebuilt on this system. They are recorded here as provenance — what v2 was
+> reconciled against — not as anything a reader can still open.
+
 - `design-system.html` and `reader-design-pass-v2.html` — named as upstream sources in the
   CSS comments — were **not** provided. Anything in them beyond what the CSS implements is
   unknown here.

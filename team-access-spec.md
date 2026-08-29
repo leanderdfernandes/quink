@@ -1,7 +1,7 @@
 # team-access-spec.md — multiple admins per help center
 
-Companion to `mvp-dev-plan.md` (§2 entitlements, §9 routing), `pricing-spec.md` (§3 the
-runs-vs-manual split), `ux-spec-v2.md`, `CLAUDE.md`.
+Companion to `CLAUDE.md` (§10b entitlements, §10c routing, §10j this spec's own rules),
+`pricing-spec.md` (§3 the runs-vs-manual split), `ux-spec-v2.md`.
 
 **Scope rule:** one help center, many editors. Membership is per-KB, invite is by email,
 every member is an admin, the owner is immovable. Anything past that — richer roles,
@@ -200,7 +200,7 @@ they do not get: your internal account as a silent admin, and your run history o
 meter.
 
 Support access after handover is unchanged — `is_admin` plus the amber open-as-owner banner,
-which is already disclosed as a Trust-page claim (`checklist.md` D4).
+which is already disclosed as a Trust-page claim and required by privacy §9.
 
 **Transfer between two real accounts** (not a demo claim) is a separate, later path and is
 not in this spec. When it lands it should reuse the same wipe — the receiving owner decides
@@ -271,7 +271,7 @@ isn't the owner goes offline on schedule.
 ## 9. Screens and copy
 
 Existing design language: teal accent, Hanken Grotesk, gently rounded, no emoji as icons,
-no shimmer. Tokens from `design-system.html`. Nothing here is a new pattern.
+no shimmer. Tokens from `Quink Design System/`. Nothing here is a new pattern.
 
 ### 9.1 People — `/app/:kbId/people`
 

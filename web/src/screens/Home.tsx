@@ -73,7 +73,7 @@ export default function Home({ onStart, onLogin }: Props) {
           </span>{' '}
           {/* The .replace() that used to be here targeted a substring the disclosure has
               not contained for two rewrites — a dead no-op the landing page rendered
-              straight through (UI-STATE-INVENTORY, Surface F drift list). */}
+              straight through. */}
           Free to try — {COPY.freeLimitDisclosure}
         </p>
       </section>

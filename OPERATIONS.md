@@ -3,8 +3,8 @@
 Manual procedures that live outside the codebase: the steps someone performs, in order,
 against production. Anything the software does on its own belongs in code, not here.
 
-This file is **not** the reverse-demo playbook (that is `checklist.md` Appendix A — targets,
-etiquette, the email) and **not** the demo legal rules (`legal/LEGAL-IMPLEMENTATION.md` §4 —
+This file is **not** the reverse-demo playbook (targets, etiquette and the outreach email
+lived in the launch plan, which is no longer in the repo) and **not** the demo legal rules (`legal/LEGAL-IMPLEMENTATION.md` §4 —
 noindex, takedown, purge). It is the mechanical steps, and it links to those rather than
 restating them, so there is one source of truth per question.
 

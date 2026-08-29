@@ -6,8 +6,9 @@ back one at a time. Ordered by what it blocks, not by size.
 Each item says what is true *today*, so nobody has to re-derive it. When you finish one,
 delete it from this file — a stale open-items list is worse than none.
 
-Two things this file is not: it is not `checklist.md` (launch plan) and it is not
-`OPERATIONS.md` (manual procedures). It is only the loose ends.
+Two things this file is not: it is not a launch plan (there is no longer one in the repo —
+that work shipped) and it is not `OPERATIONS.md` (manual procedures). It is only the loose
+ends.
 
 ---
 
@@ -29,7 +30,7 @@ yet true in a document Razorpay and Google will read.
 ### A2. Five of seven subprocessor regions are unverified
 
 Verified: **ImprovMX** is genuinely the inbound provider (`nslookup -type=MX quink.online` →
-`mx1/mx2.improvmx.com`, which also settles `checklist.md` §1.6's stale "Cloudflare Email
+`mx1/mx2.improvmx.com`, which also settles the launch plan's stale "Cloudflare Email
 Routing"), and the Gemini key hits `generativelanguage.googleapis.com` with `vertexai: None`
 — the Developer API, which is a **global endpoint with no pinnable region**, so the table's
 "United States" is a guess about something that has no single answer.
@@ -85,9 +86,9 @@ Unticked and outside what can be checked from this machine:
   models" depends entirely on it. Verify in the Google Cloud console.
 - **Google's current paid-tier API terms still carry the no-training language.** §4 is the
   highest-risk paragraph in the set.
-- **Free-tier day-14 / day-7 / offline emails have actually sent a real message.**
-  `checklist.md` §1.7 says the four templates have never delivered one. Terms §3 and privacy
-  §5 both promise them.
+- **Free-tier day-14 / day-7 / offline emails have actually sent a real message.** The four
+  templates have never delivered one — flagged before launch, never since confirmed. Terms §3
+  and privacy §5 both promise them.
 
 > **Prompt:** Work `LEGAL-IMPLEMENTATION.md` §3 top to bottom. For each box, either verify it
 > or soften the corresponding sentence to something true. Report which you changed.
@@ -444,14 +445,14 @@ except H2 which was a live regression.
 The brief lists `12/13/15/18/22/30` under DO NOT CHANGE and asks that no off-scale size be
 introduced. Three problems, and they compound:
 
-1. **v1 was never that scale.** `design-system.html` also uses 9, 10, 11, 12.5, 14, 17, 20,
-   32 and 40px. The six named are a subset of what shipped, not the rule it followed.
+1. **v1 was never that scale.** The v1 sheet also used 9, 10, 11, 12.5, 14, 17, 20, 32 and
+   40px. The six named are a subset of what shipped, not the rule it followed.
 2. **v2 is a different scale entirely**, and deliberately so — 16px body rather than 15, and
    a separate display ramp for the serif:
    - display (Newsreader) `--t-d1..d6` = 76 / 56 / 42 / 33 / 26 / 22
    - UI (Hanken) = 19 / 17 / 16 / 15 / 14 / 13 / 12 / 11
    Only 13, 15 and 22 appear in both lists. 18 and 30 exist in neither v2 ramp.
-3. **The brief's own rule already settles it.** It says `design-system.html` is authoritative
+3. **The brief's own rule already settles it.** It says the v1 sheet is authoritative
    *"unless `Quink Design System` ships its own token file"* — and it does, `tokens/`. So
    the design system wins, and the `12/13/15/18/22/30` sentence is the thing that is stale.
 
@@ -459,6 +460,8 @@ The same disagreement runs through colour (v1 hex `#0E5C6B`, v2 `oklch(44% 0.088
 a dark ramp v1 has no equivalent for) and radii (v1 8/12/16/999, v2 6/8/10/16/20/26/34/999).
 
 This is already shipped: commit `8c23c07` rebuilt the app on the v2 tokens and is on `main`.
+The v1 sheet (`design-system.html`) has since been deleted from the repo, which retires the
+second system outright — the only thing still outstanding here is the standing instruction.
 
 > **Prompt:** Confirm the v2 scale is the rule and strike `12/13/15/18/22/30` from the
 > standing instructions, or say which of the two systems is being retired. Until then any

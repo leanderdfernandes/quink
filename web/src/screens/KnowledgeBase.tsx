@@ -30,11 +30,11 @@ import type { ArticleRow, Folder, KnowledgeBase as KB } from '../lib/types'
 // 0009). The payoff rule still holds: never an empty dashboard, theme/domain/live-site all
 // reachable from the rail but never blocking the make-articles loop.
 //
-// Rebuilt against articles-domain-design-pass.html. The row carried three persistent
-// controls — a category select, an Edit button and a bin — which is ~66 controls on a
-// 22-article screen. The row itself is now the target and the rest lives behind one hover
-// menu. The strip at the top is the part that was missing entirely: article_feedback_summary
-// (migration 0025) has existed since it shipped and nothing has ever called it.
+// The row USED TO carry three persistent controls — a category select, an Edit button and
+// a bin — which is ~66 controls on a 22-article screen. The row itself is the target now,
+// and the rest lives behind one hover menu. The strip at the top is the part that was
+// missing entirely: article_feedback_summary (migration 0025) has existed since it shipped
+// and nothing has ever called it.
 
 type Props = {
   kb: KB

@@ -222,9 +222,10 @@ featured tier; Growth is a quiet line, not a card, at launch.
   Retention periods, deletion behaviour, the subprocessor list and admin-access disclosure
   are written promises to strangers, not internal notes. If a change would make a sentence
   in those documents false, the sentence changes or the change doesn't ship.
-  *The frames bug is the argument:* `checklist.md` had storage lifecycle marked done while
+  *The frames bug is the argument:* the launch plan had storage lifecycle marked done while
   every frame survived every purge, and we came within one commit of publishing a retention
-  promise that production contradicted. The four legal documents are now a fourth place
+  promise that production contradicted. A plan can say a thing is finished; only the code
+  and the policy can agree. The four legal documents are now a fourth place
   specs can drift from code, and the most expensive one — the drift is a promise to someone
   who can act on it.
 
@@ -707,12 +708,21 @@ Settled. Do not re-open, and do not quietly work around one; flag it instead.
 
 ## 12. Reference specs (source of truth, in the repo)
 
+Everything named here EXISTS. That was not true before: this list carried
+`video-to-docs-mvp.md` and `ground-truth-example-and-backlog.md`, neither of which was ever
+in the repo, and a reader chasing the vision doc found nothing. §1–2 above now carry the
+one-liner and the North Star those two were being pointed at for.
+
 - `ux-spec-v2.md` — the hosted-product UX (activation flow, editor, frame-picker, theming).
 - `pricing-spec.md` (v2, locked) — tiers, geo pricing, unit economics.
-- `video-to-docs-mvp.md` — vision, North Star, scope, competitive position.
-- `LEARNINGS.md` — hard-won pipeline traps (read before repeating a mistake).
-- `stage1-collapse-rule.md` + `EVAL-PLAN.md` + `ground-truth-example-and-backlog.md` — the
-  eval loop and the prompt-quality backlog.
+- `context-and-editing-prd.md` — product context, clarifications and AI editing. Named as
+  locked in §8 and §10f, and untracked until now, which is how a superseded retention
+  decision cited a file nobody else had.
+- `Learnings.md` — hard-won pipeline traps (read before repeating a mistake). Lowercase on
+  disk; §5 and §10e call it LEARNINGS.md and mean this file.
+- `stage1-collapse-rule.md` + `EVAL-PLAN.md` + `eval/ground-truth/` — the eval loop and the
+  prompt-quality backlog.
+- `OPEN-ITEMS.md` — what is known-broken or deferred. `OPERATIONS.md` — the runbook.
 - `Quink Design System/` (v2, LOCKED) — the visual system. `readme.md` states every
   decision and why; `tokens/`, `base.css` and `components.css` are the implementation, and
   `web/src/ds/` is a VERBATIM vendor copy of those five files. Change the system there,

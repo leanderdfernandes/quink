@@ -24,7 +24,7 @@ import {
 } from './readerData'
 import type { Article, ReaderArticleSummary, ReaderCategory, ReaderKb } from '../lib/types'
 
-// The public help center (build spec §3), rebuilt to reader-design-pass-v2.html.
+// The public help center (build spec §3).
 //
 // Three things carry the design. The BAND is one surface — masthead, headline and search
 // together — so the customer's logo and name are the first thing on the page instead of
