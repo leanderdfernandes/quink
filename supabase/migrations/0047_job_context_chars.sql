@@ -24,3 +24,29 @@ alter table public.jobs add column if not exists context_chars int;
 
 comment on column public.jobs.context_chars is
   'Characters in the assembled Stage 1 context block for this run (labels, values, recording note, after fence-escaping). Analysis only: lets context size be correlated against output quality once the n>=3 eval baseline exists. Not granted to anon/authenticated. Null on rows created before 0047 and on any run that died before the stage boundary that writes it.';
+
+-- ---------------------------------------------------------------------------
+-- 2. The recording-note cap, given one home
+-- ---------------------------------------------------------------------------
+-- The per-run half of context (PRD §4b): the one-line "What does this recording show"
+-- note. It is NOT part of context_char_budget() -- that pool is the workspace context,
+-- paid for by every future guide, while this is typed fresh per upload and priced per
+-- upload. Summing them would let a long glossary silently shrink the note.
+--
+-- ENFORCEMENT IS IN THE WORKER, not here. Unlike the workspace context, this value never
+-- passes through an RPC: it travels in the POST /api/generate body and lands in
+-- jobs.context written by the service role, so there is no database write path to gate.
+-- This function is therefore DECLARATIVE -- it exists so the number has exactly one home
+-- per CLAUDE.md §10b and a future caller cannot invent a second one, which is the same
+-- reason context_char_budget() exists. It is added on Lee's instruction, having been
+-- raised as a deliberate omission first.
+--
+-- Same shape and the same grants as context_char_budget(), so the two cannot drift in
+-- how they are reached.
+create function public.recording_note_max() returns int
+language sql immutable as $$ select 600 $$;
+
+comment on function public.recording_note_max() is
+  'Max characters in the per-upload "What does this recording show" note (PRD §4b). Mirrored by RECORDING_NOTE_MAX in worker/config.py and web/src/lib/config.ts. ENFORCED IN THE WORKER at POST /api/generate -- the note never passes through an RPC, so this is the number''s single home, not its gate. Separate from context_char_budget(): that pool is workspace context, this is per-run.';
+
+revoke all on function public.recording_note_max() from public, anon;

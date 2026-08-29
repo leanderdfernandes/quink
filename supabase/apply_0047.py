@@ -2,8 +2,12 @@
 #
 #     python supabase/apply_0047.py
 #
-# CLAUDE.md §10m: staging first, then production. This script is written to be run against
-# either -- it names no environment and asserts only properties that must hold on both.
+# CLAUDE.md §10m says staging first, then production. THAT DID NOT HAPPEN HERE: .env carries
+# one SUPABASE_DB_URL and there is no staging project reachable from this machine. Applied
+# straight to production on Lee's explicit instruction, having been raised as a blocker
+# first. The mitigation is this script -- every assertion runs inside the transaction and
+# any failure rolls the whole thing back, so the worst case is a no-op, not a half-applied
+# schema. It names no environment and asserts only properties that must hold on both.
 #
 # Additive and recreates no function, so there is no live-definition diff to guard. The
 # assertions that matter are the two that are easy to get wrong: the column must NOT be
@@ -80,11 +84,41 @@ for role in ('anon', 'authenticated'):
 cur.execute('select count(*) from public.jobs where context_chars is not null')
 check('no existing row was backfilled', cur.fetchone()[0] == 0)
 
+# --- The recording-note cap ---------------------------------------------------------------
+# Declarative: nothing calls it, because the note never passes through an RPC. It exists so
+# the number has one home (§10b). Same grants as context_char_budget() or the two drift in
+# how they are reached, which is how a "single source" quietly becomes two.
+cur.execute("select public.recording_note_max()")
+check('recording_note_max() returns 600', cur.fetchone()[0] == 600)
+
+cur.execute("""select provolatile, prosecdef from pg_proc
+                where oid = 'public.recording_note_max()'::regprocedure""")
+row = cur.fetchone()
+check('immutable, and NOT security definer', row == ('i', False), row)
+
+for role in ('public', 'anon'):
+    cur.execute("select has_function_privilege(%s,'public.recording_note_max()','execute')",
+                (role,))
+    check(f'{role} may NOT execute recording_note_max()', cur.fetchone()[0] is False)
+
+# It must agree with the two code mirrors, and must NOT have been folded into the other
+# budget -- they are different pools and summing them would shrink the note.
+cur.execute("select public.context_char_budget()")
+check('context_char_budget() still 6000, untouched', cur.fetchone()[0] == 6000)
+
 cur.execute("""select col_description('public.jobs'::regclass, ordinal_position)
                  from information_schema.columns
                 where table_schema='public' and table_name='jobs'
                   and column_name='context_chars'""")
 check('column is commented', bool(cur.fetchone()[0]))
+
+# The worker's constants are the other half of every mirror above. Read them from the file
+# rather than trusting this script's memory of them.
+cfg = open('worker/config.py', encoding='utf-8').read()
+check('worker/config.py RECORDING_NOTE_MAX = 600', 'RECORDING_NOTE_MAX = 600' in cfg)
+check('worker/config.py CONTEXT_CHAR_BUDGET = 6000', 'CONTEXT_CHAR_BUDGET = 6000' in cfg)
+ts = open('web/src/lib/config.ts', encoding='utf-8').read()
+check('web RECORDING_NOTE_MAX = 600', 'export const RECORDING_NOTE_MAX = 600' in ts)
 
 if fail:
     conn.rollback()

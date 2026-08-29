@@ -152,12 +152,15 @@ CONTEXT_CHAR_BUDGET = 6000
 # pause, and reaches Stage 2 through build_answers_block. Two fields, two stages, two
 # reasons to change. Coupling them means moving one silently moves the other.
 #
-# Mirrored by RECORDING_NOTE_MAX in web/src/lib/config.ts, which is where the input's
-# maxLength comes from. There is deliberately NO database mirror: unlike the workspace
-# context, this value is never written through an RPC -- it travels in the /api/generate
-# body and lands in jobs.context, written by the service role -- so the database has no
-# decision to make about it and a context_char_budget()-style function would have no
-# caller. See the note raised alongside this commit.
+# Mirrored the same three ways as CONTEXT_CHAR_BUDGET: web/src/lib/config.ts (where the
+# input's maxLength comes from) and public.recording_note_max() (migration 0047).
+#
+# THIS ONE IS ENFORCED HERE, not in the database, and that is the difference between the
+# two. CONTEXT_CHAR_BUDGET has a database gate because set_product_context() is the only
+# way workspace context is written. The recording note never passes through an RPC -- it
+# arrives in the /api/generate body and lands in jobs.context written by the service role --
+# so recording_note_max() is DECLARATIVE: it gives the number one home so a future caller
+# cannot invent a second, and _check_context_size() in main.py is the actual control.
 RECORDING_NOTE_MAX = 600
 
 # THE ROLLBACK for the precedence ladder, and the only flag in this change.

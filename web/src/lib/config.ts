@@ -206,8 +206,11 @@ export const CONTEXT_BUDGET_WARN = 0.9
 // is not CLARIFICATION_NOTE_MAX, which is the same 600 on a different field at a different
 // stage (lib/clarifications.ts); two limits that happen to agree are still two limits.
 //
-// Mirrors RECORDING_NOTE_MAX in worker/config.py, which is where it is ENFORCED — this is
-// the input's maxLength, and a maxLength is a courtesy, not a control.
+// Mirrors RECORDING_NOTE_MAX in worker/config.py and public.recording_note_max()
+// (migration 0047). The WORKER is where it is enforced, not the database — unlike the
+// workspace context there is no RPC write path to gate, so the database copy exists to
+// stop the number growing a second home. This one is the input's maxLength, and a
+// maxLength is a courtesy, not a control.
 export const RECORDING_NOTE_MAX = 600
 
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
