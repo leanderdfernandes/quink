@@ -393,6 +393,18 @@ and a separate piece of work.
 
 ## E. One-line cleanups
 
+- **There is no staging project reachable, so §10m cannot be followed.** `.env` carries one
+  `SUPABASE_DB_URL` and it points at production; every `apply_*.py` script reads that single
+  line. "Migrations run on staging first, always" is currently a rule nobody on this machine
+  is able to obey, which makes it a rule that will keep being broken quietly. **Migration
+  0047 was applied straight to production on 2026-08-29** for exactly this reason — flagged,
+  overridden, and recorded here so the next reader of 0047 knows it never saw staging. The
+  mitigation that made it defensible is worth keeping either way: `apply_0047.py` runs every
+  assertion *inside* the transaction and rolls back on any failure, so a bad migration is a
+  no-op rather than a half-applied schema. That pattern should be the standard for every
+  apply script, staging or not. The real fix is a second `SUPABASE_DB_URL_STAGING` and a
+  `--target` flag; until then §10m is aspirational for schema and should not be cited as a
+  control that exists.
 - **`profiles.account_deleted_email_sent_at` is dead.** Migration 0032 added it as the
   deletion email's `send_once` marker; the email now fires *after* `auth.users` is deleted,
   so there is no row left to mark and it is passed `marker=None`. Drop the column, or leave
