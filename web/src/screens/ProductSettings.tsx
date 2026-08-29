@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CONTEXT_BUDGET_WARN, CONTEXT_CHAR_BUDGET, contextCharsUsed } from '../lib/config'
 import { productContextOf, saveProductContext } from '../lib/kbs'
 import { runMeter, type Entitlements } from '../lib/plans'
-import Icon from '../components/Icon'
+import ProductNotes from '../components/ProductNotes'
 import type { KnowledgeBase as KB, ProductNote } from '../lib/types'
 
 // Settings → Product & Context (PRD "Context & AI Editing" §4).
@@ -37,8 +37,6 @@ function updatedLine(kb: KB, at: string | null | undefined): string | null {
 // Client-side only, and never sent as the id of an existing note — the RPC mints its own
 // for anything arriving without one. crypto.randomUUID is on every browser the SPA targets.
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
-
-const newNote = (): ProductNote => ({ id: crypto.randomUUID(), title: '', body: '' })
 
 // A description written before notes existed is shown AS a note rather than left in a field
 // of its own. Two ways to say the same thing was the confusing part; this keeps the text,
@@ -78,11 +76,6 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
       set(v)
       setSaved(false)
     }
-  }
-
-  function patchNote(id: string, patch: Partial<ProductNote>) {
-    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)))
-    setSaved(false)
   }
 
   async function save() {
@@ -171,91 +164,16 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
               say out loud.
             </p>
 
-            <div className="ps-notes">
-              {notes.map((n, i) => {
-                const isOpen = open === n.id
-                const chars = n.title.length + n.body.length
-                return (
-                  <div className={`ps-note${isOpen ? ' open' : ''}`} key={n.id}>
-                    {/* ONE name, in ONE place. The open card used to repeat the title: the
-                        row said "Glossary", and the first thing inside it was a text field
-                        containing the word "Glossary" again. The row's name IS the field
-                        now — a label until you click it, an input the moment you do — so
-                        the card holds exactly one of everything it is about. */}
-                    <div className="ps-note-hd">
-                      <button
-                        type="button"
-                        className="ps-note-tw"
-                        aria-expanded={isOpen}
-                        aria-label={`${isOpen ? 'Collapse' : 'Open'} ${n.title.trim() || `note ${i + 1}`}`}
-                        onClick={() => setOpen(isOpen ? null : n.id)}
-                      >
-                        <Icon name="chevron" size={15} rotate={isOpen ? 0 : -90} />
-                      </button>
-                      {isOpen ? (
-                        <input
-                          className="ps-note-t"
-                          type="text"
-                          placeholder="Name it — Glossary, Roles, What's in each plan"
-                          value={n.title}
-                          maxLength={120}
-                          autoFocus
-                          aria-label="Note title"
-                          onChange={(e) => patchNote(n.id, { title: e.target.value })}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className="ps-note-nm"
-                          onClick={() => setOpen(n.id)}
-                        >
-                          {n.title.trim() || <i>Untitled note</i>}
-                        </button>
-                      )}
-                      <span className="ps-note-c">{chars}</span>
-                      <button
-                        type="button"
-                        className="ps-note-x"
-                        aria-label={`Delete ${n.title.trim() || `note ${i + 1}`}`}
-                        onClick={() => {
-                          setNotes((prev) => prev.filter((x) => x.id !== n.id))
-                          if (open === n.id) setOpen(null)
-                          setSaved(false)
-                        }}
-                      >
-                        <Icon name="trash" size={15} />
-                      </button>
-                    </div>
-                    {isOpen && (
-                      <div className="ps-note-body">
-                        <textarea
-                          className="ps-note-b"
-                          placeholder="The facts a guide should get right."
-                          value={n.body}
-                          aria-label="Note body"
-                          onChange={(e) => patchNote(n.id, { body: e.target.value })}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-              <button
-                type="button"
-                className="ps-note-add"
-                onClick={() => {
-                  const n = newNote()
-                  setNotes((prev) => [...prev, n])
-                  // Opens straight away: adding a note you then have to click to write in
-                  // is one click too many.
-                  setOpen(n.id)
-                  setSaved(false)
-                }}
-              >
-                <Icon name="plus" size={15} />
-                Add note
-              </button>
-            </div>
+            {/* Any change to the list is an unsaved change — the save bar keys on it. */}
+            <ProductNotes
+              notes={notes}
+              onChange={(next) => {
+                setNotes(next)
+                setSaved(false)
+              }}
+              open={open}
+              onOpen={setOpen}
+            />
           </div>
 
           {/* The budget, pinned under the list it measures. Deleting a note frees it live,

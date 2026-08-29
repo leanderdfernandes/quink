@@ -30,7 +30,8 @@ const PHASES = [
 ] as const
 
 type Props = {
-  stage?: BuildStage
+  /** NULL when no job row is readable yet — then NO phase is lit rather than a guessed one. */
+  stage?: BuildStage | null
   // Steps finished / steps that exist. Both counted (lib/buildState buildProgress), never
   // estimated. `total` of 0 means Stage 1 has not spoken yet.
   done: number
@@ -48,7 +49,7 @@ type Props = {
 }
 
 export default function BuildBar({
-  stage = 'analyzing',
+  stage = null,
   done,
   total,
   uploadProgress = null,
@@ -85,10 +86,13 @@ export default function BuildBar({
         ? `${Math.round(uploadProgress * 100)}% uploaded`
         : ''
 
-  const at = Math.max(
-    PHASES.findIndex((p) => (p.stages as readonly string[]).includes(stage)),
-    0,
-  )
+  // -1 when the stage is unknown, and that is the point: every phase renders as pending
+  // and the meter runs indeterminate, rather than the bar lighting a phase nobody observed.
+  // `Math.max(..., 0)` used to floor it at the first phase, which is how an unreadable run
+  // sat on a confident label forever.
+  const at = stage
+    ? PHASES.findIndex((p) => (p.stages as readonly string[]).includes(stage))
+    : -1
 
   return (
     <div className={`bbar${compact ? ' bbar-sm' : ''}`}>

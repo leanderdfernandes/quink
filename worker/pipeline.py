@@ -378,6 +378,22 @@ def _run(
         # what happened and blames us for their pause.
         started += waited
 
+        # A QUESTION THAT WAS ASKED AND NOT ANSWERED IS CARRIED, NEVER DROPPED.
+        #
+        # Stage 1's OVERFLOW already lands on the article and becomes one-tap cards in the
+        # editor. The questions we actually asked did not: "Skip the rest and write it"
+        # released the write stage and the unanswered ones simply ceased to exist, so the
+        # one question the model could not work out was destroyed by the button whose whole
+        # promise is that nothing blocks. Same set, same validated shape, later placement —
+        # which is exactly what `open_clarifications` is for.
+        given = (answers or {}).get("answers") or {}
+        unanswered = [c for i, c in enumerate(asked) if str(i) not in given]
+        carried = (overflow or []) + unanswered
+        if carried:
+            db().table("articles").update({"open_clarifications": carried}).eq(
+                "id", article_id
+            ).execute()
+
         # --- Stage: writing (Stage 2 — the cheap model polishes) ---------------
         set_stage(job_id, config.STAGE_WRITING, started)
 

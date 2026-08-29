@@ -2,15 +2,19 @@ import { useEffect, useState, useRef } from 'react'
 import {
   ACCEPTED_VIDEO_EXTENSIONS,
   ACCEPTED_VIDEO_TYPES,
+  CONTEXT_BUDGET_WARN,
+  CONTEXT_CHAR_BUDGET,
+  contextCharsUsed,
   COPY,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_MINUTES,
   wakeWorker,
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
+import ProductNotes from '../components/ProductNotes'
 import Wordmark from '../components/Wordmark'
 
-import type { ProductContext, VideoContext } from '../lib/types'
+import type { ProductContext, ProductNote, VideoContext } from '../lib/types'
 
 // Upload + context — reached from the marketing home's "Build my article" CTA.
 //
@@ -19,6 +23,7 @@ import type { ProductContext, VideoContext } from '../lib/types'
 // what makes the account wall land as a next step rather than a barrier (ux-spec §2).
 
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 // Drawn to the same grid and weight as the existing set (KnowledgeBase.tsx) — no emoji as
 // iconography, including the padlock that used to sit on the deletion note.
@@ -97,14 +102,25 @@ export default function Upload({
   const [over, setOver] = useState(false)
   const [productName, setProductName] = useState(saved?.name ?? '')
   // Known product context collapses to one line. Expanding is an explicit act, and it says
-  // plainly that it only affects what happens next. NOTES are not editable here — they are
-  // a Settings surface (PRD §4), and the upload card asks the minimum that a run needs.
+  // plainly that it only affects what happens next. Expanding now reveals the NOTES too:
+  // the run is written against them, so the screen that spends the run is the last place
+  // that should make them unreadable.
   const [showProduct, setShowProduct] = useState(!saved?.name)
   // The recording tier (3b). Every field above describes the PRODUCT and is reused by every
   // run; this one describes the video in the dropzone. Its absence is why the run that
   // matters most — the first one — has had no per-video grounding at all.
   const [recording, setRecording] = useState('')
-  const noteCount = (saved?.notes ?? []).length
+  // The workspace's notes, editable HERE as well as in Settings. App persists whatever
+  // this form submits (saveProductContext on the way into the run), so this is the same
+  // write the Settings screen makes — not a second one.
+  const [notes, setNotes] = useState<ProductNote[]>(saved?.notes ?? [])
+  const [openNote, setOpenNote] = useState<string | null>(null)
+  const noteCount = notes.length
+  // Summed exactly the way set_product_context sums it, so the meter and the refusal
+  // cannot disagree about what 100% means.
+  const used = contextCharsUsed('', notes)
+  const pct = Math.min(1, used / CONTEXT_CHAR_BUDGET)
+  const overBudget = used > CONTEXT_CHAR_BUDGET
   const inputRef = useRef<HTMLInputElement>(null)
   // null when we do not yet know the window — then nothing is claimed at all (PRD §8).
   const retentionNote = COPY.videoDeletion(videoRetentionDays)
@@ -139,7 +155,7 @@ export default function Upload({
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!files.length || !productName.trim()) return
+    if (!files.length || !productName.trim() || overBudget) return
     onSubmit(files, {
       product: {
         name: productName.trim(),
@@ -147,9 +163,12 @@ export default function Upload({
         // more — Settings folds an old one into a note on its next save, and this screen
         // never had a reason to own a second copy of the workspace's context.
         description: '',
-        // Carried through untouched: the upload card does not edit notes, and dropping
-        // them here would silently clear what someone wrote in Settings.
-        notes: saved?.notes ?? [],
+        // Empty notes are dropped rather than stored, the same rule Settings applies:
+        // someone who taps "Add note" and changes their mind should not leave a blank
+        // card behind for the pipeline to read.
+        notes: notes
+          .filter((n) => n.title.trim() || n.body.trim())
+          .map((n) => ({ ...n, title: n.title.trim(), body: n.body.trim() })),
       },
       recording: recording.trim(),
     })
@@ -278,16 +297,14 @@ export default function Upload({
               <div className="up-known">
                 <span className="up-known-t">{productName}</span>
                 <span className="up-known-d">
-                  {noteCount
-                    ? `${noteCount} note${noteCount === 1 ? '' : 's'} from Settings`
-                    : 'no notes yet'}
+                  {noteCount ? plural(noteCount, 'note') : 'no notes yet'}
                 </span>
                 <button
                   type="button"
                   className="up-known-a"
                   onClick={() => setShowProduct(true)}
                 >
-                  Change
+                  {noteCount ? 'View or change' : 'Change'}
                 </button>
               </div>
             ) : (
@@ -321,6 +338,46 @@ export default function Upload({
                     required
                   />
                   <p className="hint">Used so the guide calls things by their real names.</p>
+                </div>
+
+                {/* THE CONTEXT ITSELF, not just its name. This card could previously show
+                    a product name and nothing else, so the one screen where it matters —
+                    the one about to spend a run — was the one screen where you could not
+                    read or change what the run would be written against. Same editor as
+                    Settings (components/ProductNotes), and the same write: App already
+                    calls saveProductContext() with whatever this form submits, so nothing
+                    new persists it and there is no second write path (PRD §4). */}
+                <div className="ps-sect">
+                  <div className="up-sect-lbl">
+                    <b>What a guide should get right</b>
+                    <span>{notes.length ? plural(notes.length, 'note') : 'no notes yet'}</span>
+                  </div>
+                  <p className="hint" style={{ marginBottom: 14 }}>
+                    A glossary, a feature list, who can do what — anything the recording does
+                    not say out loud. Kept for every guide you build.
+                  </p>
+                  <ProductNotes
+                    notes={notes}
+                    onChange={setNotes}
+                    open={openNote}
+                    onOpen={setOpenNote}
+                  />
+                  {/* The same meter Settings shows, for the same reason: set_product_context
+                      REFUSES over budget rather than truncating, and App saves this in the
+                      background — so without a wall here an over-budget note would silently
+                      fail to persist while the run started anyway. */}
+                  <div className={`ps-budget${pct >= CONTEXT_BUDGET_WARN ? ' warn' : ''}`}>
+                    <div className="q-progress">
+                      <div
+                        className="q-progress-fill"
+                        style={{ width: `${(pct * 100).toFixed(1)}%` }}
+                      />
+                    </div>
+                    <p className="hint">
+                      {Math.round(pct * 100)}% of context used
+                      {overBudget && ` — ${used - CONTEXT_CHAR_BUDGET} characters over`}
+                    </p>
+                  </div>
                 </div>
 
                 {/* "Anything else we should know?" used to live here — a free textarea
@@ -360,7 +417,7 @@ export default function Upload({
             <button
               className="btn btn-lg"
               type="submit"
-              disabled={!files.length || !productName.trim()}
+              disabled={!files.length || !productName.trim() || overBudget}
             >
               {files.length > 1 ? `Build ${files.length} articles` : COPY.buildCta}
             </button>

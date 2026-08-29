@@ -72,12 +72,20 @@ function statusOf(item: QueueItem): string {
       return `Uploading ${Math.round(item.progress * 100)}%`
     case 'running':
       switch (item.stage) {
+        case 'analyzing':
+        case 'detecting':
+          return 'Watching your recording'
         case 'capturing':
           return 'Capturing screenshots'
         case 'writing':
           return 'Tightening the wording'
+        // NOT "Watching your recording". That was the `default:` arm, so a row whose stage
+        // we have not read yet — a job adopted from the in-flight list, a poll that has not
+        // landed — claimed a specific phase we had no evidence for, and kept claiming it for
+        // as long as the stage stayed unknown. The four labels are only ever said when the
+        // stage says them (LEARNINGS #3: progress is never a label we chose for it).
         default:
-          return 'Watching your recording'
+          return 'Building'
       }
     // Names WHO is being waited on. "Capturing screenshots" would be true and useless here
     // — the row's whole job in this state is to say there is something to come back to.

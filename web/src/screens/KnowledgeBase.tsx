@@ -95,6 +95,8 @@ type Meta = {
   // with no images is a choice, not a gap.
   missingShots: number
   build: Build
+  // The run behind this row is holding the write stage for an answer (migration 0042).
+  awaiting: boolean
 }
 
 // v2 says article state with a glyph and a weighted label — <State> — never a coloured dot
@@ -102,11 +104,24 @@ type Meta = {
 // all, because forty bubbles competing with forty titles is what read as generated.
 type RowState = { label: string; state: StateKind | null }
 
-function rowState(a: ArticleRow, pending: number, build: Build | null): RowState {
+function rowState(
+  a: ArticleRow,
+  pending: number,
+  build: Build | null,
+  awaiting: boolean,
+): RowState {
   // Same derived state the editor's status reads (lib/buildState). An article being written
   // needs its OWN row state, or someone who leaves the tab opens a half-written article
   // expecting a finished one — and the count is the same count the editor's bar shows.
   if (articleState(a) === 'building') {
+    // THE RUN IS WAITING ON THEM, and this row is the only place that can say so once they
+    // have left the editor. listInFlightJobs has always fetched `awaiting_input` — its own
+    // comment says it exists so somebody who closed the tab mid-question can find their way
+    // back — and this screen threw the field away, so a paused run read as "Building" here
+    // forever. A user who never opened the editor at the right moment therefore never saw
+    // the question at all, and the run sat until the six-hour abandoned-pause sweep.
+    // Opening the row is the way back in: the editor renders the panel from the same job.
+    if (awaiting) return { label: 'Waiting for your answer', state: 'waiting' }
     return {
       label: build?.total ? `Building · ${build.done} of ${build.total}` : 'Building',
       state: 'building',
@@ -166,6 +181,9 @@ export default function KnowledgeBase({
   const [folders, setFolders] = useState<Folder[]>([])
   const [steps, setSteps] = useState<Record<string, StepLite[]>>({})
   const [feedback, setFeedback] = useState<Record<string, Feedback>>({})
+  // Article ids whose run is holding the write stage for an answer. Polled with the
+  // in-flight jobs below, from the field listInFlightJobs already asked for.
+  const [awaitingIds, setAwaitingIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'live' | 'drafts'>('all')
@@ -288,6 +306,15 @@ export default function KnowledgeBase({
       const jobs = await listInFlightJobs(kb.owner_id)
       if (stop) return
       const inflight = new Set(jobs.map((j) => j.article_id))
+      // The pause, surfaced on the list. Set from the same rows rather than a second
+      // query — the field is already in the select.
+      setAwaitingIds(
+        new Set(
+          jobs
+            .filter((j) => j.awaiting_input && j.article_id)
+            .map((j) => j.article_id as string),
+        ),
+      )
 
       // An article this KB does not have yet: a run we started has just created it.
       const unknown = jobs
@@ -378,10 +405,17 @@ export default function KnowledgeBase({
       const fb = feedback[a.id] ?? null
       const missingShots =
         a.source === 'generated' ? st.filter((s) => !s.screenshot_url).length : 0
-      out[a.id] = { steps: st, pending, fb, missingShots, build: buildProgress(st) }
+      out[a.id] = {
+        steps: st,
+        pending,
+        fb,
+        missingShots,
+        build: buildProgress(st),
+        awaiting: awaitingIds.has(a.id),
+      }
     }
     return out
-  }, [articles, steps, feedback])
+  }, [articles, steps, feedback, awaitingIds])
 
   const liveCount = articles.filter((a) => a.visibility === 'listed').length
   const draftCount = articles.filter((a) => a.visibility === 'draft').length
@@ -585,7 +619,7 @@ export default function KnowledgeBase({
   function renderRow(a: ArticleRow) {
     const m = meta[a.id]
     const building = articleState(a) === 'building'
-    const rs = rowState(a, m?.pending ?? 0, m?.build ?? null)
+    const rs = rowState(a, m?.pending ?? 0, m?.build ?? null, m?.awaiting ?? false)
     const fb = m?.fb
     const rate = fb && fb.total ? Math.round((fb.helpful / fb.total) * 100) : null
     const isSelected = selected.has(a.id)
@@ -644,15 +678,25 @@ export default function KnowledgeBase({
 
         {/* A run in flight, on the row. "Open to watch" rather than Open, because opening
             this one lands you in an article that is still being written and the word should
-            say so before the click, not after. */}
-        {building && (
-          <span className="al-build">
-            <BuildBar compact done={m?.build.done ?? 0} total={m?.build.total ?? 0} />
-            <button className="al-watch" onClick={() => onOpenArticle(a.id)}>
-              Open to watch
-            </button>
-          </span>
-        )}
+            say so before the click, not after.
+            A run WAITING on an answer gets the other verb and no bar: it is not progressing,
+            and the row is a request rather than a report. Same word the dock uses, because
+            it takes you to the same panel. */}
+        {building &&
+          (m?.awaiting ? (
+            <span className="al-build">
+              <button className="al-watch" onClick={() => onOpenArticle(a.id)}>
+                Answer
+              </button>
+            </span>
+          ) : (
+            <span className="al-build">
+              <BuildBar compact done={m?.build.done ?? 0} total={m?.build.total ?? 0} />
+              <button className="al-watch" onClick={() => onOpenArticle(a.id)}>
+                Open to watch
+              </button>
+            </span>
+          ))}
 
         <div className="al-menuwrap">
           <button

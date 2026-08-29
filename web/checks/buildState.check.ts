@@ -99,4 +99,30 @@ assert.match(list, /articleState\(a\) === 'building'/)
 assert.match(list, /Open to watch/)
 assert.match(list, /Building · \$\{build\.done\} of \$\{build\.total\}/)
 
+// --- the pause has to be REACHABLE ------------------------------------------------------
+// A run can hold the write stage waiting for an answer (migration 0042). The question is
+// rendered in the editor, so every OTHER surface has to be able to send the user there —
+// and the one that could not was the article list, which fetched `awaiting_input` through
+// listInFlightJobs and then dropped it on the floor. A user who was not in the editor at
+// the moment the question landed never saw it, and the run sat until the six-hour sweep.
+const dock = read('../src/components/QueueDock.tsx')
+assert.match(list, /awaiting_input/, 'the article list must read awaiting_input')
+assert.match(list, /Waiting for your answer/, 'a paused run must say so on its row')
+assert.match(dock, /item\.state === 'awaiting'/, 'the dock must offer a way back to the question')
+
+// --- and no surface may NAME a phase it cannot observe -----------------------------------
+// `stage ?? 'analyzing'` in the editor and a bare `default:` in the dock both meant a run
+// nobody could read still lit "Watching your recording" — confidently, and forever. That is
+// the same lie LEARNINGS #3 forbids, just sourced from a missing row instead of a timer.
+assert.doesNotMatch(editor, /gen\.job\?\.stage \?\? '/, 'the editor must not default the stage to a phase')
+assert.doesNotMatch(bar, /stage = '/, 'BuildBar must not default `stage` to a phase name')
+assert.match(bar, /stage\s*$|stage\s*\n?\s*\? PHASES\.findIndex/m, 'BuildBar must derive `at` only from a real stage')
+// The dock names each stage explicitly; its fallback is the neutral word, not a phase label.
+assert.match(dock, /case 'analyzing':\s*\n\s*case 'detecting':/, 'the dock must name the watch stages explicitly')
+assert.doesNotMatch(
+  dock,
+  /default:\s*\n\s*return 'Watching your recording'/,
+  'the dock must not fall back to a phase label for an unknown stage',
+)
+
 console.log('buildState.check.ts — ok')

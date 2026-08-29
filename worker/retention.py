@@ -160,6 +160,9 @@ def sweep_abandoned_pauses() -> int:
     means, with copy already written for it. The user gets their article with rougher text,
     which beats a failure screen over a question they walked away from.
 
+    The unanswered questions are CARRIED onto the article rather than discarded, so the
+    pause ends where every other unasked question ends up: a card in the editor.
+
     Rows with no article are left alone: there is nothing to hand back, and sweep_timeouts()
     will collect them once the flag is cleared.
 
@@ -175,7 +178,7 @@ def sweep_abandoned_pauses() -> int:
         res = (
             pipeline.db()
             .table("jobs")
-            .select("id, article_id, degraded")
+            .select("id, article_id, degraded, clarifications")
             .eq("awaiting_input", True)
             .eq("status", "running")
             .not_.is_("article_id", "null")
@@ -204,7 +207,16 @@ def sweep_abandoned_pauses() -> int:
             ).eq("id", job["id"]).execute()
             # Without this the article wears the "Generating" badge forever; nothing else
             # in the system writes that column once the pipeline has let go.
-            pipeline.db().table("articles").update({"status": "ready"}).eq(
+            #
+            # THE QUESTION SURVIVES THE RELEASE. It was asked and never answered, and this
+            # sweep is the moment the run stops being able to use it — so it moves to the
+            # article, where the editor renders it as a one-tap card (PRD §5.4). Dropping it
+            # here would mean the one thing the model could not work out is destroyed by a
+            # timer the user never saw, on a run they were never told was waiting.
+            patch: dict = {"status": "ready"}
+            if job.get("clarifications"):
+                patch["open_clarifications"] = job["clarifications"]
+            pipeline.db().table("articles").update(patch).eq(
                 "id", job["article_id"]
             ).execute()
             closed += 1
