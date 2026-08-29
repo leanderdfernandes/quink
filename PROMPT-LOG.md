@@ -69,6 +69,28 @@ Shipping to production **before** the eval, deliberately. See `GENERATION-GAPS.m
    underscore emphasis, all rendering as literal text. That property does not depend on the
    model behaving.
 
+**Pre-ship smoke test** (the addendum's, 2026-08-29 — read by eye, not scored). One live
+Stage 1 call on V1 and one Stage 2 call on its output.
+
+- **Marks landed exactly on the rule.** Seven bolds, every one an on-screen control label —
+  `+ Create`, `Playlist`, `Create`, `Recommended Songs`, `+`, `Add`. **Zero decorative
+  bolds.** One italic in the whole article: *a name for your playlist* — a substitutable
+  value, which is precisely and only what hypothesis 3 asked for. No marks in any heading.
+  Timestamps all `"MM:SS"`. The collapse rule still fired ("Repeat this for each track").
+- **Stage 2 preserve-only HOLDS.** Step 4 was handed to Stage 2 with its `**Add**` mark
+  stripped — a control label it can plainly see is a label, and exactly what the old rule
+  told it to fix. It did not add the mark back. Every other mark survived unmoved, and the
+  step count was preserved. Hypothesis 4's mechanism is confirmed; its *magnitude* still
+  needs the eval.
+- **An accidental V11, and the ladder passed it.** V1 is a Spotify playlist recording. The
+  probe supplied a product context and recording note for **Google Forms** — a total
+  mismatch, which is the case the addendum designs V11 for. Stage 1 wrote the playlist, in
+  full, from the footage. It did not mention forms, did not mention the discrepancy, and did
+  not try to reconcile the two. That is the ladder's second rule behaving verbatim, on the
+  first video that ever tested it. n=1, and an accident, so it is evidence and not a result —
+  but it is the right kind of evidence.
+- **The recording note does not reach Stage 2**, asserted in the probe itself.
+
 **Verdict.** *Not yet written — nothing has been scored.* This entry is deliberately
 incomplete and stays incomplete until `eval-addendum-context-and-marks.md` runs, starting
 with Run 0 (the n≥3 baseline on the current prompt) without which none of the above is
