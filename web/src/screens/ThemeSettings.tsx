@@ -612,12 +612,16 @@ export default function ThemeSettings({ kb, ent, onSaved }: Props) {
                     </div>
                   </>
                 )}
-                {/* The wash. Beside the colour because it is a property OF the colour —
-                    how much of it ends up behind cards, rows and the search field — and
-                    the split preview shows it moving live, same as the hex does. */}
+                {/* Beside the colour because it is a property OF the colour: how light the
+                    masthead is painted. The split preview shows it live, same as the hex.
+                    It was called "Background opacity" and drove row highlights, inline code
+                    and the feedback card — at HALF this value, so at the 9% default it moved
+                    the page by about 0.001 of chroma and no position of it changed anything
+                    anyone could see. The band was the only large area of colour and had no
+                    control at all, which is what read as "always solid". */}
                 <div className="th-wash">
                   <label htmlFor="th-wash">
-                    Background opacity <span className="th-wash-n">{wash}%</span>
+                    Header lightness <span className="th-wash-n">{wash}%</span>
                   </label>
                   <input
                     id="th-wash"
@@ -629,8 +633,9 @@ export default function ThemeSettings({ kb, ent, onSaved }: Props) {
                     onChange={(e) => setWash(normalizeWash(Number(e.target.value)))}
                   />
                   <p className="th-hint">
-                    How much of your colour shows through row highlights, code and the
-                    feedback card. 0% leaves them plain.
+                    How far the masthead is lightened from your colour. 0% is your colour at
+                    full strength. The page behind your articles stays plain paper either
+                    way, and the text on the band re-picks itself to stay readable.
                   </p>
                 </div>
                 <div className="th-hexrow">
