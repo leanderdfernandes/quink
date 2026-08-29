@@ -48,6 +48,12 @@ VIDEO_PURGED = "video_purged"
 # failure and NOT a meter: the copy on the other side is "try that again in a minute" and
 # nothing counts down. Naming a number here would invent the second meter §8 forbids.
 RECHECK_BUSY = "recheck_busy"
+# Product context over CONTEXT_CHAR_BUDGET, or a recording note over RECORDING_NOTE_MAX,
+# refused in POST /api/generate before the job row exists. Not a failure of the run: the run
+# never started, nothing was spent, and the fix is entirely in the user's hands. It is the
+# server-side control behind the SPA's budget meter -- REJECT, never truncate, because a
+# silently trimmed glossary leaves the user believing the model saw a term it never got.
+CONTEXT_TOO_LONG = "context_too_long"
 # A steer with nothing to steer toward. Refused before the model call, because "make this
 # better" with an empty field is not an instruction and the answer would be a reroll.
 STEER_EMPTY = "steer_empty"

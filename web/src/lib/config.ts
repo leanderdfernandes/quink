@@ -200,6 +200,16 @@ export function contextCharsUsed(description: string, notes: { title: string; bo
 // Past this the meter turns amber (PRD §4). Not a limit — a warning that one is coming.
 export const CONTEXT_BUDGET_WARN = 0.9
 
+// The per-run half of context (PRD §4, as amended): the "What does this recording show"
+// note on the upload card. Deliberately OUTSIDE CONTEXT_CHAR_BUDGET — that pool is the
+// workspace context, reused by every guide, while this is typed fresh per upload. It also
+// is not CLARIFICATION_NOTE_MAX, which is the same 600 on a different field at a different
+// stage (lib/clarifications.ts); two limits that happen to agree are still two limits.
+//
+// Mirrors RECORDING_NOTE_MAX in worker/config.py, which is where it is ENFORCED — this is
+// the input's maxLength, and a maxLength is a courtesy, not a control.
+export const RECORDING_NOTE_MAX = 600
+
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
 export const COPY = {

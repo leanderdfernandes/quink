@@ -332,6 +332,51 @@ def health() -> dict:
     }
 
 
+def _context_chars(product: dict) -> int:
+    """Count exactly as set_product_context() and the SPA meter count.
+
+    description + every note title and body. `name` is exempt -- it is structural metadata,
+    separately capped at 120 by the RPC. If this diverges from either of the other two,
+    "100% used" means three different things and the meter fills at a length the worker
+    then refuses.
+    """
+    used = len((product.get("description") or "").strip())
+    for note in product.get("notes") or []:
+        used += len((note.get("title") or "").strip())
+        used += len((note.get("body") or "").strip())
+    return used
+
+
+def _check_context_size(context: dict) -> None:
+    """REJECT over-budget context and an over-length recording note. Never truncate.
+
+    Silently trimming is the worse answer by a distance: the user keeps the glossary entry
+    on screen, believes the article was grounded on it, and never learns the model was
+    handed half of it. Refusing is legible -- they can see what to cut.
+    """
+    product = context.get("product") or context
+    used = _context_chars(product)
+    if used > config.CONTEXT_CHAR_BUDGET:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": failures.CONTEXT_TOO_LONG,
+                "message": f"Your product context is {used} characters, over the "
+                f"{config.CONTEXT_CHAR_BUDGET} limit. Trim it in Settings and try again.",
+            },
+        )
+    note = (context.get("recording") or "").strip()
+    if len(note) > config.RECORDING_NOTE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": failures.CONTEXT_TOO_LONG,
+                "message": f"The note about this recording is {len(note)} characters, over "
+                f"the {config.RECORDING_NOTE_MAX} limit. Shorten it and try again.",
+            },
+        )
+
+
 def _start_run(
     uid: str,
     owner_id: str,
@@ -352,6 +397,15 @@ def _start_run(
     # "<kb_id>/..." (migration 0014) — pin the path to the KB we just proved they own.
     if not video_path.startswith(f"{kb_id}/"):
         raise HTTPException(status_code=403, detail="That recording isn't yours.")
+
+    # 0. Prompt size, BEFORE the entitlement gates, because it is the cheapest refusal and
+    #    it is about the request rather than the account. set_product_context() enforces
+    #    CONTEXT_CHAR_BUDGET on the way IN to the database, but nothing enforced it here --
+    #    and the context arrives in the /api/generate BODY, not by re-reading the KB (a
+    #    retry has to replay the grounding it originally got, §10g). So a client posting
+    #    straight to the worker sent an arbitrary-length prompt into the Stage 1 video call.
+    #    The SPA's meter and the input's maxLength are the courtesy; this is the control.
+    _check_context_size(context)
 
     # Entitlements resolve through the KB's OWNER, never the caller. `uid` is only who
     # pressed the button.

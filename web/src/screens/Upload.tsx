@@ -4,6 +4,7 @@ import {
   ACCEPTED_VIDEO_TYPES,
   CONTEXT_BUDGET_WARN,
   CONTEXT_CHAR_BUDGET,
+  RECORDING_NOTE_MAX,
   contextCharsUsed,
   COPY,
   MAX_VIDEO_BYTES,
@@ -400,7 +401,7 @@ export default function Upload({
                 type="text"
                 placeholder={COPY.recordingPlaceholder}
                 value={recording}
-                maxLength={600}
+                maxLength={RECORDING_NOTE_MAX}
                 onChange={(e) => setRecording(e.target.value)}
               />
               <p className="hint">

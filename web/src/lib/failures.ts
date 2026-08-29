@@ -119,6 +119,12 @@ export const RECHECK_BUSY_MESSAGE = 'Give that a moment and try again.'
 // exists because the worker refuses server-side too, and the SPA is not a validator.
 export const STEER_EMPTY = 'steer_empty'
 
+// Nor is `context_too_long`. The budget meter on Settings and the upload card, and the
+// note input's maxLength, both refuse this long before the worker sees it — so reaching it
+// means the SPA's count and the worker's count disagree, which is the bug worth surfacing.
+// The worker sends the numbers in its message; render that, don't invent copy for it.
+export const CONTEXT_TOO_LONG = 'context_too_long'
+
 // --- Degraded runs (CLAUDE.md §10g) ---------------------------------------------
 // A degraded run SHIPPED an article and counted against quota. These are not failures and
 // share nothing with the map above: no heading, no recovery, no screen. One sentence, in a

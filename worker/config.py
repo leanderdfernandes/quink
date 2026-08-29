@@ -142,6 +142,24 @@ DEFAULT_PLAN = "free"
 # the database (migration 0044). The database one is the CONTROL; these two are the meter.
 CONTEXT_CHAR_BUDGET = 6000
 
+# The per-run half of context (PRD §4, as amended): the one-line "What does this recording
+# show" note. It is NOT part of CONTEXT_CHAR_BUDGET -- that pool is the workspace context,
+# paid for on every run by every guide, while this is typed fresh per upload and priced per
+# upload. Summing them would make a long glossary silently shrink the note.
+#
+# NOT CLARIFICATION_NOTE_MAX, which happens to be the same 600. That one caps the
+# "anything else about this recording?" field asked AFTER the read, at the clarification
+# pause, and reaches Stage 2 through build_answers_block. Two fields, two stages, two
+# reasons to change. Coupling them means moving one silently moves the other.
+#
+# Mirrored by RECORDING_NOTE_MAX in web/src/lib/config.ts, which is where the input's
+# maxLength comes from. There is deliberately NO database mirror: unlike the workspace
+# context, this value is never written through an RPC -- it travels in the /api/generate
+# body and lands in jobs.context, written by the service role -- so the database has no
+# decision to make about it and a context_char_budget()-style function would have no
+# caller. See the note raised alongside this commit.
+RECORDING_NOTE_MAX = 600
+
 # How many generations one ACCOUNT may have running at once (slice 3c). See lanes.py for
 # why this exists: the real reason is the read-then-act window in the daily spend breaker,
 # not tiering. Kept small on every plan, `internal` included.

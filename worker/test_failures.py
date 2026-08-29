@@ -639,6 +639,58 @@ def test_retry_of_a_job_that_did_not_fail_is_refused():
     assert r.status_code == 409, r.text
 
 
+def test_context_over_budget_is_rejected_not_truncated():
+    """The server-side control behind the SPA's budget meter.
+
+    set_product_context() enforces CONTEXT_CHAR_BUDGET on the way INTO the database, but
+    /api/generate takes the context from the request BODY -- it has to, because a retry
+    replays the grounding the run originally got (§10g) rather than re-reading the KB. So
+    until this check existed, a client posting straight to the worker chose its own prompt
+    size. The counting rule has to match the RPC's exactly or the meter fills at one length
+    and the worker refuses at another.
+    """
+    import main
+    from fastapi import HTTPException
+
+    budget = main.config.CONTEXT_CHAR_BUDGET
+
+    # Counted the way the RPC counts: description + every note title and body, name exempt.
+    assert main._context_chars({"name": "x" * 500, "description": "abc"}) == 3
+    assert main._context_chars(
+        {"description": "a" * 10, "notes": [{"title": "bb", "body": "ccc"}]}
+    ) == 15
+    # Whitespace is trimmed on both sides, as btrim() does in the RPC.
+    assert main._context_chars({"description": "  ab  ", "notes": [{"body": " c "}]}) == 3
+
+    # At the budget: allowed. One over: refused.
+    main._check_context_size({"product": {"description": "a" * budget}})
+    for over, needle in (
+        ({"product": {"description": "a" * (budget + 1)}}, str(budget)),
+        ({"product": {}, "recording": "r" * (main.config.RECORDING_NOTE_MAX + 1)},
+         str(main.config.RECORDING_NOTE_MAX)),
+    ):
+        try:
+            main._check_context_size(over)
+        except HTTPException as e:
+            assert e.status_code == 400, e.status_code
+            assert e.detail["code"] == failures.CONTEXT_TOO_LONG, e.detail
+            # The message names the limit AND what they actually sent, or "too long" is
+            # not actionable -- they cannot see what to cut.
+            assert needle in e.detail["message"], e.detail
+        else:
+            raise AssertionError(f"over-budget context was accepted: {over!r}")
+
+    # NOTHING IS TRUNCATED. The refusal is the whole behaviour; a shortened context that
+    # went through would leave the user believing the model saw a term it never received.
+    ctx = {"product": {"description": "a" * budget}, "recording": "note"}
+    main._check_context_size(ctx)
+    assert ctx["product"]["description"] == "a" * budget and ctx["recording"] == "note"
+
+    # An absent recording note, and the pre-0044 flat shape, both pass rather than raise.
+    main._check_context_size({"product": {"name": "Acme"}})
+    main._check_context_size({"product_name": "Acme", "description": "old flat row"})
+
+
 def test_every_code_has_copy_on_the_other_side():
     """The worker's codes and the SPA's copy are two lists that must not drift.
 
