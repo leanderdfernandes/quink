@@ -285,3 +285,23 @@ export const COPY = {
 } as const
 
 export const WORKER_URL = import.meta.env.VITE_WORKER_URL ?? 'http://localhost:8000'
+
+// WAKE THE WORKER BEFORE THE USER NEEDS IT.
+//
+// Production runs on Render's free tier, which stops the instance after ~15 idle minutes;
+// a cold start was measured at 26.5s. .github/workflows/keep-worker-awake.yml pings it on a
+// */9 cron, but GitHub's scheduled triggers are explicitly best-effort and are routinely
+// delayed or dropped — so "the worker is asleep when someone uploads" is a state that still
+// happens, and where it lands is the worst possible screen: a first run, at the moment the
+// user is deciding whether this product works.
+//
+// The fix that is actually in our hands: the screen that is ABOUT to need the worker wakes
+// it. Picking a file and answering one question takes longer than a cold boot, so the wait
+// overlaps with work the user was doing anyway instead of being added to the front of it.
+//
+// Fire-and-forget, deliberately: nothing on the calling screen reads the answer, and a
+// failure here must never be visible. It is NOT a health check and must never become one —
+// the worker stays the only authority on whether a run may proceed (CLAUDE.md §10b).
+export function wakeWorker(): void {
+  void fetch(`${WORKER_URL}/health`, { cache: 'no-store' }).catch(() => {})
+}

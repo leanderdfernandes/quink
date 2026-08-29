@@ -177,20 +177,42 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
                 const chars = n.title.length + n.body.length
                 return (
                   <div className={`ps-note${isOpen ? ' open' : ''}`} key={n.id}>
+                    {/* ONE name, in ONE place. The open card used to repeat the title: the
+                        row said "Glossary", and the first thing inside it was a text field
+                        containing the word "Glossary" again. The row's name IS the field
+                        now — a label until you click it, an input the moment you do — so
+                        the card holds exactly one of everything it is about. */}
                     <div className="ps-note-hd">
                       <button
                         type="button"
-                        className="ps-note-toggle"
+                        className="ps-note-tw"
                         aria-expanded={isOpen}
+                        aria-label={`${isOpen ? 'Collapse' : 'Open'} ${n.title.trim() || `note ${i + 1}`}`}
                         onClick={() => setOpen(isOpen ? null : n.id)}
                       >
-                        <Icon name="file" size={17} />
-                        <span className="ps-note-nm">
-                          {n.title.trim() || <i>Untitled note</i>}
-                        </span>
-                        <span className="ps-note-c">{chars}</span>
-                        <Icon name="chevron" size={15} rotate={isOpen ? 180 : 0} />
+                        <Icon name="chevron" size={15} rotate={isOpen ? 0 : -90} />
                       </button>
+                      {isOpen ? (
+                        <input
+                          className="ps-note-t"
+                          type="text"
+                          placeholder="Name it — Glossary, Roles, What's in each plan"
+                          value={n.title}
+                          maxLength={120}
+                          autoFocus
+                          aria-label="Note title"
+                          onChange={(e) => patchNote(n.id, { title: e.target.value })}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className="ps-note-nm"
+                          onClick={() => setOpen(n.id)}
+                        >
+                          {n.title.trim() || <i>Untitled note</i>}
+                        </button>
+                      )}
+                      <span className="ps-note-c">{chars}</span>
                       <button
                         type="button"
                         className="ps-note-x"
@@ -206,16 +228,6 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
                     </div>
                     {isOpen && (
                       <div className="ps-note-body">
-                        <input
-                          className="ps-note-t"
-                          type="text"
-                          placeholder="Name it — Glossary, Roles, What's in each plan"
-                          value={n.title}
-                          maxLength={120}
-                          autoFocus
-                          aria-label="Note title"
-                          onChange={(e) => patchNote(n.id, { title: e.target.value })}
-                        />
                         <textarea
                           className="ps-note-b"
                           placeholder="The facts a guide should get right."

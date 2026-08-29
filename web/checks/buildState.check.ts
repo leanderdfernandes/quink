@@ -84,10 +84,13 @@ assert.match(editor, /building && <span className="ed-lockwhy">\{COPY\.buildPubl
 // with a different step count than the blueprint promised grows the denominator under a
 // numerator that did not. A high-water mark is what makes the bar monotone through both.
 assert.match(bar, /Math\.max\(high\.current/, 'BuildBar must clamp progress to a high-water mark')
-// Indeterminate means NO fill — a fill implies a denominator we do not have yet.
-assert.match(bar, /\{frac !== null && <i className="bbar-fill"/)
-// And no percentage text, and no denominator, until the total is real.
-assert.match(bar, /total > 0 \? `\$\{done\} of \$\{total\} steps ready` : ''/)
+// Indeterminate means NO fill — a fill implies a denominator we do not have yet. The fill
+// and the bolt that rides its leading edge are both inside that one guard.
+assert.match(bar, /\{frac !== null && \([\s\S]{0,80}<i className="bbar-fill"/)
+// And no denominator until the total is real: the "N of M" branch is reachable only when
+// there IS an M. Everything before Stage 1 falls through to the measured upload percentage
+// or to nothing at all.
+assert.match(bar, /total > 0\s*\?\s*`\$\{done\} of \$\{total\} steps ready`/)
 assert.doesNotMatch(bar, /%`\}<\/span>|toFixed|Math\.round\([^)]*100\)\s*\+\s*'%'/)
 
 // --- the list row carries the same state -----------------------------------------------

@@ -1064,8 +1064,14 @@ textarea {
   flex: 1;
   display: grid;
   grid-template-columns: var(--rail) 1fr;
-  /* Without this a grid row refuses to shrink below its content, so the overflow on
-     .lib-main never engages and the whole page scrolls instead. */
+  /* THE ROW, not just the container. `min-height: 0` here only lets the GRID BOX shrink; the
+     implicit row was still `auto`, and an auto track is sized to its content and never
+     below it — so the row grew past the viewport, .lib-main was stretched to the row, its
+     `overflow: auto` never engaged, and .lib clipped the overflow with `overflow: hidden`.
+     Everything below the fold was unreachable: opening a second folder pushed the first one
+     off the screen with no way to scroll back to it. minmax(0, 1fr) is what actually caps
+     the track at the container. */
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 .rail {
@@ -1087,6 +1093,12 @@ textarea {
 }
 .lib-main > * {
   width: 100%;
+  /* AND NEVER SHRINK. .lib-main is a flex column with a capped height, and a flex item's
+     default `flex-shrink: 1` beats its own content: instead of overflowing (which is what
+     `overflow: auto` above is waiting for) every folder card squashed to a fraction of its
+     height and clipped its rows with its own `overflow: hidden`. Measured: two 40-row
+     groups, 1872px of content each, both rendered 244px tall with no scrollbar anywhere. */
+  flex: none;
 }
 .lib-main > .lf {
   margin-top: auto;
@@ -4719,7 +4731,10 @@ div.rail-meter {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  margin: 22px auto 16px;
+  /* NOT `auto` sides. .lib-main is a flex column with align-items: flex-start, so auto
+     side-margins centre the child in the leftover space — the search row and every folder
+     card drifted right while the page heading stayed on the shell's left edge. */
+  margin: 22px 0 16px;
 }
 .al-tools .lib-search {
   flex: 1;
@@ -4761,14 +4776,11 @@ div.rail-meter {
 }
 /* Folder groups */
 .al-grp {
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface);
   overflow: hidden;
-  margin: 0 auto 14px;
-}
-.al-grp.unfiled {
-  border-color: transparent;
+  /* Same reason as .al-tools: one left edge for the whole screen. */
+  margin: 0 0 14px;
 }
 .al-grp-hd {
   display: flex;
@@ -4778,8 +4790,11 @@ div.rail-meter {
   background: var(--subtle);
   border-bottom: 1px solid var(--rule);
 }
+/* Unfiled is not a WARNING. It used to fill its whole header with --caution-soft, which
+   put a warm amber band across the widest thing on the screen for a state that is simply
+   "not sorted yet" — and read as an error next to the neutral folders above it. The signal
+   that survives is the sentence, in caution ink, which is the part that says what to do. */
 .al-grp.unfiled .al-grp-hd {
-  background: var(--caution-soft);
   border-bottom-color: transparent;
 }
 .al-grp-hd h2 {
@@ -5080,7 +5095,7 @@ div.rail-meter {
   border-radius: var(--r-md);
   background: var(--brand-600);
   color: var(--on-brand);
-  margin: 0 auto;
+  margin: 0;
 }
 .al-selcount {
   font-size: var(--t-ui);
@@ -5117,7 +5132,7 @@ div.rail-meter {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin: 12px auto 0;
+  margin: 12px 0 0;
   padding: 12px 16px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
@@ -5139,7 +5154,7 @@ div.rail-meter {
 }
 /* Per-article outcomes. "3 of 5 failed" with no names is not something anyone can act on. */
 .al-bulkresult {
-  margin: 12px auto 0;
+  margin: 12px 0 0;
   padding: 12px 16px;
   border: 1px solid transparent;
   border-radius: var(--r-md);
@@ -5544,23 +5559,28 @@ div.rail-meter {
    to the chrome, so Publish sat enabled a few pixels above it for ninety seconds.
    A full-bleed band, like .ed-degraded and for the same reason — it is about the whole
    document, not about a paragraph in it. */
+/* THE TRACK ON TOP, THE FOUR PHASES UNDER IT — the arrangement in the design system's
+   first-run kit (ui_kits/first-run/Building.jsx). It used to be a --brand-50 band with a
+   --brand-100 bottom border: a saturated stripe under a --surface-1 toolbar, separating
+   itself with the one thing v2 has no token for. It sits on the page ground now and divides
+   with --rule, like every other section in the system, so the only saturated thing on the
+   strip is the progress itself. */
 .bbar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 22px;
-  padding: 10px 18px;
-  background: var(--brand-50);
-  border-bottom: 1px solid var(--brand-100);
+  flex-direction: column;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-6) var(--s-5);
+  background: var(--paper);
+  box-shadow: 0 1px 0 0 var(--rule);
 }
-/* The four phases in order. Past ones are ticked and recede, the running one is the only
-   thing at full weight, the rest wait — so the wait has a shape even while the bar itself
-   has nothing to measure. */
+/* The four phases in order, each carrying its own state glyph. Past ones tick, the running
+   one is the only thing at full weight, the rest recede — so the wait has a shape even
+   while the bar itself has nothing to measure. */
 .bbar-phases {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: none;
+  gap: var(--s-7);
+  flex-wrap: wrap;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -5568,70 +5588,61 @@ div.rail-meter {
 .bbar-phases li {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: var(--t-meta);
-  font-weight: var(--w-medium);
+  gap: 9px;
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-body);
   letter-spacing: var(--tr-ui);
-  color: var(--brand-700);
-  opacity: 0.45;
+  color: var(--ink);
   white-space: nowrap;
-  transition: opacity var(--dur-4) var(--ease);
+  transition:
+    opacity var(--dur-4) var(--ease),
+    color var(--dur-2) var(--ease);
 }
-.bbar-phases li.done {
-  opacity: 0.7;
+.bbar-ic {
+  display: flex;
+  flex: none;
+  color: var(--ink-4);
+}
+.bbar-phases li.done .bbar-ic {
+  color: var(--accent-600);
 }
 .bbar-phases li.now {
-  opacity: 1;
   font-weight: var(--w-strong);
-  color: var(--brand-800);
 }
-/* Drawn, not a character — a bullet or an arrow here would be read aloud as content. */
-.bbar-phases li + li::before {
-  content: '';
-  flex: none;
-  width: 12px;
-  height: 1px;
-  background: var(--brand-200);
+.bbar-phases li.now .bbar-ic {
+  color: var(--brand);
 }
-.bbar-pip {
-  background: var(--brand-tint);
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  color: var(--brand-600);
+.bbar-phases li.next {
+  opacity: 0.42;
+  color: var(--ink-3);
 }
-.bbar-phases li.done .bbar-pip {
-  box-shadow: inset 0 0 0 1.5px var(--brand);
+/* Held for an answer. The glyph and the ink both change, and the label has already renamed
+   itself in the component — the three together are what stop a paused stage reading as a
+   stalled one. */
+.bbar-phases li.wait {
+  font-weight: var(--w-strong);
+  opacity: 1;
+  color: var(--caution-ink);
 }
-.bbar-phases li.now .bbar-pip {
-  box-shadow: inset 0 0 0 1.5px var(--brand);
-  background: var(--brand-600);
+.bbar-phases li.wait .bbar-ic {
+  color: var(--caution-ink);
 }
 .bbar-meter {
   display: flex;
   align-items: center;
   gap: 14px;
-  flex: 1;
-  min-width: 190px;
 }
 /* Below this the four labels cannot sit on one line, so it falls back to naming only what
    is happening now — the behaviour this strip had everywhere before. */
 @media (max-width: 900px) {
-  .bbar-phases li:not(.now) {
-    display: none;
-  }
-  .bbar-phases li + li::before {
+  .bbar-phases li:not(.now):not(.wait) {
     display: none;
   }
 }
 .bbar-count {
   flex: none;
   font-size: var(--t-meta);
-  color: var(--brand-700);
-  opacity: 0.85;
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 .bbar-track {
@@ -5644,7 +5655,7 @@ div.rail-meter {
   min-width: 110px;
   height: 6px;
   border-radius: var(--r-pill);
-  background: var(--brand-100);
+  background: var(--surface-3);
 }
 .bbar-fill {
   position: absolute;
@@ -5710,7 +5721,7 @@ div.rail-meter {
   display: block;
   padding: 0;
   background: none;
-  border: 0;
+  box-shadow: none;
 }
 /* The compact bar is a fixed 110px track in an article-list row, so the meter must not
    impose the full-size bar's minimum on it and stretch the track to fill it. */
@@ -5722,7 +5733,7 @@ div.rail-meter {
   height: 5px;
   min-width: 0;
   width: 110px;
-  background: var(--brand-100);
+  background: var(--surface-3);
 }
 .bbar-sm .bbar-bolt {
   width: 15px;
@@ -8512,13 +8523,9 @@ div.rail-meter {
   color: var(--muted);
   text-align: center;
 }
-/* "waiting for you" on the writing phase. Names WHO the machine is waiting on — without it
-   the last row reads as stalled, which points the blame the wrong way. */
-.bbar-waiting {
-  margin-left: 8px;
-  font-size: var(--t-meta);
-  color: var(--brand-700);
-}
+/* The writing phase's held state used to be a `.bbar-waiting` suffix on an otherwise
+   unchanged label. It is `.bbar-phases li.wait` now — glyph, ink and label all change
+   together, so the phase says it is waiting instead of annotating that it is. */
 
 /* --- "Check the recording" (PRD "Context & AI Editing" §6.3) -------------------------- */
 
@@ -9090,35 +9097,48 @@ div.rail-meter {
   background: var(--surface-2);
   box-shadow: var(--e1), var(--edge);
 }
+/* ONE row, ONE name. The row is [chevron][name][chars][bin] in both states — the only
+   thing that changes on open is that the name becomes editable in place. It used to be a
+   toggle button carrying the title, with a SECOND title field repeating it inside the
+   opened body. */
 .ps-note-hd {
-  display: flex;
-  align-items: center;
-}
-.ps-note-toggle {
-  flex: 1;
-  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--s-3);
   height: var(--h-control-lg);
-  padding: 0 var(--s-2) 0 var(--s-4);
-  border-radius: var(--r-md);
-  color: var(--ink-3);
-  text-align: left;
-  transition: color var(--dur-1) var(--ease);
+  padding-left: var(--s-3);
 }
-.ps-note-toggle:hover {
+.ps-note-tw {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--h-control-sm);
+  height: var(--h-control-sm);
+  border-radius: var(--r-sm);
+  color: var(--ink-4);
+  transition:
+    color var(--dur-1) var(--ease),
+    background var(--dur-2) var(--ease);
+}
+.ps-note-tw:hover {
   color: var(--ink);
+}
+.ps-note-tw svg {
+  transition: transform var(--dur-2) var(--ease);
 }
 .ps-note-nm {
   flex: 1;
   min-width: 0;
+  height: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
+  font: inherit;
   font-size: var(--t-ui);
   font-weight: var(--w-strong);
   color: var(--ink);
+  cursor: pointer;
 }
 .ps-note-nm i {
   font-style: normal;
@@ -9138,7 +9158,7 @@ div.rail-meter {
   place-items: center;
   width: var(--h-control-sm);
   height: var(--h-control-sm);
-  margin-right: var(--s-2);
+  margin-right: var(--s-3);
   border-radius: var(--r-sm);
   color: var(--ink-4);
   opacity: 0;
@@ -9155,22 +9175,37 @@ div.rail-meter {
   background: var(--critical-soft);
   color: var(--critical-ink);
 }
+/* The title, edited where it is read. Invisible at rest so the open row still looks like
+   the closed one — a field that announces itself here would be the second title all over
+   again — and it takes the system's raised-on-focus treatment the moment it is used. */
+.ps-note .ps-note-t {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+  color: var(--ink);
+}
+.ps-note .ps-note-t:focus {
+  outline: none;
+  padding: 0 var(--s-2);
+  background: var(--surface-1);
+  box-shadow: var(--ring-inset);
+}
 .ps-note-body {
-  padding: 0 var(--s-4) var(--s-4);
+  padding: 0 var(--s-4) var(--s-4) calc(var(--s-3) + var(--h-control-sm) + var(--s-3));
   animation: q-fade-in var(--dur-2) var(--ease) both;
 }
-.ps-note .ps-note-t,
 .ps-note .ps-note-b {
   background: var(--surface-1);
-  height: auto;
-}
-.ps-note .ps-note-t {
-  height: var(--h-field);
-  font-weight: var(--w-strong);
-}
-.ps-note .ps-note-b {
-  margin-top: var(--s-2);
   min-height: 96px;
+  height: auto;
   line-height: var(--lh-body);
 }
 .ps-note-add {
@@ -9221,13 +9256,10 @@ div.rail-meter {
   border-radius: 0 0 var(--r-lg) var(--r-lg);
   background: var(--surface-1);
   box-shadow: 0 -1px 0 0 var(--rule);
-  opacity: 0.62;
-  transition: opacity var(--dur-2) var(--ease);
 }
 .ps-savebar.show {
   position: sticky;
   bottom: 0;
-  opacity: 1;
   box-shadow: 0 -1px 0 0 var(--rule), var(--e2);
 }
 .ps-savebar-l {
