@@ -12,6 +12,73 @@ Related: `EVAL-PLAN.md` (what the eval measures), `LEARNINGS.md` (traps not to r
 
 ---
 
+## 2026-08-29 — Context fenced, ranked, and two marks given one job each
+
+**Change.** Four edits to `worker/prompts.py`, one of them flagged.
+
+1. The context block is **fenced** as labelled data in both stages, under an
+   ignore-instructions preamble, with every value escaped against the delimiter. The
+   delimiters live in the prompt constants so `as_sent()` renders them.
+2. `PRECEDENCE_RULE` — a four-rank ladder placed between the fence and the task. The
+   recording is the only source of steps; the note gives intent; the context gives names;
+   the model's own product knowledge gives nothing. Behind `CONTEXT_PRECEDENCE_ENABLED`.
+3. The **recording note no longer reaches Stage 2**, and one line was added to
+   `CLARIFY_RULE`: do not ask what the note already answered.
+4. **Emphasis rewritten.** Italic changes meaning from "emphasis, rarely" to "the value the
+   reader substitutes". Stage 2 becomes preserve-only — it used to be told to *add* a mark
+   to a label missing one. No marks in headings.
+
+Shipping to production **before** the eval, deliberately. See `GENERATION-GAPS.md` §0.
+
+**Hypothesis.**
+
+1. **The ladder is the only edit that can move a hard gate, and the direction should be up.**
+   Faithfulness is the gate context injection threatens: LEARNINGS #5 is the story of a
+   *generative* framing ("reproduce what they see") inventing steps, and 6,000 characters of
+   product prose in a video call is the same invitation wearing different clothes. The ladder
+   is the counterweight.
+   *Prediction: on V10 (context facts absent from the footage — designed, not yet recorded)
+   faithfulness holds at 5 and the context terms appear in the title, subtitle or intro but
+   in no step as an instruction. If a context-only fact appears inside a step even once, the
+   flag goes off the same day.*
+2. **The prompt got materially longer and segmentation will pay for it.** The ladder adds
+   ~20 lines to a prompt that already grew for PII, injection and clarifications, and the
+   collapse rule is now further from the output spec. More prompt is not free — that is the
+   standing note at the top of `prompts.py` and it has been right before.
+   *Prediction: `step_count_delta` drifts away from 0 on V1 and V5, the two the collapse rule
+   works hardest on. If it does, the ladder moves AFTER the collapse rule rather than being
+   reworded.*
+3. **The mark rules will land unevenly, and italic is the weak one.** Bold-as-chrome is
+   already in the prompt and already works. Italic is being redefined from a decoration into
+   a semantic role, and "a value the reader supplies themselves" requires the model to know
+   which on-screen strings were the presenter's own data — the same judgement the
+   `variable_value` clarification exists because it *cannot* reliably make.
+   *Prediction: bold stays clean; italic is either near-absent (the safe failure) or applied
+   to emphasis out of habit (the costly one). `formatting_discipline` in the eval addendum
+   scores this. If italics land on emphasis, the rule is not tightened — it is deleted, and
+   we ship bold alone.*
+4. **Stage 2 preserve-only will show up as fewer marks, and that is correct.** It was
+   previously licensed to add them blind. Some labels Stage 1 misses will now stay unmarked.
+   *Prediction: a small drop in total marks per article, no drop in `terminology`. If marks
+   fall a lot, the fault is Stage 1 not emitting them, not Stage 2 not adding them — fix it
+   where the video is.*
+5. **Nothing here can reach a reader as markup, regardless of any of the above.**
+   `canonical_body` escapes `& < >` before applying the two patterns, so the only tags a
+   stored body can contain are `<p>`, `<strong>` and `<em>`. Its self-check now covers a
+   markdown link, backticks, a code fence, a script tag, a heading hash, a list dash and
+   underscore emphasis, all rendering as literal text. That property does not depend on the
+   model behaving.
+
+**Verdict.** *Not yet written — nothing has been scored.* This entry is deliberately
+incomplete and stays incomplete until `eval-addendum-context-and-marks.md` runs, starting
+with Run 0 (the n≥3 baseline on the current prompt) without which none of the above is
+falsifiable. What IS measured so far is cost, not quality: on V1 (47.6s) a full-budget
+context adds **+1,350 input tokens, +18.7%**, to the Stage 1 request — 7,217 → 8,567 by
+`count_tokens` against the real video. `EST_COST_USD_PER_VIDEO_MINUTE` was not adjusted; see
+`OPEN-ITEMS.md` G9 for why the spend cap cannot see any of it.
+
+---
+
 ## 2026-08-26 — Stage 1 emits clarification questions (`CLARIFY_RULE`)
 
 **Change.** A new block in `DRAFT_PROMPT` asking Stage 1 to emit `clarifications` alongside

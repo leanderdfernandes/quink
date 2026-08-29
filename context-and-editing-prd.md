@@ -56,11 +56,16 @@ cross-article terminology passes · alternate article formats.
 
 ---
 
-## 4. Product context (workspace-level)
+## 4. Context — two layers
 
-Context is a property of the **workspace, not the upload**. Filled once, reused by every
-guide. This is the "general company and product context" layer; per-video specifics come
-from questions (§5).
+**Amended 2026-08-29.** This section used to say context is a property of the workspace and
+*not* the upload, and that per-video specifics come only from questions. The build has
+shipped a per-upload field since slice 3b and the spec never recorded it. Resolved in favour
+of the build: there are two layers, and they are different in kind.
+
+### 4a. Workspace context — persistent, shared budget
+
+Filled once, reused by every guide. The "general company and product context" layer.
 
 | Field | Required | Notes |
 |---|---|---|
@@ -79,6 +84,28 @@ counts against the budget.
 are **not in this spec** and were never in v2 — they're a v1 leftover (`ux-spec.md` Screen
 1). Cut them. They move voice, not accuracy, and accuracy is the actual problem this
 section exists to solve.
+
+### 4b. Per-run context — the recording note
+
+*"What does this recording show"* — one optional line on the upload card, describing the
+file in the dropzone rather than the workspace. Capped at `RECORDING_NOTE_MAX` (600), fenced
+as data (§7), **not** persisted to the workspace and **not** counted against
+`CONTEXT_CHAR_BUDGET`: that pool is paid for by every future guide, this is typed fresh per
+upload.
+
+It reaches **Stage 1 only.** Stage 2 is polishing a draft that already carries the note's
+effect, so passing it again is a second injection surface for no gain.
+
+**It does not violate §2 principle 2.** That principle governs *questions* — which are
+earned by evidence and asked after the read, because a question is a UI surface a user is
+about to act on. The note is not a question. It is an optional field the author may leave
+empty, it blocks nothing, and leaving it empty costs nothing. What the two share is the
+precedence rule: **neither is ever a source of steps.** The footage is. The note gives the
+author's intent — scope, purpose, what to call it — and the ladder in the Stage 1 prompt
+ranks it explicitly below what is on screen.
+
+*Still open:* it partly overlaps `variable_value` and `flow_split`, which is now a feature
+rather than a clash — see the §5 note below.
 
 **Surfaces**
 - **First upload:** inline in the upload card, labelled *"saved for every guide"*. Name is
@@ -115,6 +142,13 @@ A candidate question ships only if it passes all three:
 
 Test 2 is the one that gets violated. A question that merely records metadata is a form
 field wearing a costume.
+
+**A question the recording note has already answered fails test 1** and must not fire
+(added to the Stage 1 prompt, 2026-08-29). The note can pre-empt `variable_value` and
+`flow_split` outright — an author who wrote *"setting up a replica, the name is an example"*
+has answered the first before it could be asked. That overlap is the note earning its place,
+not a conflict: it converts a question into an answer the user never had to be interrupted
+for, which is §2 principle 1 working.
 
 ### 5.2 The shipped set
 

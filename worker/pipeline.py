@@ -230,12 +230,22 @@ def _run(
         # Record the estimated spend NOW, not at the end. The circuit breaker sums today's
         # est_cost_usd, so a run still in flight has to be visible to it — otherwise
         # concurrent jobs all read the same stale total and pass the cap together.
+        # Built once, here, so the number recorded on the row is the exact string Stage 1
+        # was handed rather than a second assembly that could differ from it.
+        stage1_context = prompts.build_context_block(context)
+
         db().table("jobs").update(
             {
                 "video_duration_seconds": int(duration),
                 "est_cost_usd": round(
                     (duration / 60.0) * config.EST_COST_USD_PER_VIDEO_MINUTE, 4
                 ),
+                # ANALYSIS ONLY (migration 0047), and it is the x-axis GENERATION-GAPS §0
+                # says we are missing: "does quality degrade as context grows" cannot be
+                # read off a score without knowing how much context each run actually got.
+                # est_cost_usd above is derived per video-MINUTE and is blind to this
+                # entirely -- see the note in OPEN-ITEMS.
+                "context_chars": len(stage1_context),
             }
         ).eq("id", job_id).execute()
 
@@ -245,7 +255,7 @@ def _run(
         draft_prompt = prompts.build_draft_prompt(
             duration_mmss=format_mmss(duration),
             duration_seconds=int(duration),
-            context_block=prompts.build_context_block(context),
+            context_block=stage1_context,
         )
 
         with gemini.video_part(local_video, video_size) as part:

@@ -31,6 +31,39 @@ That is Gemini non-determinism at n=1 per video. Consequences, and they are not 
   ~15 min and ~$0.11 of Gemini per run. **Do it before the next prompt change**, or the next
   prompt change is another judgement call dressed as a measurement.
 
+### 2026-08-29 — a prompt change shipped anyway, on purpose
+
+The context/marks slice went to production **unmeasured**, ahead of the n≥3 baseline this
+section asks for. That was a decision, not an oversight: the fencing and the budget
+enforcement close live holes — user-supplied text was reaching both models unfenced and
+uncapped — and holding a security fix behind an eval that nobody has scheduled is the wrong
+trade.
+
+What shipped: the context block fenced as labelled data with an ignore-instructions
+preamble; `CONTEXT_CHAR_BUDGET` and a new `RECORDING_NOTE_MAX` enforced at
+`POST /api/generate`; a precedence ladder ranking the footage above the recording note above
+the product context; the recording note removed from Stage 2; and three corrections to the
+emphasis rules (italic is now the substitutable value, Stage 2 is preserve-only, no marks in
+headings).
+
+**The rollback is `CONTEXT_PRECEDENCE_ENABLED`** in `worker/config.py`. It is the only flag,
+and it covers the only edit that can plausibly move faithfulness — the ladder, plus the one
+clarification line that ranks the note. With it `False` the Stage 1 prompt is byte-identical
+to the tree before the ladder landed, and `worker/prompts.py`'s self-check asserts that on
+every run so it stays true. Fencing and budget enforcement are deliberately **not** behind
+it: a kill switch on a hole is not a rollback.
+
+There is no second flag. Marks already shipped, so disabling them would be a regression
+rather than a return to a known-good state.
+
+Consequences for this file: every score predating 2026-08-29 was produced against a prompt
+without the ladder, so §1.2's segmentation numbers and the `collapse-v2` baseline are **not
+comparable** to anything measured from here. Re-baseline before reading across that line, and
+read `eval-addendum-context-and-marks.md` first — it holds the rubric changes and the two new
+videos (V10, V11) this change needs and does not yet have. `jobs.context_chars` (migration
+0047) records how much context each run actually received, which is the x-axis §0 has always
+been missing.
+
 ---
 
 ## 1. Open gaps, worst first

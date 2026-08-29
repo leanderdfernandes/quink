@@ -360,6 +360,35 @@ and by text edits being ~$0.0002 each.
 > **Prompt:** If editing volume ever becomes visible in the Gemini bill, record it — a
 > separate `ai_edits` table, not a job row.
 
+### G9. The spend cap cannot see the prompt at all
+
+Sibling of G8, and structural rather than a gap in coverage. `_spend_today_usd()` sums
+`jobs.est_cost_usd`, and that column is written once, before Stage 1, as
+`duration_minutes × EST_COST_USD_PER_VIDEO_MINUTE` (`0.02`). It is derived from the video's
+length and **from nothing else** — so every token of injected context is invisible to the
+circuit breaker by construction, no matter how large it grows.
+
+Measured 2026-08-29 on V1 (47.6s), `gemini-3.1-pro-preview`, via `count_tokens` on the real
+Stage 1 request:
+
+| context | Stage 1 request | |
+|---|---|---|
+| empty (`Product name:` only, 28 chars) | 7,217 tokens | |
+| full budget (6,000-char context + 600-char note → a 6,687-char block) | 8,567 tokens | **+1,350 (+18.7%)** |
+
+`est_cost_usd` for that run is `0.79 × 0.02 = $0.0159` in **both** cases.
+
+The error is worst on short recordings, because video tokens scale with duration and context
+tokens do not: the same +1,350 is 18.7% of a 48-second run and a much larger share of a
+ten-second one. `EST_COST_USD_PER_VIDEO_MINUTE` is **deliberately not adjusted** — it is a
+brake calibrated against Gemini bills, not a pricing model, and re-deriving it is Lee's call
+and a separate piece of work.
+
+> **Prompt:** if the cap ever trips at a total that does not match the Gemini bill, this is
+> the first place to look. The fix, when it is worth it, is to record real `usage_metadata`
+> token counts from the response instead of estimating from duration — `jobs.context_chars`
+> (0047) is the first half of that data and is already being written.
+
 ---
 
 ## E. One-line cleanups
