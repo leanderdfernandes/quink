@@ -81,7 +81,7 @@ operation.
 
 ## 5. The pipeline (locked — two model calls + one deterministic step)
 
-1. **Stage 1 — VIDEO_MODEL** (`gemini-2.5-flash`): video + injected context → JSON blueprint
+1. **Stage 1 — VIDEO_MODEL** (`gemini-3.1-pro-preview`): video + injected context → JSON blueprint
    `{ step_number, heading, body_text, timestamp }`. The video model drafts; only the model
    that saw the video can write the steps.
    - **Timestamps are `"MM:SS"` strings, NEVER floats.** Float `timestamp_seconds` returns
@@ -108,7 +108,12 @@ and absolute — two calls, one deterministic step, and nothing added.
 
 **Model IDs are config constants** at the top of the worker, never inline. Same rule for
 prompts, paths, and limits: named constant, not scattered literal.
-- `VIDEO_MODEL = "gemini-2.5-flash"`
+- `VIDEO_MODEL = "gemini-3.1-pro-preview"` — **NOT `gemini-2.5-flash`**, which this line
+  claimed long after the code had moved. On V1, the repetition video the collapse rule
+  exists for, 2.5-flash still emitted four separate "add a question" steps where 3.1-pro
+  collapses them into one; 3.1-pro is also ~3x faster (34s vs 93s) on a third of the input
+  tokens, so the better model turned out not to cost anything. `gemini-2.5-pro` is NOT the
+  upgrade path — it 404s the same way 2.5-flash-lite does.
 - `TEXT_MODEL  = "gemini-3.1-flash-lite"` — **NOT `gemini-2.5-flash-lite`**, which 404s
   ("no longer available to new users") while still appearing in `models.list()`. Presence in
   `models.list()` is NOT proof a model is callable. (LEARNINGS #1.)

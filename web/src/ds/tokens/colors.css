@@ -70,6 +70,14 @@
   --info-soft: var(--brand-50);
 
   /* ---- Derived brand mixes. In the reader these are recomputed per customer from one hex. ---- */
+  /* THE READER MASTHEAD, and its ink. Both are neutral defaults here and only ever move in
+     the reader, where themeVars() lifts the fill toward white by the customer's chosen
+     amount and re-measures the ink against what is actually painted. They are declared so
+     the tokens have a value everywhere they are referenced rather than existing only inside
+     themeVars() — an invalid var() in a `background` makes the element transparent, and a
+     masthead that vanishes is a worse failure than one that is the wrong shade. */
+  --band-fill: var(--brand);
+  --on-band: var(--on-brand);
   --brand-tint: color-mix(in oklab, var(--brand) 9%, var(--bg));
   --brand-wash: color-mix(in oklab, var(--brand) 4.5%, var(--bg));
   --brand-press: color-mix(in oklab, var(--brand) 86%, oklch(15% 0.01 60));

@@ -80,6 +80,17 @@ function mixHex(a: string, b: string, aPct: number): string {
 // customer's own masthead unreadable.
 export const BAND_SCRIM_FLOOR_PCT = 75
 
+// How far the masthead may be lifted toward white at the top of the slider's range. The
+// stored column is 0-30 (migration 0045's CHECK), so the strength is scaled onto this
+// rather than migrated: 0 leaves the band the brand at full strength, which is exactly what
+// every help center renders today, and 30 lands on a pale tint of the same hue.
+//
+// It lifts toward WHITE, not toward paper. That distinction is the whole reason this is
+// safe to expose: mixing toward paper is what drains a desaturated brand to grey (the
+// failure CLAUDE.md §12 records), while lifting toward white raises lightness and keeps the
+// hue, so a teal stays teal and a slate stays a slate — lighter, not greyer.
+export const MAX_BAND_LIFT_PCT = 75
+
 // Override the brand ramp the existing reader/app CSS references (--brand-600 is the hero:
 // step-num bg, buttons, active nav). Lighter tints mix toward white, darker toward black,
 // so a single hex yields hover/tint/active/rail without a second input anywhere.
@@ -102,6 +113,9 @@ export function themeVars(
   const lighter = (pct: number) => `color-mix(in srgb, ${c} ${100 - pct}%, white)`
   const darker = (pct: number) => `color-mix(in srgb, ${c} ${100 - pct}%, black)`
   const pairing = FONT_PAIRINGS[fontPairing] ?? FONT_PAIRINGS.modern
+  // The masthead, lifted toward white by the chosen strength. Computed here as a real hex
+  // rather than a color-mix() string so the ink picker below can MEASURE it.
+  const bandFill = mixHex(c, '#ffffff', 100 - (wash * MAX_BAND_LIFT_PCT) / 30)
   return {
     '--brand': c,
     '--brand-50': lighter(92),
@@ -137,6 +151,18 @@ export function themeVars(
     // Everything that sits ON the brand fill reads this: the solid band's ink, the mark on
     // a tint band, the Send and "Go to help center" buttons.
     '--on-brand': onColor(c),
+
+    // THE MASTHEAD FILL, and the only thing the strength control touches. The band was a
+    // flat `var(--brand)` with no way to soften it, so every help center's largest surface
+    // was a full-saturation slab -- "always solid". This lifts it toward white by the
+    // customer's chosen amount while leaving the page, the cards and the article body on
+    // plain paper: the control is about the header and nothing else.
+    '--band-fill': bandFill,
+    // MEASURED against the lifted fill, never against the stored hex. A lightened band
+    // flips which ink reads on it -- white on a pale teal fails badly -- so this runs the
+    // same WCAG picker --on-brand uses, pointed at what is actually painted. --on-brand
+    // itself is untouched, because buttons and step numbers still sit on the full colour.
+    '--on-band': onColor(bandFill),
     // Same picker, pointed at the deep fill: what reads on the ink band and on the scrim.
     '--on-deep': onColor(mixHex(c, DEEP_BASE, 30)),
 

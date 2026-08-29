@@ -3303,17 +3303,20 @@ textarea {
   isolation: isolate;
   z-index: 5;
 
-  /* A FLAT fill of the brand itself. There is no tinted default any more: a tint mixed
-     toward paper goes grey for any desaturated customer colour, which is the failure this
-     file's own comments described. themeVars() already defaults header_style to 'solid';
-     this makes the fallback agree with it instead of contradicting it. */
-  background: var(--brand);
+  /* The brand, lifted toward WHITE by the customer's chosen strength (themeVars
+     --band-fill). Not toward paper: mixing toward paper is what drains a desaturated brand
+     to grey, which is the failure this file's own comments described and the reason there
+     was no control here at all. Lifting toward white raises lightness and keeps the hue, so
+     the band gets lighter rather than greyer — and at strength 0 it is `--brand` exactly,
+     which is what every help center rendered before this.
+     Falls back to --brand so a band rendered without themeVars is unchanged. */
+  background: var(--band-fill, var(--brand));
   border-bottom: 0;
 
-  --band-ink: var(--on-brand);
-  --band-soft: color-mix(in oklab, var(--on-brand) 92%, transparent);
-  --band-faint: color-mix(in oklab, var(--on-brand) 70%, transparent);
-  --band-field: color-mix(in oklab, var(--on-brand) 12%, transparent);
+  --band-ink: var(--on-band, var(--on-brand));
+  --band-soft: color-mix(in oklab, var(--band-ink) 92%, transparent);
+  --band-faint: color-mix(in oklab, var(--band-ink) 70%, transparent);
+  --band-field: color-mix(in oklab, var(--band-ink) 12%, transparent);
   --band-field-line: transparent;
 }
 /* Solid: a flat fill of the brand itself. Its ink is --on-brand, which themeVars picks by
@@ -3322,18 +3325,21 @@ textarea {
    choice, so the band stays legible under any hue. */
 .rs2[data-header='solid'] .rs-band,
 .rs2[data-header='tint'] .rs-band {
-  background: var(--brand);
+  background: var(--band-fill, var(--brand));
   border-bottom-color: transparent;
 
-  --band-ink: var(--on-brand);
+  /* --on-band, not --on-brand: the ink is measured against the LIFTED fill. White on a pale
+     teal is the failure a lightening control invites, and the picker is the thing that
+     stops it — so this must never be hardcoded back to a colour. */
+  --band-ink: var(--on-band, var(--on-brand));
   /* 92%, not v2's 76%: the sub-headline is 16–18.5px body copy, so it owes 4.5:1. Measured
      across the seven harness brands, 76% bottoms out at 3.77:1 (amber) and 88% is the first
      value that clears AA everywhere — 92% keeps headroom and still reads softer than the
      name. The placeholder and magnifier stay faint; they are chrome, not copy. */
-  --band-soft: color-mix(in oklab, var(--on-brand) 92%, transparent);
-  --band-faint: color-mix(in oklab, var(--on-brand) 70%, transparent);
-  --band-field: color-mix(in oklab, var(--on-brand) 10%, transparent);
-  --band-field-line: color-mix(in oklab, var(--on-brand) 28%, transparent);
+  --band-soft: color-mix(in oklab, var(--band-ink) 92%, transparent);
+  --band-faint: color-mix(in oklab, var(--band-ink) 70%, transparent);
+  --band-field: color-mix(in oklab, var(--band-ink) 10%, transparent);
+  --band-field-line: color-mix(in oklab, var(--band-ink) 28%, transparent);
 }
 /* Ink, and image (the scrim resolves to the same fill): the brand taken almost to black.
    Its ink is --on-deep — the SAME WCAG luminance picker as --on-brand, pointed at the deep
