@@ -22,8 +22,9 @@ There are exactly five placeholders across the four files. Nothing else is a bla
 
 ## 2. Where they go
 
-Static routes on the marketing site at `quink.online`, per `mvp-dev-plan.md` §"Off the KB,
-on the marketing site":
+Static routes on the marketing site at `quink.online` — off the KB, deliberately: these
+URLs are read by reviewers who never sign in, and a route inside the app is a route behind
+auth.
 
 ```
 /privacy      → privacy-policy.md
@@ -54,25 +55,30 @@ Every claim below is a factual statement about the system. If any is false at pu
 the fix is to change the code or change the sentence, not to publish and hope. Verify each.
 
 - [ ] **Gemini paid tier is active on the production key.** The "not used to train Google's
-      models" claim in privacy §4 depends entirely on this. This was open in `checklist.md`
-      §1.2 — confirm it directly in the Google Cloud console, not from memory.
+      models" claim in privacy §4 depends entirely on this. It was still open at launch —
+      confirm it directly in the Google Cloud console, not from memory.
 - [ ] **Re-read Google's current paid-tier API terms** and confirm the no-training language
       still holds. Privacy §4 is the highest-risk paragraph in the document set.
 - [ ] **Subprocessor regions are correct.** I wrote Supabase and Render as Singapore, Resend
       as US, ImprovMX and PostHog as EU. **These are assumptions — check each provider's
       actual region setting in your dashboard** and correct the table in privacy §6.
-- [ ] **Email provider is right.** The table says ImprovMX for inbound. `checklist.md` §1.6
-      says Cloudflare Email Routing. Whichever is actually running, make the table match.
+- [ ] **Email provider is right.** The table says ImprovMX for inbound; the launch plan said
+      Cloudflare Email Routing, and the two were never reconciled. Check which is actually
+      running and make the table match. (`OPEN-ITEMS.md` records mx1/mx2.improvmx.com as the
+      live answer — verify, then delete this box.)
 - [ ] **PostHog is installed in cookieless mode**, or privacy §7's "no cookie banner" claim
-      is not yet true. `checklist.md` §1.5 has this unchecked. Either ship cookieless PostHog
-      first, or soften §7 until you do. Do not publish the stronger version early.
+      is not yet true — and it has never been ticked. Either ship cookieless PostHog first,
+      or soften §7 until you do. Do not publish the stronger version early.
 - [ ] **Self-serve account deletion is live and matches privacy §11** — permanent, no PITR,
       paid plans refused, jobs rows anonymised, confirmation email sent.
 - [ ] **Free-tier day 30 / day 37 behaviour matches** terms §3 and privacy §5, including the
-      14-day, 7-day and offline emails actually sending. `checklist.md` §1.7 flags that the
-      four templates have never sent a real message.
-- [ ] **Source video deletion on first publish, and 7-day purge for failed jobs**, are both
-      true in code. `checklist.md` §1.6 says they are — confirm rather than assume.
+      14-day, 7-day and offline emails actually sending. **The four trial templates have
+      never sent a real message** — that was flagged before launch and is still unverified.
+- [ ] **Source video retention matches what the policy promises.** Publishing no longer
+      collects the recording at all (CLAUDE.md §10f, migration 0041); the window is
+      `PLANS[plan]["video_retention_days"]`, and failed jobs purge on
+      `FAILED_VIDEO_RETENTION_DAYS`. Privacy §5 must state the window this code enforces,
+      not the delete-on-publish behaviour it replaced.
 - [ ] **Refund terms are what you actually want.** 7-day money-back on first payment, no
       renewal refunds, no refund for spent generations. Change the numbers if you disagree —
       this is the one document where the terms are a business decision, not a description.
@@ -109,7 +115,8 @@ or listed, fix that before publishing the terms, not after.
   first and the documents second.
 - The "no PITR / no backup / permanent" language in privacy §11 and §13. It is unflattering
   and it is true, and it matches the deletion dialog copy.
-- The admin-access disclosure in privacy §9. `checklist.md` D4 explicitly requires it.
+- The admin-access disclosure in privacy §9. Required, not optional: admin sessions can
+  WRITE inside a customer's help center (CLAUDE.md §10c), so the policy has to say so.
 - The jobs-anonymisation and billing-retention carve-outs in privacy §11. They must stay
   aligned with the delete-account implementation. If that implementation changes, this
   paragraph changes with it.
@@ -127,17 +134,17 @@ or listed, fix that before publishing the terms, not after.
 - [ ] All four URLs submitted to Razorpay for activation review.
 - [ ] Every placeholder from §1 replaced. Grep for `[` across the four files — zero hits.
 - [ ] Every box in §3 ticked, or the corresponding sentence softened to something true.
-- [ ] Tell me anything in these documents that contradicts `checklist.md`, `pricing-spec.md`,
-      `OPERATIONS.md` or the shipped code. **Do not silently reconcile it** — list the
-      contradictions and let me decide.
+- [ ] Tell me anything in these documents that contradicts `pricing-spec.md`,
+      `OPEN-ITEMS.md`, `OPERATIONS.md` or the shipped code. **Do not silently reconcile
+      it** — list the contradictions and let me decide.
 
 ---
 
 ## 7. Log in LEARNINGS.md
 
-- Legal pages are a fourth place specs can drift from code. `checklist.md` already names
-  "copy and specs written ahead of implementation, then implementation diverged" as a
-  recurring pattern with four instances. A published privacy policy is the most expensive
+- Legal pages are a fourth place specs can drift from code. "Copy and specs written ahead of
+  implementation, then implementation diverged" is a recurring pattern here with at least
+  four recorded instances. A published privacy policy is the most expensive
   version of that failure, because the drift is a written promise to a stranger.
 - Any change to retention, deletion, subprocessors, or admin access now has a documentation
   dependency. Add a line to `CLAUDE.md`: **if you change what data we keep, who touches it,

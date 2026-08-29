@@ -1,6 +1,7 @@
 # Pricing & Monetization Spec (v3 — free tier corrected, prices moved to DB)
 
-Companion to `ux-spec-v2.md`, `video-to-docs-mvp.md`, and `mvp-dev-plan.md`. Covers tier
+Companion to `ux-spec-v2.md`, `CLAUDE.md` (§1–2 for the North Star this prices against) and
+`context-and-editing-prd.md`. Covers tier
 structure, launch numbers, geo pricing, the pricing page, upgrade-modal copy, and the
 verified unit economics. All prices ship as **editable config** — as of v3, literally a
 Supabase table (§11), not a code constant.
@@ -61,8 +62,8 @@ Zoho makes you write by hand; our whole value is that you don't.
 ## 2. Tier structure (LOCKED for launch)
 
 Four plan values: Free · **Founding** · Starter (featured) · Growth (quiet line at launch).
-`internal` exists as a fifth, non-commercial plan for Quink's own account (see
-`mvp-dev-plan.md` §2).
+`internal` exists as a fifth, non-commercial plan for Quink's own account (CLAUDE.md §10b;
+`PLANS` in `worker/config.py` is the implementation).
 
 ### Free — the validation hook
 
@@ -103,7 +104,7 @@ into a live product dashboard must upgrade to protect their link integrity.
 
 ### Founding — the first ten, sold by hand
 
-Purpose: the first ten paying customers, INR, manual sale (`checklist.md`).
+Purpose: the first ten paying customers, INR, manual sale.
 
 - **₹999/mo**, monthly only — NOT annual, because annual prepay hides the day-30
   retention signal (B4)
@@ -204,7 +205,7 @@ front-loaded (a team dumps existing workflows in weeks 1–4, then tails to main
 hard cap either blocks the initial fill (bad) or is set so high it's not a constraint
 (pointless). Included quota + cheap top-up + a "you're over this month, keep going?"
 nudge. Until Phase 3 this is implemented as: **over-cap runs proceed and alert Lee**
-(`mvp-dev-plan.md` §4). The *hard* protection lives in infrastructure — the **daily Gemini
+(CLAUDE.md §10b: paid run caps are SOFT). The *hard* protection lives in infrastructure — the **daily Gemini
 spend circuit breaker** — not a user-facing wall.
 
 **Free is the exception: its run cap IS a hard wall.** No relationship exists yet, and it
@@ -238,7 +239,7 @@ Rules:
 > **Launch cohort is INR; USD anchoring is untested.** The ₹1,499 / ₹3,999 ladder was
 > derived from USD anchors and charm-priced into INR. If India is the beachhead rather than
 > a localization, that ladder should be rebuilt from Indian willingness-to-pay. Do not
-> over-read ten Indian data points as global validation. (`checklist.md` §Conflicts 1–2.)
+> over-read ten Indian data points as global validation.
 
 ---
 
@@ -367,7 +368,8 @@ job to earn.
    articles + 30-day expiry.
 4. **Promote Growth to a full card?** — decide after 60 days of run-cap + multi-KB demand.
 5. **Does the 30-day clock start at first article, or at signup?** — **first article
-   created** is assumed throughout this spec and `mvp-dev-plan.md`. Signup punishes
+   created** is assumed throughout this spec, and `stamp_article_origin` is where it is
+   enforced. Signup punishes
    someone who returns on day 28; last-activity dormancy is kindest but destroys the
    deadline that §2 calls the conversion lever. Confirm or override before building the
    cron.
@@ -484,4 +486,4 @@ create table plans (
    consequence, accepted knowingly: raising `founding` later raises it for everyone on
    `founding`, which contradicts "locked forever." Low exposure now (charging is manual;
    the DB price is display-only), real exposure the moment Phase 3 automates
-   subscriptions. **Revisit before Phase 3** — `checklist.md` D2.
+   subscriptions. **Revisit before Phase 3.**

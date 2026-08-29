@@ -13,7 +13,7 @@ import type { KnowledgeBase as KB } from '../lib/types'
 // in the worker (config.DOMAIN_REQUIRES_PAID_PLAN) — no plan list mirrored here to drift
 // out of sync.
 //
-// Rebuilt against articles-domain-design-pass.html. Two things were wrong before: both
+// Two things were wrong before this screen was rebuilt: both
 // addresses were stamped LIVE with nothing saying which one readers actually land on, and
 // neither was clickable. Exactly one card is now marked as serving; the other is marked as
 // redirecting to it, which is what the reader does (ReaderSite canonicalizes the subdomain

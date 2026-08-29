@@ -292,7 +292,7 @@ EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "").lower() in ("1", "true", "ye
 # WARNING instead, so a dev run exercises the same call path without pinging a real channel.
 #
 # NOTE: §7 specs a much wider alert set (quota, model failures, spend cap, over-cap) and
-# UI-STATE-INVENTORY §D records that none of it is built. This is the first alert to land;
+# none of it is built. This is the first alert to land;
 # notify_ops() is deliberately generic so the rest attach to it rather than growing a second
 # sender, but do NOT take that as licence to build them speculatively.
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

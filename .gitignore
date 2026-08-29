@@ -24,11 +24,16 @@ eval/results.csv
 worker/.env
 web/.env
 
-
-# Legal pages are GENERATED from /legal/*.md by web/scripts/build-legal.mjs at build time.
-# Never commit them: two copies of a legal promise is exactly how the published page and the
-# document a human reviews drift apart (LEGAL-IMPLEMENTATION §7). The markdown is the source.
-web/public/privacy.html
-web/public/terms.html
-web/public/refunds.html
+# Generated at build time by web/scripts/build-legal.mjs from legal/*.md. Committing them
+# means the repo carries two copies of the same promise and the stale one wins the next
+# time someone reads it instead of rebuilding (CLAUDE.md §10: privacy changes ship with
+# the policy — one source, which is legal/).
 web/public/contact.html
+web/public/privacy.html
+web/public/refunds.html
+web/public/terms.html
+
+# Local scratch. Recordings, .docx drafts and extracted frames used while testing the
+# pipeline by hand — customer-shaped content that must never reach the repo.
+Article Writer/
+Screenshot *.png
