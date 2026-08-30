@@ -214,6 +214,12 @@ const InfoIcon = () => (
   </svg>
 )
 
+// A write's identity for the autosave queue: the target, plus the columns it touches. Two
+// patches over the same columns supersede each other (that is the debounce doing its job);
+// two over different columns are two writes and both have to land.
+const patchKey = (target: string, patch: object): string =>
+  `${target}:${Object.keys(patch).sort().join(',')}`
+
 export default function Editor({
   articleId,
   me,
@@ -776,9 +782,15 @@ export default function Editor({
   // Every debounced write goes through here, so there is exactly one place the guard can be
   // forgotten from. A step write claims first and then writes; an article write IS the
   // claim.
+  //
+  // `key` is which target and which columns this write touches. Pending writes are keyed
+  // (lib/useAutosave), so an edit supersedes only ITSELF: typing in one field still
+  // coalesces to one write, while a second field — or a second step — no longer silently
+  // evicts the first. Getting this wrong is invisible until publish, when the editor's
+  // state and the stored rows disagree and the article reports edits nothing can clear.
   const guarded = useCallback(
-    (write: (() => Promise<void>) | null, patch?: Partial<ArticleRow>) => {
-      schedule(async () => {
+    (key: string, write: (() => Promise<void>) | null, patch?: Partial<ArticleRow>) => {
+      schedule(key, async () => {
         await claim(patch ?? {})
         if (write) await write()
       })
@@ -809,7 +821,9 @@ export default function Editor({
   function saveArticle(patch: Partial<ArticleRow>) {
     setArticle((a) => (a ? { ...a, ...patch } : a))
     setDirty(true)
-    guarded(null, patch)
+    // Keyed by the COLUMNS, not just "article": a title edit and a subtitle edit inside one
+    // debounce window are two different writes, and each patch carries only its own columns.
+    guarded(patchKey('article', patch), null, patch)
   }
 
   // FAQ writes ride the SAME 700ms debounce and the same stale-write guard as title and
@@ -822,7 +836,9 @@ export default function Editor({
   function saveStep(id: string, patch: Partial<StepRow>) {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
     setDirty(true)
-    guarded(async () => {
+    // Per step AND per column set — a body edit and a frame pick on the same step within
+    // one window are both real, and neither may replace the other.
+    guarded(patchKey(`step:${id}`, patch), async () => {
       const { error } = await supabase.from('steps').update(patch).eq('id', id)
       if (error) throw error
     })
@@ -858,7 +874,7 @@ export default function Editor({
 
   function persistOrder(list: StepRow[]) {
     setDirty(true)
-    guarded(async () => {
+    guarded('order', async () => {
       const results = await Promise.all(
         list.map((s, i) =>
           supabase.from('steps').update({ step_number: i + 1 }).eq('id', s.id),
