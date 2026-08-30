@@ -93,6 +93,18 @@ assert.match(bar, /\{frac !== null && \([\s\S]{0,80}<i className="bbar-fill"/)
 assert.match(bar, /total > 0\s*\?\s*`\$\{done\} of \$\{total\} steps ready`/)
 assert.doesNotMatch(bar, /%`\}<\/span>|toFixed|Math\.round\([^)]*100\)\s*\+\s*'%'/)
 
+// --- the last phase must not read as finished -------------------------------------------
+// Stage 2 begins with every screenshot already in, so the fill is at 100% and the count
+// reads "N of N" for its whole duration — a full, motionless bar, which a user reported as
+// a freeze. The fill stays (true) and a sweep crosses it (still working), so the ONLY thing
+// that may not happen is `writing` rendering a static bar.
+assert.match(bar, /const polishing = stage === 'writing'/, 'BuildBar must know it is in Stage 2')
+assert.match(bar, /polishing \? ' busy' : ''/, 'the writing phase must carry the busy sweep')
+assert.match(bar, /\{!polishing && \([\s\S]{0,20}<span className="bbar-bolt"/, 'the bolt is clipped by .busy and must not render in it')
+const css = read('../src/styles.css')
+assert.match(css, /\.bbar-track\.busy::after/, 'styles.css must define the busy sweep')
+assert.match(css, /\.bbar-track\.busy \{[\s\S]{0,20}overflow: hidden;/, 'the busy sweep must be clipped to the pill')
+
 // --- the list row carries the same state -----------------------------------------------
 // Someone who leaves the tab must not open a half-written article expecting a finished one.
 assert.match(list, /articleState\(a\) === 'building'/)

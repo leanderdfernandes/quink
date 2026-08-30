@@ -79,6 +79,14 @@ export default function BuildBar({
   const frac = stepFrac !== null ? high.current : uploadProgress
   const pct = frac === null ? 0 : Math.round(frac * 1000) / 10
 
+  // STAGE 2 HAS NOTHING LEFT TO COUNT, AND IS NOT FINISHED. Every screenshot is already
+  // in by the time `writing` starts, so the fill is at 100% and the count reads "N of N"
+  // — a full, static bar for the whole polish pass, which is read as frozen and was
+  // (reported 2026-08-30 on a 4-minute run). The fill stays, because it is true; the
+  // sweep runs over it, because the run is still going. Same one-direction band `.idet`
+  // uses, so this adds a state, not a second motion model.
+  const polishing = stage === 'writing'
+
   const count =
     total > 0
       ? `${done} of ${total} steps ready`
@@ -98,7 +106,7 @@ export default function BuildBar({
     <div className={`bbar${compact ? ' bbar-sm' : ''}`}>
       <div className="bbar-meter" role="status" aria-live="polite">
         <span
-          className={`bbar-track${frac === null ? ' idet' : ''}`}
+          className={`bbar-track${frac === null ? ' idet' : ''}${polishing ? ' busy' : ''}`}
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={total || undefined}
@@ -114,9 +122,14 @@ export default function BuildBar({
                   for the ~45 seconds Stage 1 takes. The indeterminate state is a faded
                   sweep now (styles.css) — it says "working" without pretending to say
                   "this far along". */}
-              <span className="bbar-bolt" style={{ left: `${pct}%` }} aria-hidden>
-                <Bolt height={compact ? 8 : 10} />
-              </span>
+              {/* Not while polishing: `.busy` clips the track so the sweep stays inside
+                  the pill, and the bolt is taller than the track — it would be sliced in
+                  half sitting at the 100% edge. It has already ridden the whole bar. */}
+              {!polishing && (
+                <span className="bbar-bolt" style={{ left: `${pct}%` }} aria-hidden>
+                  <Bolt height={compact ? 8 : 10} />
+                </span>
+              )}
             </>
           )}
         </span>

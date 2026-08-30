@@ -5896,6 +5896,28 @@ div.rail-meter {
     transform: translateX(100%);
   }
 }
+/* THE LAST PHASE, WHICH HAS NOTHING TO COUNT AND IS NOT DONE. Stage 2 starts with every
+   screenshot already in, so the fill is at 100% and stays there for the whole polish pass —
+   a full, motionless bar, which reads as finished-and-stuck rather than as working. The
+   fill is kept, because it is true, and the same one-direction band crosses it. Tinted
+   toward paper rather than brand: a brand band over a brand fill is invisible. `overflow`
+   clips it to the pill, which is why BuildBar drops the bolt in this state. */
+.bbar-track.busy {
+  overflow: hidden;
+}
+.bbar-track.busy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--on-brand) 40%, transparent) 50%,
+    transparent 100%
+  );
+  animation: bbar-sweep 2.4s var(--ease) infinite;
+}
 /* The article-list row: bar only. The row's status text carries the stage and the count. */
 .bbar-sm {
   display: block;
