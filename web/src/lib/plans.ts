@@ -205,23 +205,37 @@ export function runMeter(ent: Entitlements): {
   count: string
   copy: string
 } {
-  const limits = limitsFor(ent.plan)
   // Falls back to the lifetime count when the SPA is running ahead of migration 0039,
   // which is a slightly stale number rather than a NaN-wide progress bar.
   const cycle = ent.cycle_runs_used ?? ent.runs_used
-  if (limits.lifetime_runs !== null) {
+
+  // THE CAP COMES OFF THE ENTITLEMENT, NEVER OFF THE TIER NAME.
+  //
+  // `plan` is deliberately null for anyone who is not the owner — limits and usage go to
+  // everyone who may edit, the tier NAME goes to the owner alone (§10l, migration 0041) —
+  // and limitsFor() fails open to the cheapest tier. So a KB admin inside an uncapped help
+  // center was shown the FREE wall measured against the OWNER's real usage — "49 of 3 free
+  // runs used", observed live on Hive Help. `lifetime_runs` is on `ent` for exactly this
+  // reason: plan_flags() resolves it through the owner and returns it to members too.
+  if (ent.lifetime_runs !== null) {
     return {
       used: ent.runs_used,
-      cap: limits.lifetime_runs,
-      count: `${ent.runs_used} of ${limits.lifetime_runs} free runs`,
+      cap: ent.lifetime_runs,
+      count: `${ent.runs_used} of ${ent.lifetime_runs} free runs`,
       copy: 'Deleted guides still count. Writing by hand is unlimited.',
     }
   }
-  if (limits.monthly_runs !== null) {
+  // Monthly is the one limit kb_entitlements does not return yet, so this branch still
+  // needs the tier — and a non-owner has none. Unknown falls through to the uncapped shape
+  // below: a plain number, no track, no copy. Stating nothing is the rule when we do not
+  // know (§10f); substituting the cheapest tier is how this bug happened. Paid run caps are
+  // SOFT anyway (§10b), so a member is not being kept from a wall they could hit.
+  const monthly = ent.plan ? limitsFor(ent.plan).monthly_runs : null
+  if (monthly !== null) {
     return {
       used: cycle,
-      cap: limits.monthly_runs,
-      count: `${cycle} of ${limits.monthly_runs}`,
+      cap: monthly,
+      count: `${cycle} of ${monthly}`,
       copy:
         'Deleted guides still count — the run already happened. ' +
         'Writing by hand is unlimited.',

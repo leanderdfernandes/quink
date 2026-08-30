@@ -49,6 +49,35 @@ assert.equal(internal.copy, '')
 const old = runMeter(ent({ plan: 'growth', lifetime_runs: null, runs_used: 7 }))
 assert.equal(old.count, '7 of 80')
 
+// A NON-OWNER. kb_entitlements returns limits and usage to anyone who may edit, and the
+// tier NAME to the owner alone (§10l) — so `plan` is null here while `runs_used` is the
+// OWNER's. limitsFor(null) fails open to free, which rendered the free wall against that
+// usage: "49 of 3 free runs used", on a KB admin inside an uncapped help center.
+//
+// The cap must come off the entitlement. Uncapped owner -> lifetime_runs is null -> the
+// plain number, no track, no copy. It must never say "of 3".
+const member = runMeter(
+  ent({ is_owner: false, plan: null, lifetime_runs: null, runs_used: 49, cycle_runs_used: 49 }),
+)
+assert.equal(member.cap, null)
+assert.equal(member.count, '49 this cycle')
+assert.equal(member.copy, '')
+
+// The same member inside a FREE help center still gets the real wall — lifetime_runs comes
+// back to members, so withholding the tier name costs them nothing they need.
+const memberFree = runMeter(
+  ent({ is_owner: false, plan: null, lifetime_runs: 3, runs_used: 2, cycle_runs_used: 2 }),
+)
+assert.equal(memberFree.count, '2 of 3 free runs')
+assert.equal(memberFree.cap, 3)
+
+// And inside a monthly-capped one, the cap is unknown to them: a number, never a guess.
+const memberPaid = runMeter(
+  ent({ is_owner: false, plan: null, lifetime_runs: null, runs_used: 180, cycle_runs_used: 13 }),
+)
+assert.equal(memberPaid.cap, null)
+assert.equal(memberPaid.count, '13 this cycle')
+
 // The shape is read off PLANS, not off the plan's name.
 const src = readFileSync(new URL('../src/lib/plans.ts', import.meta.url), 'utf8')
 const body = src.slice(src.indexOf('export function runMeter'))
