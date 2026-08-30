@@ -17,7 +17,10 @@ const HELD_KEY = 'held'
 // crosses the account wall — holding several hundred megabytes through an OAuth round trip
 // to save one drag is not a trade worth making — so the number exists to tell the user
 // what did not come with them, rather than to silently lose it.
-type Pending = { file: File; context: unknown; extra?: number }
+// `persistProduct` travels with the file because it is decided on the upload screen, on the
+// far side of the redirect, and cannot be re-derived afterwards without getting it wrong —
+// see the resume path in App.tsx. Optional so a blob written before it existed still loads.
+type Pending = { file: File; context: unknown; extra?: number; persistProduct?: boolean }
 
 // A recording the user chose while over quota (slice 3e). It is refused CLIENT-SIDE, before
 // the upload: no Storage object, no jobs row, no run consumed. That is not only politeness —

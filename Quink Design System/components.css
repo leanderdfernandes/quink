@@ -294,9 +294,13 @@
 .q-notice--bar { border-radius: 0; padding: 12px var(--gutter) }
 
 /* ============ Overlay + Sheet ============ */
+/* Start-aligned + `margin-block: auto` on the sheet, NOT `place-items: center`: a sheet
+   taller than the viewport centres to a negative top, and nothing can scroll back up to
+   it. This way it is centred when it fits and scrolls from the top when it does not. */
 .q-overlay {
   position: fixed; inset: 0; z-index: var(--z-overlay);
-  display: grid; place-items: center; padding: var(--s-10) var(--s-6);
+  display: grid; place-items: start center; padding: var(--s-10) var(--s-6);
+  overflow-y: auto; overscroll-behavior: contain;
   background: var(--scrim);
   animation: q-fade var(--dur-3) var(--ease) both;
 }
@@ -306,6 +310,7 @@
   box-shadow: var(--e4), var(--edge);
   animation: q-rise var(--dur-4) var(--ease-spring) both;
 }
+.q-overlay > * { margin-block: auto }
 .q-sheet h2 { font-size: var(--t-d4); margin-bottom: 10px }
 .q-sheet-lede { font-size: var(--t-ui); color: var(--ink-2); line-height: 1.55 }
 .q-sheet-tile { display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-lg); background: var(--brand-tint); color: var(--brand); margin-bottom: var(--s-5) }

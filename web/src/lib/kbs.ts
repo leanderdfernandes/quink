@@ -66,7 +66,13 @@ export async function setLastKb(userId: string, kbId: string): Promise<void> {
 // default a KB carries until its first save. Every read site goes through this rather than
 // trusting the shape, because `product_context` is jsonb and nothing in the type system
 // stops the database handing back a row that predates a key.
-export const EMPTY_PRODUCT_CONTEXT: ProductContext = { name: '', description: '', notes: [] }
+export const EMPTY_PRODUCT_CONTEXT: ProductContext = {
+  name: '',
+  description: '',
+  notes: [],
+  audience: '',
+  tone: '',
+}
 
 export function productContextOf(kb: {
   product_context?: ProductContext | null
@@ -77,6 +83,11 @@ export function productContextOf(kb: {
     name: c.name ?? '',
     description: c.description ?? '',
     notes: Array.isArray(c.notes) ? c.notes : [],
+    // Empty on every KB written between 0044 and 0048, and on job rows from before 0044
+    // that carry the flat shape. Empty means "say nothing about it" everywhere downstream —
+    // the RPC stores it, the prompt builder omits the line, the UI falls back to a default.
+    audience: c.audience ?? '',
+    tone: c.tone ?? '',
     updated_at: c.updated_at ?? null,
     updated_by: c.updated_by ?? null,
   }
@@ -105,9 +116,11 @@ export async function saveProductContext(
     p_kb_id: kb.id,
     p_name: product.name,
     p_description: product.description,
-    // Only the three fields the column stores. The RPC mints ids and stamps the audit
+    // Only the fields the column stores. The RPC mints note ids and stamps the audit
     // fields itself, so sending them back would be sending it its own output.
     p_notes: product.notes.map((n) => ({ id: n.id, title: n.title, body: n.body })),
+    p_audience: product.audience,
+    p_tone: product.tone,
   })
   if (error) throw error
   const row = (Array.isArray(data) ? data[0] : data) as {

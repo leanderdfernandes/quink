@@ -14,7 +14,16 @@ const BOLT_PATH =
 // its green because there it is a letter in a logo rather than a UI element.
 export function Bolt({ height = 11 }: { height?: number }) {
   return (
-    <svg height={height} viewBox="224 15 57 137" fill="none" aria-hidden style={{ display: 'block' }}>
+    <svg
+      height={height}
+      viewBox="224 15 57 137"
+      fill="none"
+      aria-hidden
+      // An SVG sized by height alone has no definite width, so as a flex item it shrinks —
+      // all the way to 0px, which is what the home nav did to the wordmark at 320px. The
+      // mark is never the thing that gives way.
+      style={{ display: 'block', flexShrink: 0 }}
+    >
       <path fill="currentColor" d={BOLT_PATH} />
     </svg>
   )
@@ -29,7 +38,7 @@ export default function Wordmark({ height = 22 }: { height?: number }) {
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-label="Quink"
-      style={{ display: 'block' }}
+      style={{ display: 'block', flexShrink: 0 }}
     >
       <path
         fill="currentColor"

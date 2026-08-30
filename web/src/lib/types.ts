@@ -339,14 +339,22 @@ export type ProductContext = {
   // Same purpose as `description`, chunked so unrelated facts are not forced into one
   // paragraph. Shares one character budget with it (CONTEXT_CHAR_BUDGET).
   notes: ProductNote[]
+  // BACK, deliberately (migration 0048). 0044 dropped both on PRD §4's reading that they
+  // "move voice, not accuracy" — superseded by an explicit decision to restore them, as two
+  // labelled ranges with a live sample rather than v1's abstract dropdowns. Neither counts
+  // against CONTEXT_CHAR_BUDGET; each is separately capped in the RPC.
+  audience: string
+  // The LABEL, e.g. "Neutral · Balanced" — see toneLabel/toneIndices in lib/tone.ts.
+  // worker/prompts.build_context_block has read this key the whole time and never stopped,
+  // which is why restoring it needed no pipeline change.
+  tone: string
   // Stamped inside set_product_context(). Absent until the first save.
   updated_at?: string | null
   updated_by?: string | null
 }
 
-// Audience and tone are gone (0044); PRD §4 cut them as a v1 leftover that moves voice
-// rather than accuracy. A KB read straight from the table can carry `{}` — the column's
-// default — so read it through productContextOf() in lib/kbs.ts, never directly.
+// A KB read straight from the table can carry `{}` — the column's default — so read it
+// through productContextOf() in lib/kbs.ts, never directly.
 
 // What goes into jobs.context, and therefore what a retry re-grounds on. Stored per job
 // rather than re-read from the KB, so a retry reproduces the ORIGINAL run rather than

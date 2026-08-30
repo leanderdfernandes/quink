@@ -1377,6 +1377,41 @@ export default function Editor({
   // row". Everything it holds renders as a skeleton, so no placeholder text is ever visible.
   const doc: ArticleRow = article ?? PENDING_ARTICLE
 
+  // THE PAUSE SITS BESIDE THE ARTICLE, IN THE RAIL'S COLUMN — the arrangement in the design
+  // system's first-run kit (ui_kits/first-run, screen 4). It used to be a full-width block
+  // between the build bar and the canvas, which on any normal laptop pushed the whole
+  // assembling article below the fold: the panel's own argument for not being a modal
+  // ("hiding the screenshots landing would remove the evidence that the pause holds up one
+  // stage and not the machine") was the exact thing the layout did.
+  //
+  // It takes the RAIL's column rather than adding a third, because the rail is a navigation
+  // map for an article that is still arriving — during the pause it holds three skeleton
+  // rows and nothing to navigate to. It comes straight back when the run is released.
+  // Nothing about the pause itself changes: same component, same props, same submit.
+  const clarify =
+    building && awaitingInput && gen.job ? (
+      <ClarifyPanel
+        // Remounts if the job changes (a retry), so answers to a previous run's questions
+        // cannot be carried into a new one.
+        key={gen.job.id}
+        clarifications={gen.job.clarifications ?? []}
+        shotsDone={stepsReady}
+        shotsTotal={stepTotal}
+        busy={releasing}
+        onSubmit={async (answers, note) => {
+          setReleasing(true)
+          try {
+            await submitClarificationAnswers(gen.job!.id, answers, note)
+          } catch {
+            // The write stage stays held and the panel stays up — which is the honest
+            // state. Nothing is lost and the button can be pressed again.
+          } finally {
+            setReleasing(false)
+          }
+        }}
+      />
+    ) : null
+
   return (
     <div className={`ed${building ? ' ed-building' : ''}`}>
       <header className="ed-bar">
@@ -1503,32 +1538,6 @@ export default function Editor({
         />
       )}
 
-      {/* The questions, under the bar and above the article that is assembling behind them.
-          Not a modal: a modal would hide the screenshots landing, which is the evidence that
-          nothing is being held up by the pause. */}
-      {building && awaitingInput && gen.job && (
-        <ClarifyPanel
-          // Remounts if the job changes (a retry), so answers to a previous run's questions
-          // cannot be carried into a new one.
-          key={gen.job.id}
-          clarifications={gen.job.clarifications ?? []}
-          shotsDone={stepsReady}
-          shotsTotal={stepTotal}
-          busy={releasing}
-          onSubmit={async (answers, note) => {
-            setReleasing(true)
-            try {
-              await submitClarificationAnswers(gen.job!.id, answers, note)
-            } catch {
-              // The write stage stays held and the panel stays up — which is the honest
-              // state. Nothing is lost and the button can be pressed again.
-            } finally {
-              setReleasing(false)
-            }
-          }}
-        />
-      )}
-
       {/* Completion, as an event. It drops in at the same moment the bar collapses, the pill
           flips and Publish comes back — all of them ride on `building` turning false, so
           they are one transition rather than four things quietly stopping.
@@ -1614,9 +1623,10 @@ export default function Editor({
           </div>
         </>
       ) : (
-        <div className="ed-body">
+        <div className={`ed-body${clarify ? ' ed-body-clar' : ''}`}>
+          {clarify && <aside className="ed-side">{clarify}</aside>}
           {/* The rail is a MAP: it navigates and nothing else. */}
-          <nav className="ed-rail" aria-label="Steps in this article">
+          <nav className="ed-rail" aria-label="Steps in this article" hidden={!!clarify}>
             <p className="ed-rail-cap">Steps</p>
             <ol>
               {skeleton

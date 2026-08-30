@@ -5,6 +5,9 @@ import {
   CONTEXT_BUDGET_WARN,
   CONTEXT_CHAR_BUDGET,
   RECORDING_NOTE_MAX,
+  AUDIENCE_MAX,
+  ONE_OFF_NOTE_MAX,
+  ONE_OFF_NOTE_TITLE,
   contextCharsUsed,
   COPY,
   MAX_VIDEO_BYTES,
@@ -12,9 +15,13 @@ import {
   wakeWorker,
 } from '../lib/config'
 import { PLANS } from '../lib/plans'
+import { toneIndices, toneLabel } from '../lib/tone'
 import ProductNotes from '../components/ProductNotes'
+import ContextSummary from '../components/ContextSummary'
+import ToneSliders from '../components/ToneSliders'
 import Wordmark from '../components/Wordmark'
 
+import { EMPTY_PRODUCT_CONTEXT } from '../lib/kbs'
 import type { ProductContext, ProductNote, VideoContext } from '../lib/types'
 
 // Upload + context — reached from the marketing home's "Build my article" CTA.
@@ -66,7 +73,10 @@ function validateVideo(file: File): string | null {
 type Props = {
   // Files, plural. One drop can be several recordings (3a) — the queue orders them and the
   // dock reports them; this screen's job ends at "these files, this context".
-  onSubmit: (files: File[], context: VideoContext) => void
+  // `persistProduct` says whether the product tier in `context` should be SAVED to the KB
+  // as well as used for this run. True only on the run that has no saved context to start
+  // from — every later run may override it for itself and must never write back (below).
+  onSubmit: (files: File[], context: VideoContext, persistProduct: boolean) => void
   onHome: () => void
   // Video runs left on this account, or null when there is no cap (a paid plan) or no
   // account yet (a visitor, who gets the full free allowance on signup).
@@ -102,23 +112,42 @@ export default function Upload({
   const [error, setError] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const [productName, setProductName] = useState(saved?.name ?? '')
-  // Known product context collapses to one line. Expanding is an explicit act, and it says
-  // plainly that it only affects what happens next. Expanding now reveals the NOTES too:
-  // the run is written against them, so the screen that spends the run is the last place
-  // that should make them unreadable.
-  const [showProduct, setShowProduct] = useState(!saved?.name)
+  // THE FORK, and the whole shape of this screen.
+  //
+  //   No saved context  -> this IS the product form. What you type is saved to the help
+  //                        centre, because there is nothing there yet and asking again on
+  //                        the next run would be asking someone to retype what they told us.
+  //   Saved context     -> a three-line summary and a PER-RUN OVERRIDE. Nothing typed here
+  //                        is written back. It used to be: expanding this card edited the
+  //                        workspace, so tightening the voice for one awkward recording
+  //                        silently re-voiced every guide built afterwards, from a screen
+  //                        whose whole subject is the file in the dropzone.
+  const hasSaved = !!saved?.name
+  const savedCtx = saved ?? EMPTY_PRODUCT_CONTEXT
+  const savedTone = toneIndices(savedCtx.tone)
+  const [ovOpen, setOvOpen] = useState(false)
+  const [ovAudience, setOvAudience] = useState(savedCtx.audience)
+  const [ovVoice, setOvVoice] = useState(savedTone[0])
+  const [ovDetail, setOvDetail] = useState(savedTone[1])
+  // ADDED to the workspace context for this run, never instead of it. That is what the
+  // field says and what the payload below does — a one-off that replaced the notes would
+  // quietly un-ground a run at the moment someone was trying to ground it harder.
+  const [oneOff, setOneOff] = useState('')
+  const ovTone = toneLabel(ovVoice, ovDetail)
+  const overridden =
+    !!oneOff.trim() || ovAudience.trim() !== savedCtx.audience || ovTone !== savedCtx.tone
   // The recording tier (3b). Every field above describes the PRODUCT and is reused by every
   // run; this one describes the video in the dropzone. Its absence is why the run that
   // matters most — the first one — has had no per-video grounding at all.
   const [recording, setRecording] = useState('')
-  // The workspace's notes, editable HERE as well as in Settings. App persists whatever
-  // this form submits (saveProductContext on the way into the run), so this is the same
-  // write the Settings screen makes — not a second one.
+  // The workspace's notes, on the BOOTSTRAP run only (`hasSaved` below). App persists what
+  // this form submits, so it is the same write the Settings screen makes — not a second
+  // one. Once context exists, notes are a Settings surface and this screen overrides.
   const [notes, setNotes] = useState<ProductNote[]>(saved?.notes ?? [])
   const [openNote, setOpenNote] = useState<string | null>(null)
-  const noteCount = notes.length
   // Summed exactly the way set_product_context sums it, so the meter and the refusal
-  // cannot disagree about what 100% means.
+  // cannot disagree about what 100% means. Only the bootstrap branch can reach it: the
+  // override writes nothing, so it cannot be over budget.
   const used = contextCharsUsed('', notes)
   const pct = Math.min(1, used / CONTEXT_CHAR_BUDGET)
   const overBudget = used > CONTEXT_CHAR_BUDGET
@@ -154,25 +183,48 @@ export default function Upload({
     if (good.length) setFiles((prev) => [...prev, ...good])
   }
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!files.length || !productName.trim() || overBudget) return
-    onSubmit(files, {
-      product: {
+  // The product tier THIS RUN is grounded on. Two shapes, one payload — and in both cases
+  // it is what gets stored on the job, so a retry replays exactly this and not whatever the
+  // workspace says weeks later (CLAUDE.md §10g).
+  function runProduct(): ProductContext {
+    if (!hasSaved) {
+      return {
         name: productName.trim(),
-        // Always empty. `description` is the pre-notes field and nothing writes it any
-        // more — Settings folds an old one into a note on its next save, and this screen
-        // never had a reason to own a second copy of the workspace's context.
+        // This screen has never owned a second copy of the workspace description; Settings
+        // is where that question is asked.
         description: '',
         // Empty notes are dropped rather than stored, the same rule Settings applies:
-        // someone who taps "Add note" and changes their mind should not leave a blank
-        // card behind for the pipeline to read.
+        // someone who taps "Add note" and changes their mind should not leave a blank card
+        // behind for the pipeline to read.
         notes: notes
           .filter((n) => n.title.trim() || n.body.trim())
           .map((n) => ({ ...n, title: n.title.trim(), body: n.body.trim() })),
-      },
-      recording: recording.trim(),
-    })
+        audience: '',
+        tone: '',
+      }
+    }
+    // The override. Everything the workspace knows, with the two style fields replaced and
+    // the one-off APPENDED as a note — which is how it reaches the prompt at all: the
+    // builder already walks `notes`, so nothing in the worker had to learn a new key.
+    return {
+      ...savedCtx,
+      audience: ovAudience.trim(),
+      tone: ovTone,
+      notes: oneOff.trim()
+        ? [
+            ...savedCtx.notes,
+            { id: 'one-off', title: ONE_OFF_NOTE_TITLE, body: oneOff.trim() },
+          ]
+        : savedCtx.notes,
+    }
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!files.length || !productName.trim() || overBudget) return
+    // PERSIST ONLY ON THE BOOTSTRAP RUN. `hasSaved` is the whole condition: with context
+    // already on the KB this screen is a per-run override and App must not write it back.
+    onSubmit(files, { product: runProduct(), recording: recording.trim() }, !hasSaved)
   }
 
   return (
@@ -294,19 +346,75 @@ export default function Upload({
                 attribute, so the band said "Spotify · New users · Friendly" and then showed
                 the very fields it was summarising directly underneath. The band IS the
                 collapsed state. */}
-            {!showProduct ? (
-              <div className="up-known">
-                <span className="up-known-t">{productName}</span>
-                <span className="up-known-d">
-                  {noteCount ? plural(noteCount, 'note') : 'no notes yet'}
-                </span>
-                <button
-                  type="button"
-                  className="up-known-a"
-                  onClick={() => setShowProduct(true)}
-                >
-                  {noteCount ? 'View or change' : 'Change'}
-                </button>
+            {hasSaved ? (
+              <div className="up-ctx">
+                {/* The same component Settings previews under "Show me" — one summary, two
+                    hosts, so the preview cannot disagree with the thing it previews. */}
+                <ContextSummary
+                  product={savedCtx}
+                  changed={overridden}
+                  oneOff={oneOff}
+                  action={
+                    <button
+                      type="button"
+                      className="up-known-a"
+                      onClick={() => setOvOpen((o) => !o)}
+                    >
+                      {ovOpen ? 'Done' : 'Change for this one'}
+                    </button>
+                  }
+                />
+
+                {ovOpen && (
+                  <div className="up-ov">
+                    <div className="field">
+                      <label htmlFor="ov-audience">Who is this one for?</label>
+                      <input
+                        id="ov-audience"
+                        type="text"
+                        value={ovAudience}
+                        maxLength={AUDIENCE_MAX}
+                        onChange={(e) => setOvAudience(e.target.value)}
+                        placeholder="e.g. Teachers building reading lists for a class"
+                      />
+                    </div>
+
+                    <ToneSliders
+                      voice={ovVoice}
+                      detail={ovDetail}
+                      onChange={(v, d) => {
+                        setOvVoice(v)
+                        setOvDetail(d)
+                      }}
+                    />
+
+                    <div className="field">
+                      <label htmlFor="ov-note">
+                        Anything else, just for this guide{' '}
+                        <span className="optional">Optional</span>
+                      </label>
+                      <textarea
+                        id="ov-note"
+                        rows={3}
+                        value={oneOff}
+                        maxLength={ONE_OFF_NOTE_MAX}
+                        onChange={(e) => setOneOff(e.target.value)}
+                        placeholder="e.g. This shows the new share sheet that ships next week — do not mention the old Share button."
+                      />
+                      <p className="hint">
+                        Your saved product context still applies — this is added to it.
+                      </p>
+                    </div>
+
+                    {/* The contract, on the screen that could break it in the other
+                        direction. Nothing above this line is written back to the help
+                        center, and the sentence is the only thing that says so. */}
+                    <p className="up-scope">
+                      Changes here apply to this guide only. To change every guide, edit
+                      Product &amp; context in Settings.
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <>

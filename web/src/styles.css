@@ -398,6 +398,24 @@ textarea {
     padding: 16px 20px;
   }
 }
+/* Under ~420px the wordmark and three nav items do not fit one line. They wrap to two
+   rather than one of them being squeezed out — and the wordmark is not squeezable at all
+   now (Wordmark.tsx sets flex-shrink: 0), so without this the row would simply overflow. */
+@media (max-width: 420px) {
+  .home-nav {
+    flex-wrap: wrap;
+    gap: 10px 18px;
+  }
+  .home-nav nav {
+    gap: 14px;
+  }
+  /* Wrapping the ROW is the intent; wrapping "How it works" onto two lines inside its own
+     link is not — that reads as a broken layout rather than a narrow one. */
+  .home-nav nav a,
+  .nav-login {
+    white-space: nowrap;
+  }
+}
 
 /* ---- Dropzone + context form: ONE visual unit ----
    The form must read as part of uploading, not a gate before it (ux-spec §2). */
@@ -1393,15 +1411,27 @@ textarea {
     transform: translateY(0);
   }
 }
+/* A CENTRED FIXED OVERLAY THAT DOES NOT SCROLL LOSES ITS OWN BUTTONS. Measured: the
+   delete-account dialog is 725px tall, so on a 700px viewport it centred to top: -12px,
+   bottom: 712px — the heading was cut off, the confirm field and the Delete button were
+   below the fold, and `overflow: visible` on a fixed element means nothing could scroll to
+   them. `align-items: flex-start` + `margin: auto 0` on the card is the pairing that keeps
+   it centred when it fits and scrollable from the top when it does not; centring alone
+   clips the top and no browser will let you scroll back to it. */
 .pub-overlay {
   position: fixed;
   inset: 0;
   z-index: 50;
   background: var(--scrim);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 40px 24px;
+}
+.pub-overlay > * {
+  margin-block: auto;
 }
 .pub-card {
   width: 100%;
@@ -1852,6 +1882,27 @@ textarea {
   display: grid;
   grid-template-columns: var(--rail-steps) minmax(0, 1fr);
   min-height: 0;
+  /* Both tracks are interpolable lengths, so the swap between the rail and the pause panel
+     below is one movement rather than the canvas jumping 150px sideways. */
+  transition: grid-template-columns var(--dur-4) var(--ease);
+}
+/* THE PAUSE TAKES THE RAIL'S COLUMN (Editor.tsx, `clarify`). Wider than the rail because it
+   holds a question rather than a list, and it scrolls on its own so a long answered list
+   never moves the article beside it. */
+.ed-body-clar {
+  grid-template-columns: 380px minmax(0, 1fr);
+}
+.ed-side {
+  background: var(--surface-1);
+  overflow: auto;
+  padding: var(--s-6) var(--s-5) var(--s-10);
+}
+/* .clar centres itself at 660px for the full-width block it used to be. In a column it is
+   the column. */
+.ed-side .clar {
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 .ed-rail {
   background: var(--surface-1);
@@ -3009,9 +3060,26 @@ textarea {
   }
 }
 
+/* …and on a NARROW touch screen that permanence turns into a collision. `.ed-tools` is
+   `position: absolute; top: 22px; right: 0`, which on a desktop column clears the heading;
+   at 320-620px the heading runs the full width and the four buttons are painted straight
+   over it. They become a row of their own — they are already in front of `.ed-card-hd` in
+   the DOM, so static flow puts them exactly where they read. Scoped to coarse pointers on
+   purpose: on a narrow MOUSE window they are still hover-revealed, which is the design. */
+@media (max-width: 620px) and (hover: none), (max-width: 620px) and (pointer: coarse) {
+  .ed-tools {
+    position: static;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+}
+
 @media (max-width: 1080px) {
   .th-split,
-  .ed-body {
+  .ed-body,
+  /* Named explicitly: `.ed-body-clar` outranks `.ed-body` on specificity, so the collapse
+     above does not reach it. */
+  .ed-body-clar {
     grid-template-columns: minmax(0, 1fr);
   }
   .th-ctrl {
@@ -3023,10 +3091,26 @@ textarea {
     border-bottom: 1px solid var(--rule);
     padding: 12px;
   }
+  /* Stacked, the pause is a band ABOVE the canvas at its natural height, capped so the
+     article it is arguing about always has room. Two full-height scroll boxes splitting one
+     laptop screen is what the uncapped version did, and neither half was usable. */
+  .ed-body-clar {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .ed-side {
+    max-height: 50vh;
+    padding: var(--s-5) var(--s-5) var(--s-6);
+  }
   .ed-rail ol {
     display: flex;
     gap: 8px;
     overflow-x: auto;
+    /* Hidden, like the reader's spine strip — the same control in the same shape should not
+       grow a scrollbar on one side of the product and not the other. */
+    scrollbar-width: none;
+  }
+  .ed-rail ol::-webkit-scrollbar {
+    display: none;
   }
   .ed-rail li {
     margin: 0;
@@ -4592,8 +4676,12 @@ a.rs-crumb-link:hover {
   width: 100%;
   margin: 0 auto;
 }
+.admin-tablewrap {
+  overflow-x: auto;
+}
 .admin-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
   font-size: var(--t-ui);
 }
@@ -5489,10 +5577,38 @@ div.rail-meter {
 @media (max-width: 900px) {
   .lib-body {
     grid-template-columns: minmax(0, 1fr);
+    /* AND THE ROWS. The desktop `minmax(0, 1fr)` is ONE row, written for the two-COLUMN
+       layout. Collapsed to a single column the rail and the main pane are two rows, so
+       that one explicit track sized the rail at 1fr and left `.lib-main` to an implicit
+       auto row — the rail either ballooned to fill the screen (Settings: 1204px of empty
+       sidebar above the content) or was squeezed to 0 and painted over the heading
+       (Articles). Both were measured. `auto` for the rail, the rest for the pane. */
+    grid-template-rows: auto minmax(0, 1fr);
   }
+  /* The rail is two rows of navigation; stacked full-width it costs a third of a phone
+     screen before any content. Horizontal, it is one strip. */
   .rail {
+    display: flex;
+    gap: var(--s-1);
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: var(--s-2) var(--gutter-sm);
     border-right: 0;
     border-bottom: 1px solid var(--rule);
+  }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+  /* `.rail-item.link` also carries `width: 100%`, and it is later in the file — without it
+     named here the inactive row still spanned the strip and pushed the active one off. */
+  .rail-item,
+  .rail-item.link {
+    width: auto;
+    flex: none;
+    margin-bottom: 0;
+  }
+  .rail-count {
+    margin-left: var(--s-1);
   }
   .lib-main {
     padding: 22px 18px 60px;
@@ -5501,9 +5617,29 @@ div.rail-meter {
 @media (max-width: 560px) {
   .lib-top {
     padding: 10px 12px;
+    gap: 8px;
   }
   .lib-kb-tag {
     display: none;
+  }
+  /* The bar is one line and everything in it has to fit on that line. The KB name is the
+     part allowed to truncate; the wordmark, the badge and the right-hand controls are not. */
+  .lib-top-brand {
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+  }
+  .lib-top-brand .kbsw,
+  .lib-top-brand .kbsw-trigger,
+  .lib-kb-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lib-top-right {
+    gap: 8px;
+    flex: none;
   }
   .al-grp-hd,
   .al-row {
@@ -5512,6 +5648,44 @@ div.rail-meter {
   }
   .al-sum {
     white-space: normal;
+  }
+  /* A row is a stack on a phone, not a three-column strip. `.al-build` is `flex: none` with
+     a `nowrap` verb, so on a 390px screen it took a third of the row and left the title
+     ~135px to wrap over four lines. It drops to its own line under the title instead —
+     `order` keeps the ⋯ menu up on the first line where the row is still one tap. */
+  .al-row {
+    flex-wrap: wrap;
+  }
+  .al-build {
+    order: 1;
+    flex: 1 1 100%;
+    /* the checkbox column, so it starts on the title's left edge */
+    margin-left: 28px;
+  }
+  /* Folder headers wrap too: the name is the part allowed two lines, the count is not
+     ("4 / articles" broke across lines), and the unfiled hint is a sentence, not a chip. */
+  .al-grp-hd {
+    flex-wrap: wrap;
+  }
+  .al-grp-hd h2 {
+    flex: 1;
+    min-width: 0;
+  }
+  .al-grp-hd .n {
+    white-space: nowrap;
+  }
+  .al-hint {
+    flex-basis: 100%;
+  }
+  /* The meta line's separators are borders on the right of each span. Once it wraps, that
+     border lands mid-block with nothing after it. Gap instead — they stack here anyway. */
+  .al-meta {
+    gap: 2px 11px;
+  }
+  .al-meta > span {
+    padding-right: 0;
+    margin-right: 0;
+    border-right: 0;
   }
   .lib-head {
     flex-direction: column;
@@ -9257,8 +9431,10 @@ div.rail-meter {
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  margin: var(--s-6) calc(var(--s-6) * -1) calc(var(--s-6) * -1);
-  padding: var(--s-4) var(--s-6);
+  /* Bleeds to the edges of .domain-card, whose padding is 20px 22px — NOT --s-6. The
+     mismatch was 2px per side and gave the whole panel a horizontal scrollbar. */
+  margin: var(--s-6) -22px -20px;
+  padding: var(--s-4) 22px;
   border-radius: 0 0 var(--r-lg) var(--r-lg);
   background: var(--surface-1);
   box-shadow: 0 -1px 0 0 var(--rule);
@@ -9277,6 +9453,238 @@ div.rail-meter {
 .ps-savebar-l b {
   color: var(--caution-ink);
   font-weight: var(--w-strong);
+}
+
+/* --- Product & context: the summary, the disclosure and the tone ranges (0048) ---------
+   TWO QUESTIONS UP FRONT, everything else behind one disclosure. The screen used to open on
+   a name field and a notes list, which is four visible inputs before anyone has said what
+   the product is. */
+.ps-more {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  margin-top: var(--s-6);
+  padding: var(--s-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ps-more b {
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+}
+/* The subline is what makes the disclosure worth opening: a section that only ever says
+   "more settings" is a section nobody opens. */
+.ps-more span:last-child {
+  font-size: var(--t-ui-sm);
+  color: var(--ink-3);
+}
+.ps-more svg {
+  color: var(--ink-3);
+  flex: none;
+  transition: transform var(--dur-2) var(--ease);
+}
+.ps-more-body > .ps-sect:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* A labelled range. The notches carry the words, so the control is never abstract — you can
+   read what the far end is without dragging to it. */
+.ps-tone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+.ps-tone-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-6);
+}
+.ps-range-hd {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+.ps-range-lb {
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--ink-2);
+}
+.ps-range-v {
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--ink);
+}
+.ps-range input[type='range'] {
+  width: 100%;
+  height: 20px;
+  /* The UA sheet gives a range input a 2px side margin, which pushed the card 2px past its
+     own width and gave the whole panel a horizontal scrollbar. */
+  margin: 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+.ps-range-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  letter-spacing: var(--tr-mono);
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.ps-range-ticks .on {
+  color: var(--ink-2);
+}
+/* The sample is the argument for the whole control. Inset, because it is an OUTPUT of the
+   two ranges above it rather than another thing to set. */
+.ps-sample {
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.ps-sample-cap {
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  letter-spacing: var(--tr-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ps-sample-t {
+  margin-top: var(--s-2);
+  font-size: var(--t-prose);
+  line-height: 1.55;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+/* "Show me" — where this form ends up, shown rather than described. */
+.ps-tell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  margin-top: var(--s-5);
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.ps-tell p {
+  flex: 1;
+  min-width: 240px;
+  margin: 0;
+  font-size: var(--t-ui-sm);
+  color: var(--ink-2);
+}
+.ps-preview {
+  max-width: 560px;
+  text-align: left;
+}
+.ps-preview .ctxs {
+  margin: var(--s-5) 0;
+}
+
+/* --- The context summary: "Writing this against Acme" ---------------------------------
+   One component, two hosts (the upload card and the Settings preview). It shows what a run
+   is GROUNDED ON at a glance, not everything stored — a wall of glossary entries is not a
+   glance. */
+.ctxs {
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.ctxs-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.ctxs-hd b {
+  font-size: var(--t-ui);
+  font-weight: var(--w-strong);
+  color: var(--ink);
+}
+.ctxs-sp {
+  flex: 1;
+}
+/* Not a pill and not a dot (design system §): a glyph-free weighted label, and only on the
+   rows that are not the norm — which here means only when an override is actually live. */
+.ctxs-changed {
+  font-size: var(--t-meta);
+  font-weight: var(--w-strong);
+  color: var(--caution-ink);
+}
+.ctxs-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ctxs-rows li {
+  display: flex;
+  gap: 12px;
+  font-size: var(--t-ui-sm);
+}
+.ctxs-k {
+  width: 88px;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-mono);
+  letter-spacing: var(--tr-mono);
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.ctxs-v {
+  min-width: 0;
+  color: var(--ink-2);
+}
+/* Inert, in the Settings preview only — it is a picture of a control, not one. */
+.ctxs-act {
+  font-size: var(--t-ui-sm);
+  font-weight: var(--w-strong);
+  color: var(--brand);
+}
+
+/* --- Upload: the per-run override ------------------------------------------------------
+   Nothing inside this block is written back to the help center. It is the same context, for
+   one recording, and the sentence at the bottom is the only thing that says so. */
+.up-ctx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+.up-ov {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  padding: var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.up-ov .field {
+  margin: 0;
+}
+/* The well is already --surface-2, so the sample needs to step the other way or it is an
+   invisible card. Regions separate by surface lightness, not by a border (design system). */
+.up-ov .ps-sample {
+  background: var(--surface-1);
+}
+@media (max-width: 560px) {
+  /* Two ranges side by side leave each about 150px, which is not enough for four notch
+     labels — they overlap before they wrap. */
+  .ps-tone-rows {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 
@@ -9357,6 +9765,20 @@ div.rail-meter {
   padding: 0;
   overflow: visible;
 }
+/* …and it yields the split entirely when there is no room for two columns. The generic
+   `.th-split` collapse lives at the 1080 breakpoint above, but this selector is heavier AND
+   later, so without its own copy the control column kept a 380px floor and the preview kept
+   a 400px one — 812px of tracks inside a 390px screen, which put the whole live preview off
+   the right edge with nothing to scroll it back. */
+@media (max-width: 1080px) {
+  .set .th-split {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+  .set .th-ctrl {
+    padding-right: 0;
+  }
+}
 .set .th-scroll > h2:first-child,
 .set .th-scroll > .th-lede {
   display: none;
@@ -9387,6 +9809,18 @@ div.rail-meter {
   background: var(--hover);
   color: var(--ink);
   text-decoration: none;
+}
+/* Icon only on a phone. The label wrapped to three lines and tripled the height of the top
+   bar. `font-size: 0` collapses the text node without removing it, so the accessible name
+   and the title stay intact. Declared HERE, after `.lib-live` itself: the same rule in the
+   560 block further up lost to this one on source order alone. */
+@media (max-width: 560px) {
+  .lib-live {
+    flex: none;
+    font-size: 0;
+    gap: 0;
+    padding: 0 var(--s-2);
+  }
 }
 
 /* The account menu. One trigger, one popover, on the system's menu surface. */

@@ -213,6 +213,17 @@ export const CONTEXT_BUDGET_WARN = 0.9
 // maxLength is a courtesy, not a control.
 export const RECORDING_NOTE_MAX = 600
 
+// Neither counts against CONTEXT_CHAR_BUDGET, for the same reason `name` does not: that
+// pool exists to cap the PROSE injected into every run. These are structural, and each is
+// separately capped in the RPC (migration 0048).
+export const AUDIENCE_MAX = 200
+
+// The per-guide addition on the upload card. It is ADDED to the workspace context for one
+// run, never saved over it — see Upload.tsx. Same size as the recording note because it is
+// the same kind of thing: a sentence or two typed fresh for this file.
+export const ONE_OFF_NOTE_MAX = 600
+export const ONE_OFF_NOTE_TITLE = 'Just for this guide'
+
 // User-facing copy that the specs fix word-for-word. Kept here so it can't drift
 // into soft or business-internal phrasing (CLAUDE.md §11).
 export const COPY = {

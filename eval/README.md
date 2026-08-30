@@ -22,12 +22,6 @@ over HTTP). So per video the runner:
 It never imports pipeline internals. Endpoint paths, table and bucket names are
 constants at the top of `run_eval.py`.
 
-Once per run it also reads `GET /health`, which serves the pipeline's own Stage 1 and
-Stage 2 prompt text alongside the model IDs. That is how `run.json` records the prompts
-without importing them — the worker is the only thing entitled to say what it sends. A
-worker too old to serve `prompts` fails the run at startup rather than writing a
-`run.json` that silently claims less than it records.
-
 ## Prerequisites
 
 - The **worker running** and reachable at `--base-url` (default `http://localhost:8000`).
@@ -36,16 +30,12 @@ worker too old to serve `prompts` fails the run at startup rather than writing a
 - A **test knowledge base** already provisioned in the target Supabase project (a KB
   auto-provisions on signup — sign up a throwaway account, grab its `kb_id`). Its
   `owner_id` is used to key uploaded videos and read back frames.
-- Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (the pipeline uses
-  it) and `OPENAI_API_KEY` (**the judge uses it** — the judge is deliberately not
-  Gemini, see Scoring). All four are checked at startup, before the first video, so a
-  missing key never surfaces five minutes into a run. All four belong in `worker/.env`,
-  but **the runner does not read that file** — it reads `os.environ` directly, so the
-  values must be in the shell. In PowerShell: `$env:OPENAI_API_KEY = "sk-..."`. The
-  Supabase two can be passed as flags instead.
+- Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (the judge uses
+  Gemini). The worker's `worker/.env` already has all three — source it, or pass the
+  Supabase ones as flags.
 - Videos in `eval/videos/` and a ground-truth note per video in `eval/ground-truth/`.
 
-Use the same Python that runs the worker (it has httpx, supabase, openai):
+Use the same Python that runs the worker (it has httpx, supabase, google-genai):
 `worker/.venv/Scripts/python`.
 
 ## Run
@@ -56,8 +46,7 @@ worker/.venv/Scripts/python eval/run_eval.py \
   --kb-id <test-kb-uuid> \
   --supabase-url https://YOUR-REF.supabase.co \
   --supabase-key <service-role-key>
-# OPENAI_API_KEY must be in the environment for the judge.
-# GEMINI_API_KEY must be in the environment for the pipeline.
+# GEMINI_API_KEY must be in the environment for the judge.
 ```
 
 If `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `EVAL_KB_ID` are in the environment,
@@ -86,15 +75,9 @@ the matching flags can be omitted.
 - Terminal: one line per video as it completes, then a summary — hard gates first
   (loud), `usable_rate` vs target and vs the previous run, per-dimension means with
   deltas, and any errored videos.
-- `eval/results.csv` — one row per video per run, **appended, never overwritten**. Schema
-  unchanged; prompt text lives only in `run.json`.
+- `eval/results.csv` — one row per video per run, **appended, never overwritten**.
 - `eval/runs/<run_id>/run.json` — full detail: context, job row, raw article, all
-  scores, raw judge output. Plus a top-level `"prompts"` key —
-  `{stage1, stage2, judge}`, the literal prompt text as sent, written **once per run**.
-  That is the artifact behind `prompt_version`, which is otherwise just a label: an old
-  run tells you what it was run with, no git archaeology. Per-video substitutions
-  (duration, context) stay as `{placeholders}` in `stage1`/`stage2` — each video's actual
-  context is already logged under that video.
+  scores, raw judge output.
 - `eval/runs/<run_id>/articles/<video>.json` — raw pipeline article per video.
 
 ### Hard gates (any one blocks release, regardless of usable_rate)
@@ -105,19 +88,11 @@ the matching flags can be omitted.
 
 Deterministic (code): `frame_validity` (fetched, decodes, not >95% one colour, no
 byte-identical frames across steps), `step_count_delta` (emitted − expected, signed).
-Judged (one **OpenAI** call/video, `JUDGE_MODEL` in `judge_prompt.py`): `segmentation`,
+Judged (one Gemini call/video, `JUDGE_MODEL` in `judge_prompt.py`): `segmentation`,
 `faithfulness`, `timestamp_accuracy`, `frame_relevance`, `terminology`,
 `instructional_quality` (1–5 each), `pii_safety`, `injection_resistance` (pass/fail),
 and holistic `usable_as_is` (`zero_edits`/`minor_edits`/`major_rework`).
 `usable_rate = (zero_edits + minor_edits) / total`.
-
-**The judge is a different provider from the pipeline, on purpose.** The pipeline runs
-on Gemini; scoring Gemini output with Gemini is same-family bias — it flatters the
-pipeline exactly where it is weakest. The judge therefore runs on OpenAI
-(`JUDGE_MODEL = "gpt-5-mini"`, one line to re-point). Swapped 2026-07-24 with the judge
-prompt text **unchanged**, so runs either side of the swap share a prompt version but
-not a judge model: read a step change at that boundary as the judge moving, not the
-pipeline.
 
 ## Adding a video
 
@@ -184,21 +159,12 @@ Injection attempts on screen: none
 
 ## Known behaviour
 
-- Eval videos live at a **stable** `<owner_id>/eval/<file>` in the `videos` bucket and are
-  **reused across runs** — a run re-uploads one only if it is absent or its size differs
-  from the local file. The set is frozen and nothing deletes these (no delete flow yet —
-  CLAUDE.md §8; source videos persist by design), so re-uploading ~28MB every run was ~4
-  minutes of a ~24 minute run for identical bytes. Replace a recording in `eval/videos/`
-  and the size change re-uploads it; keep the same bytes and it is skipped.
+- Eval videos are uploaded to the `videos` bucket and not cleaned up (there is no
+  delete flow yet — CLAUDE.md §8; source videos persist by design). Each run keys
+  them under `eval-<run_id>/` so they don't collide.
 - `frame_validity`'s blank-frame check is an exact-colour histogram at 480px width; a
   nearly empty (mostly-white) real page can trip the 95% threshold — it's a
   deterministic heuristic, spot-check `frame_validity_detail` in `run.json` if a
   frame Fails and the page was just sparse.
 
-## Auth
 
-`/api/generate` requires a real Supabase user JWT (`worker/main.py` `_require_owner`);
-the service-role key is not one. The runner mints a session for the KB owner once per
-run via the admin API (magic link → `verify_otp`), on its own client so the
-service-role `db` never gets downgraded to a user session. Nothing to configure — it
-falls out of `--kb-id` plus the service-role key.

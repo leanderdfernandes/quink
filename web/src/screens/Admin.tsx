@@ -129,6 +129,9 @@ export default function Admin() {
           {kbs.length} total. Opening one shows the viewing-as-admin bar until you exit.
         </p>
 
+        {/* Five columns will not fit a phone. The wrapper scrolls the table rather than
+            the page, so the rest of the screen stays put. */}
+        <div className="admin-tablewrap">
         <table className="admin-table">
           <thead>
             <tr>
@@ -167,6 +170,7 @@ export default function Admin() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

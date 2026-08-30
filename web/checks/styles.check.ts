@@ -69,4 +69,37 @@ for (const state of [':hover', ':disabled']) {
   )
 }
 
+// --- 4. the three responsive rules that were live bugs ----------------------------------
+// Mechanical, not stylistic: each of these was measured in a real 320-390px viewport, and
+// each fails SILENTLY (a rail painted over a heading, a preview off the right edge, a
+// dialog whose Delete button cannot be reached) rather than throwing anything.
+const narrowLib = css.match(/@media \(max-width: 900px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
+assert.ok(
+  /\.lib-body\s*\{[^}]*grid-template-rows/.test(narrowLib),
+  'the narrow .lib-body must restate grid-template-rows. Collapsed to one column the rail ' +
+    'and .lib-main are two ROWS, and the desktop `minmax(0, 1fr)` sizes only the first: ' +
+    'the rail either fills the screen or collapses to 0 and paints over the page heading.',
+)
+assert.ok(
+  /@media \(max-width: 1080px\)\s*\{\s*\.set \.th-split/.test(css),
+  '`.set .th-split` needs its own collapse at 1080px. It is heavier and later than the ' +
+    'generic .th-split rule, so without it the 380px + 400px tracks survive onto a phone ' +
+    'and the live preview sits off-screen with nothing to scroll it back.',
+)
+// Both modal overlays: `overflow-y: auto` and no centred align/place-items.
+const OVERLAYS: [string, RegExp][] = [
+  ['.pub-overlay', /\.pub-overlay\s*\{([^}]*)\}/],
+  ['.q-overlay', /\.q-overlay\s*\{([^}]*)\}/],
+]
+for (const [name, re] of OVERLAYS) {
+  const block = css.match(re)?.[1] ?? ''
+  assert.ok(
+    /overflow-y:\s*auto/.test(block) &&
+      !/(place-items|align-items):\s*center/.test(block),
+    `${name} must scroll and must not centre its child with align/place-items. A dialog ` +
+      'taller than the viewport centres to a NEGATIVE top, and a fixed element with ' +
+      'overflow: visible offers no way to scroll back to it — the buttons are simply gone.',
+  )
+}
+
 console.log('styles self-check OK')

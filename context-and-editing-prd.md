@@ -63,6 +63,11 @@ cross-article terminology passes · alternate article formats.
 shipped a per-upload field since slice 3b and the spec never recorded it. Resolved in favour
 of the build: there are two layers, and they are different in kind.
 
+**Amended 2026-08-30 (migration 0048).** `audience` and `tone` are back on the workspace
+layer, and the upload card gained a per-run OVERRIDE of them (§4c) that writes nothing back.
+So the two layers now meet in one place — the upload card reads the workspace layer, shows
+it, and may shadow part of it for a single run.
+
 ### 4a. Workspace context — persistent, shared budget
 
 Filled once, reused by every guide. The "general company and product context" layer.
@@ -72,6 +77,8 @@ Filled once, reused by every guide. The "general company and product context" la
 | `name` | Yes | The product's name. Not the KB name — a workspace can host a KB called "Acme Help" for a product called "Acme Dashboard". |
 | `description` | No | What it does, who uses it, and the terms/features an article should get right. Free text. |
 | `notes[]` | No | Repeatable `{title, body}` blocks — a glossary entry, a feature list, a roles breakdown. Same purpose as `description`, just chunked so the user isn't forcing unrelated facts into one paragraph. |
+| `audience` | No | Who the guides are pitched at. Restored by migration 0048 — see the note below. Capped at 200, exempt from the budget. |
+| `tone` | No | The label of a Voice × Detail pair, e.g. `"Neutral · Balanced"`. Restored by 0048. Capped at 40, exempt from the budget. |
 
 **Shared context budget, not a per-field cap.** `description` and every note share one
 pool — `CONTEXT_CHAR_BUDGET` (default 6,000 chars / ~1,500 tokens), a `PLANS`-style named
@@ -80,10 +87,24 @@ per chat), this context is injected into **every** generation call, so the ceili
 prompt size and per-run cost, not just UI tidiness. `name` is structural metadata and never
 counts against the budget.
 
-**⚠️ Drift note:** the current build shows Audience and Tone dropdowns on this screen. They
-are **not in this spec** and were never in v2 — they're a v1 leftover (`ux-spec.md` Screen
-1). Cut them. They move voice, not accuracy, and accuracy is the actual problem this
-section exists to solve.
+**~~⚠️ Drift note~~ — SUPERSEDED (migration 0048).** This section used to read: *"the current
+build shows Audience and Tone dropdowns on this screen. They are not in this spec and were
+never in v2 — they're a v1 leftover (`ux-spec.md` Screen 1). Cut them. They move voice, not
+accuracy, and accuracy is the actual problem this section exists to solve."* Migration 0044
+carried that out.
+
+Both are **back**, by explicit decision, and the reasoning above is worth keeping because it
+names what has to be different this time. The complaint §1 records is that "the fields do
+very little" and "the user senses this and is correct" — that is a **control** problem, not a
+value problem. v1 asked for tone as an abstract dropdown, so the only way to find out what
+*Casual* did was to spend a run. They return as two labelled ranges (Formal…Casual,
+Brief…Thorough) beside **a sample step that rewrites itself as you move them**, and one plain
+question, "Who is it for?". Showing what a control does is the fix; removing it was not.
+
+Neither spends `CONTEXT_CHAR_BUDGET` — they are structural, like `name`, and each is capped
+separately in the RPC. Nothing in the pipeline changed to restore them:
+`worker/prompts.build_context_block` never stopped reading either key, because 0044 removed
+only the write path.
 
 ### 4b. Per-run context — the recording note
 
@@ -126,6 +147,26 @@ live.
 - Permission: `can_edit_kb()` — same as article editing. *(Flag: confirm this shouldn't be
   `owns_kb()`. Context shapes every future article, which is arguably an owner concern.)*
 - Context is passed to the pipeline as fenced data (§7), never as instructions.
+
+### 4c. Per-run override — the same context, for one recording
+
+Added with 0048. The upload card shows the workspace context as three lines — *For*, *Voice*,
+*Notes*, under "Writing this against {product}" — and **Change for this one** opens an
+override of `audience`, `tone` and one free note.
+
+**Nothing typed there is written back.** That is the whole point of the surface, and it
+reverses what the screen used to do: expanding the context card on the upload screen edited
+the *workspace*, so tightening the voice for one awkward recording silently re-voiced every
+guide built afterwards, from a screen whose entire subject is the file in the dropzone. The
+one-off note is **appended** to the workspace notes for that run, never substituted for them,
+so grounding a run harder cannot accidentally un-ground it.
+
+The exception is the **bootstrap run** — the first one, before any context exists. There the
+card is the form, and what it collects *is* saved, because asking again on the next run would
+be asking someone to retype what they already told us.
+
+Both halves land in `jobs.context`, so a retry replays exactly the grounding the original run
+used rather than whatever the workspace says later (CLAUDE.md §10g).
 
 ---
 
@@ -173,7 +214,11 @@ These fire the instinct to ask, and asking would be offloading our job onto the 
   the Stage-1 collapse rule, do not ask.
 - **Dead ends** (navigate in, immediately back out, no state change). Drop them silently.
 - **Sensitive data on screen.** Not a question — default-on redaction with a review surface.
-- **Tone and audience.** Style levers. They belong in product context, not per-video.
+- **Tone and audience.** Style levers. They belong in product context, not per-video — and
+  they are still never *asked about* mid-run, which is what this list governs. The upload
+  card may **override** both for one recording (§4c), which is a different thing: the user
+  reaching for a setting they can already see, before the run, not the model interrupting
+  to ask.
 
 ### 5.4 Timing — the pipeline waits
 

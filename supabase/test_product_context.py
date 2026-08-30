@@ -1,4 +1,4 @@
-"""Live acceptance run for product context as a guarded write (migrations 0040, 0044).
+"""Live acceptance run for product context as a guarded write (migrations 0040, 0044, 0048).
 
     cd supabase && ../worker/.venv/Scripts/python test_product_context.py
 
@@ -19,7 +19,9 @@ matter are all client-observable:
     center is refused once a description is spending the same pool;
   * deleting a note frees that budget immediately, and the write refused a moment ago now
     succeeds unchanged;
-  * the direct table update that used to be the write path now writes nothing at all.
+  * the direct table update that used to be the write path now writes nothing at all;
+  * audience and tone round-trip (restored by 0048), each with its OWN cap, and NEITHER
+    spends the shared budget -- a full-length description saves beside a full audience.
 
 Creates two throwaway auth users and one KB, and deletes all three in the finally block
 whatever happens.
@@ -132,6 +134,8 @@ def main() -> int:
                 "p_name": "Acme Dashboard",
                 "p_description": "Inventory tracking for small warehouses.",
                 "p_notes": [{"id": "", "title": "Glossary", "body": "SKU = one item."}],
+                "p_audience": "Warehouse staff, not especially technical",
+                "p_tone": "Warm \u00b7 Balanced",
             },
         ).execute()
         c = ctx()
@@ -142,7 +146,55 @@ def main() -> int:
         chk("note id minted server-side", len(c["notes"][0]["id"]) >= 32, True)
         chk("who stamped", c["updated_by"], member_id)
         chk("when stamped", c.get("updated_at") is not None, True)
-        chk("audience is gone from the shape", "audience" in c, False)
+        # BACK, after 0044 dropped them and 0048 restored them. The worker never stopped
+        # reading either key, so these two round-tripping is the whole restoration.
+        chk("audience written", c["audience"], "Warehouse staff, not especially technical")
+        chk("tone written", c["tone"], "Warm \u00b7 Balanced")
+
+        print("\n2b. audience and tone are EXEMPT from the shared budget")
+        # The pool exists to cap the prose injected into every run. If either of these
+        # were folded into it, the client meter would fill at one length and the RPC
+        # refuse at another -- the exact drift the single-source rule exists to prevent.
+        budget = db.rpc("context_char_budget", {}).execute().data
+        member.rpc("set_product_context", {
+            "p_kb_id": kb_id,
+            "p_name": "Acme Dashboard",
+            "p_description": "d" * budget,        # the whole pool, on its own
+            "p_notes": [],
+            "p_audience": "a" * 200,              # at its own cap
+            "p_tone": "Casual \u00b7 Thorough",
+        }).execute()
+        c = ctx()
+        chk("a full-budget description saves beside a full audience",
+            len(c["description"]), budget)
+        chk("audience at its cap saved", len(c["audience"]), 200)
+
+        print("\n2c. Each has its OWN cap, and refuses rather than truncates")
+        chk(
+            "audience over 200 refused",
+            "audience is too long" in (err(lambda: member.rpc("set_product_context", {
+                "p_kb_id": kb_id, "p_name": "Acme Dashboard",
+                "p_audience": "a" * 201}).execute()) or ""),
+            True,
+        )
+        chk(
+            "tone over 40 refused",
+            "tone is too long" in (err(lambda: member.rpc("set_product_context", {
+                "p_kb_id": kb_id, "p_name": "Acme Dashboard",
+                "p_tone": "t" * 41}).execute()) or ""),
+            True,
+        )
+        chk("neither refusal changed the stored row", ctx()["audience"], "a" * 200)
+
+        # Put the row back where the rest of the run expects it.
+        member.rpc("set_product_context", {
+            "p_kb_id": kb_id,
+            "p_name": "Acme Dashboard",
+            "p_description": "Inventory tracking for small warehouses.",
+            "p_notes": [{"id": "", "title": "Glossary", "body": "SKU = one item."}],
+            "p_audience": "Warehouse staff, not especially technical",
+            "p_tone": "Warm \u00b7 Balanced",
+        }).execute()
 
         print("\n3. Someone with no relationship to the KB is refused")
         chk(

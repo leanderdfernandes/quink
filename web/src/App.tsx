@@ -358,9 +358,16 @@ export default function App() {
       setLanding('article')
       setPhase('generating')
       queueRef.current?.add([pending.file])
-      void saveProductContext(found, (pending.context as VideoContext).product)
-        .then(setKb)
-        .catch(() => {})
+      // Carried across the OAuth redirect with the file, not re-derived here: by this point
+      // `found` may already have context (a second KB, a claimed demo), and re-deriving the
+      // flag from that would write a per-run override into a help center the user never
+      // meant to change. Absent on a blob written before this flag existed, and `!== false`
+      // keeps that case behaving exactly as it did.
+      if (pending.persistProduct !== false) {
+        void saveProductContext(found, (pending.context as VideoContext).product)
+          .then(setKb)
+          .catch(() => {})
+      }
       await clearPending()
     })()
 
@@ -384,7 +391,12 @@ export default function App() {
     }
   }, [kb])
 
-  async function handleSubmit(chosen: File[], context: VideoContext) {
+  // `persistProduct` comes from Upload and is the ONLY thing that decides whether this run's
+  // product tier is written back to the help center. It is true exactly once — on the run
+  // that had no saved context to start from. Every later run may override audience, tone and
+  // add a note for itself, and none of that touches the KB: a per-run tweak that re-voiced
+  // every future guide is the bug this flag exists to make impossible.
+  async function handleSubmit(chosen: File[], context: VideoContext, persistProduct: boolean) {
     const [first, ...rest] = chosen
     if (!first) return
     setFile(first)
@@ -399,7 +411,7 @@ export default function App() {
       setLanding('kb')
       setPhase('kb')
       queue.add(chosen)
-      void saveProductContext(kb, context.product).then(setKb).catch(() => {})
+      if (persistProduct) void saveProductContext(kb, context.product).then(setKb).catch(() => {})
       return
     }
 
@@ -411,7 +423,7 @@ export default function App() {
     // them on a blank 'loading' screen; the reload re-runs the resolver and loadPending()
     // picks the file back up, exactly as it does after the real wall.
     if (session) {
-      await savePending({ file: first, context, extra: rest.length })
+      await savePending({ file: first, context, extra: rest.length, persistProduct })
       window.location.assign('/')
       return
     }
@@ -422,7 +434,7 @@ export default function App() {
     // holding several hundred megabytes through an OAuth round trip to save one drag is
     // not a trade worth making.
     setWallExtras(rest.length)
-    await savePending({ file: first, context, extra: rest.length })
+    await savePending({ file: first, context, extra: rest.length, persistProduct })
     setPhase('wall')
   }
 
