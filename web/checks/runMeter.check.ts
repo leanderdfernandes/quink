@@ -1,4 +1,4 @@
-// The rail run meter's three shapes:
+// The run meter's two shapes, and the case that has none:
 //
 //     cd web && npx tsx checks/runMeter.check.ts
 //
@@ -25,7 +25,7 @@ const ent = (over: Partial<Entitlements>): Entitlements => ({
 })
 
 // free — lifetime cap, counted off the LIFETIME total, short copy
-const free = runMeter(ent({ plan: 'free', runs_used: 2, cycle_runs_used: 1 }))
+const free = runMeter(ent({ plan: 'free', runs_used: 2, cycle_runs_used: 1 }))!
 assert.equal(free.count, '2 of 3 free runs')
 assert.equal(free.cap, 3)
 assert.equal(free.used, 2)
@@ -33,21 +33,20 @@ assert.ok(!free.copy.includes('already happened'))
 assert.ok(free.copy.includes('unlimited'))
 
 // starter — monthly cap, counted off the CYCLE, full copy
-const starter = runMeter(ent({ plan: 'starter', lifetime_runs: null, runs_used: 180, cycle_runs_used: 13 }))
+const starter = runMeter(ent({ plan: 'starter', lifetime_runs: null, runs_used: 180, cycle_runs_used: 13 }))!
 assert.equal(starter.count, '13 of 20')
 assert.equal(starter.cap, 20)
 assert.equal(starter.used, 13)
 assert.ok(starter.copy.includes('the run already happened'))
 
-// internal — no cap at all: a number, not a budget
-const internal = runMeter(ent({ plan: 'internal', lifetime_runs: null, runs_used: 99, cycle_runs_used: 43 }))
-assert.equal(internal.cap, null)
-assert.equal(internal.count, '43 this cycle')
-assert.equal(internal.copy, '')
+// NO CAP -> NO METER. This used to render "43 this cycle": a count with no ceiling, which
+// is a statistic and not a meter — nothing to act on, and readable only by inventing a
+// limit that does not exist. The screen renders nothing at all now.
+assert.equal(runMeter(ent({ plan: 'internal', lifetime_runs: null, runs_used: 99, cycle_runs_used: 43 })), null)
 
 // An SPA deployed ahead of migration 0039 gets no cycle column. Stale, never NaN.
 const old = runMeter(ent({ plan: 'growth', lifetime_runs: null, runs_used: 7 }))
-assert.equal(old.count, '7 of 80')
+assert.equal(old?.count, '7 of 80')
 
 // A NON-OWNER. kb_entitlements returns limits and usage to anyone who may edit, and the
 // tier NAME to the owner alone (§10l) — so `plan` is null here while `runs_used` is the
@@ -56,27 +55,25 @@ assert.equal(old.count, '7 of 80')
 //
 // The cap must come off the entitlement. Uncapped owner -> lifetime_runs is null -> the
 // plain number, no track, no copy. It must never say "of 3".
-const member = runMeter(
-  ent({ is_owner: false, plan: null, lifetime_runs: null, runs_used: 49, cycle_runs_used: 49 }),
+assert.equal(
+  runMeter(ent({ is_owner: false, plan: null, lifetime_runs: null, runs_used: 49, cycle_runs_used: 49 })),
+  null,
 )
-assert.equal(member.cap, null)
-assert.equal(member.count, '49 this cycle')
-assert.equal(member.copy, '')
 
 // The same member inside a FREE help center still gets the real wall — lifetime_runs comes
 // back to members, so withholding the tier name costs them nothing they need.
 const memberFree = runMeter(
   ent({ is_owner: false, plan: null, lifetime_runs: 3, runs_used: 2, cycle_runs_used: 2 }),
 )
-assert.equal(memberFree.count, '2 of 3 free runs')
-assert.equal(memberFree.cap, 3)
+assert.equal(memberFree?.count, '2 of 3 free runs')
+assert.equal(memberFree?.cap, 3)
 
-// And inside a monthly-capped one, the cap is unknown to them: a number, never a guess.
-const memberPaid = runMeter(
-  ent({ is_owner: false, plan: null, lifetime_runs: null, runs_used: 180, cycle_runs_used: 13 }),
+// And inside a monthly-capped one the cap is unknown to them, so there is nothing to draw.
+// A guessed ceiling is what put "49 of 3 free runs used" on an uncapped help center.
+assert.equal(
+  runMeter(ent({ is_owner: false, plan: null, lifetime_runs: null, runs_used: 180, cycle_runs_used: 13 })),
+  null,
 )
-assert.equal(memberPaid.cap, null)
-assert.equal(memberPaid.count, '13 this cycle')
 
 // The shape is read off PLANS, not off the plan's name.
 const src = readFileSync(new URL('../src/lib/plans.ts', import.meta.url), 'utf8')

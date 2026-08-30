@@ -186,25 +186,31 @@ export async function fetchProfile(
   }
 }
 
-// The three shapes of the rail run meter, chosen from the plan CONFIG.
+// The run meter — SHOWN ONLY WHEN THERE IS A CAP, and null otherwise.
 //
 // Nothing here compares a plan name. `PLANS` is the one tier table (limits in code, prices
 // in the DB — CLAUDE.md §10b), so adding a tier changes one object and this picks the right
 // shape for it automatically. A `plan === 'free'` here would be a second tier table.
 //
-//   lifetime cap (free)      2 of 3 free runs   — the wall they will actually hit
-//   monthly cap  (paid)      13 of 20           — resets with the billing period
-//   no cap       (internal)  43 this cycle      — a number, not a budget: no track, no copy
+//   lifetime cap (free)   2 of 3 free runs   — the wall they will actually hit
+//   monthly cap  (paid)   13 of 20           — resets with the billing period
+//   no cap                null               — nothing to render
+//
+// There used to be a third shape for the uncapped case: a bare "43 this cycle". A count
+// with no ceiling is not a meter, it is a statistic — it answers a question nobody asked,
+// there is no lever attached to it, and the only way to read it is to invent a limit that
+// does not exist. So the uncapped case renders NOTHING. If runs ever become capped for
+// these accounts, the cap arrives with the number and this grows a branch again.
 //
 // The closing sentence is pricing-spec §3's abundance framing: we meter the cost, never the
 // value. Free users get the shorter version — "the run already happened" explains a mental
 // model they have not formed yet, and the meter is not where to teach it.
 export function runMeter(ent: Entitlements): {
   used: number
-  cap: number | null
+  cap: number
   count: string
   copy: string
-} {
+} | null {
   // Falls back to the lifetime count when the SPA is running ahead of migration 0039,
   // which is a slightly stale number rather than a NaN-wide progress bar.
   const cycle = ent.cycle_runs_used ?? ent.runs_used
@@ -241,5 +247,6 @@ export function runMeter(ent: Entitlements): {
         'Writing by hand is unlimited.',
     }
   }
-  return { used: cycle, cap: null, count: `${cycle} this cycle`, copy: '' }
+  // No cap: nothing to say. See the header — a number without a ceiling is not a meter.
+  return null
 }

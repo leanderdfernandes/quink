@@ -284,15 +284,13 @@ export default function ProductSettings({ kb, ent, onSaved, onUpgrade }: Props) 
 
         {/* Usage. Small text under the thing it is about, not a nav row and not a number
             front-and-centre the user has no lever to act on. */}
+        {/* Null on an uncapped plan, and then there is no line at all — a run count with
+            no ceiling is a statistic the user has no lever over (lib/plans runMeter). */}
         {meter && (
           <p className="ps-usage">
-            {meter.cap === null ? (
-              <span>{meter.count} used</span>
-            ) : (
-              <button type="button" onClick={onUpgrade}>
-                {meter.count} used
-              </button>
-            )}
+            <button type="button" onClick={onUpgrade}>
+              {meter.count} used
+            </button>
             {meter.copy && <span className="ps-usage-note"> {meter.copy}</span>}
           </p>
         )}
